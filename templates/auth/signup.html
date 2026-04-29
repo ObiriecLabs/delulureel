@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Start Free Trial — DELULUREEL</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/static/css/main.css">
+</head>
+<body class="auth-body">
+
+<div class="auth-wrap">
+  <a href="/" class="logo grad-text auth-logo">DELULUREEL</a>
+
+  <div class="auth-card">
+    <div class="plan-badge">
+      7-day free trial
+      <span class="plan-badge-name">· {{ plan | capitalize }} plan</span>
+    </div>
+
+    <h1 class="auth-title">Create your account</h1>
+    <p class="auth-sub">Card required. Cancel before Day 7 — you pay nothing.</p>
+
+    {% if error %}
+    <div class="alert alert-error">{{ error }}</div>
+    {% endif %}
+
+    <form method="POST" action="/auth/signup?plan={{ plan }}" class="auth-form" id="signup-form">
+      <input type="hidden" name="plan" value="{{ plan }}">
+
+      <div class="field">
+        <label class="field-label">Email</label>
+        <input type="email" name="email" class="field-input" placeholder="you@example.com" required autofocus>
+      </div>
+      <div class="field">
+        <label class="field-label">Password</label>
+        <input type="password" name="password" class="field-input" placeholder="At least 8 characters" required minlength="8">
+      </div>
+
+      <button type="submit" class="btn btn-primary btn-full" id="signup-btn">
+        Continue to payment →
+      </button>
+    </form>
+
+    <p class="auth-note">
+      Next step: add your card via Stripe (secure). You won't be charged until Day 7.
+    </p>
+
+    <p class="auth-switch">
+      Already have an account?
+      <a href="/auth/login" class="auth-link">Log in</a>
+    </p>
+  </div>
+</div>
+
+<script>
+  document.getElementById('signup-form').addEventListener('submit', function() {
+    const btn = document.getElementById('signup-btn');
+    btn.disabled = true;
+    btn.textContent = 'Setting up your account…';
+  });
+</script>
+</body>
+</html>

@@ -1,0 +1,281 @@
+{% extends 'base.html' %}
+{% block title %}Create Reel — DELULUREEL{% endblock %}
+
+{% block nav_extra %}
+<a href="/dashboard" class="nav-back">← Dashboard</a>
+{% endblock %}
+
+{% block content %}
+<div class="container upload-container">
+
+  <div class="upload-header">
+    <h1 class="dash-title">Create New Reel</h1>
+    <p class="dash-sub">Upload your photo and track. AI does the rest.</p>
+  </div>
+
+  <!-- UPLOAD FORM -->
+  <form id="upload-form" enctype="multipart/form-data">
+
+    <div class="upload-grid">
+
+      <!-- Photo drop -->
+      <div class="drop-zone" id="photo-drop" data-field="photo">
+        <input type="file" id="photo-input" name="photo" accept="image/*" hidden>
+        <div class="drop-inner" id="photo-inner">
+          <div class="drop-icon">📸</div>
+          <div class="drop-title">Your Photo</div>
+          <div class="drop-sub">Front-facing, clear background works best</div>
+          <div class="drop-formats">JPG, PNG, WEBP · max 10 MB</div>
+        </div>
+        <div class="drop-preview" id="photo-preview" style="display:none">
+          <img id="photo-img" src="" alt="Photo preview">
+          <button type="button" class="drop-remove" onclick="clearFile('photo')">×</button>
+        </div>
+      </div>
+
+      <!-- Audio drop -->
+      <div class="drop-zone" id="audio-drop" data-field="audio">
+        <input type="file" id="audio-input" name="audio" accept="audio/*" hidden>
+        <div class="drop-inner" id="audio-inner">
+          <div class="drop-icon">🎵</div>
+          <div class="drop-title">Your Track</div>
+          <div class="drop-sub">AI will analyze BPM and sync the video</div>
+          <div class="drop-formats">MP3, WAV, M4A · max 50 MB</div>
+        </div>
+        <div class="drop-preview" id="audio-preview" style="display:none">
+          <div class="audio-preview-icon">🎵</div>
+          <div class="audio-preview-name" id="audio-name"></div>
+          <audio id="audio-player" controls></audio>
+          <button type="button" class="drop-remove" onclick="clearFile('audio')">×</button>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- Options -->
+    <div class="options-row">
+
+      <div class="option-group">
+        <label class="option-label">Style</label>
+        <div class="style-grid" id="style-grid">
+          <button type="button" class="style-btn active" data-style="cinematic">🎬 Cinematic</button>
+          <button type="button" class="style-btn" data-style="neon">💜 Neon</button>
+          <button type="button" class="style-btn" data-style="dreamy">✨ Dreamy</button>
+          <button type="button" class="style-btn" data-style="street">🔥 Street</button>
+          <button type="button" class="style-btn" data-style="minimal">⬜ Minimal</button>
+        </div>
+        <input type="hidden" name="style" id="style-input" value="cinematic">
+      </div>
+
+      <div class="option-group">
+        <label class="option-label">Aspect Ratio</label>
+        <div class="ar-grid">
+          <label class="ar-btn">
+            <input type="radio" name="aspect_ratio" value="9:16" checked>
+            <span class="ar-icon">📱</span>
+            <span class="ar-label">9:16</span>
+            <span class="ar-sub">TikTok / Reels</span>
+          </label>
+          <label class="ar-btn">
+            <input type="radio" name="aspect_ratio" value="16:9">
+            <span class="ar-icon">🖥</span>
+            <span class="ar-label">16:9</span>
+            <span class="ar-sub">YouTube</span>
+          </label>
+          <label class="ar-btn">
+            <input type="radio" name="aspect_ratio" value="1:1">
+            <span class="ar-icon">⬛</span>
+            <span class="ar-label">1:1</span>
+            <span class="ar-sub">Feed</span>
+          </label>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- Error message -->
+    <div class="upload-error" id="upload-error" style="display:none"></div>
+
+    <!-- Submit -->
+    <div class="upload-actions">
+      <button type="submit" class="btn btn-primary btn-lg" id="generate-btn" disabled>
+        Generate Reel →
+      </button>
+      <p class="upload-note">~2 minutes · Your plan includes this generation</p>
+    </div>
+
+  </form>
+
+  <!-- Progress overlay -->
+  <div class="progress-overlay" id="progress-overlay" style="display:none">
+    <div class="progress-card">
+      <div class="progress-anim"></div>
+      <h2 class="progress-title" id="progress-title">Analyzing your track…</h2>
+      <p class="progress-sub" id="progress-sub">Detecting BPM and energy peaks</p>
+      <div class="progress-steps">
+        <div class="pstep" id="pstep-1" data-status="analyzing">🎵 Analyzing audio</div>
+        <div class="pstep" id="pstep-2" data-status="generating">✨ Writing scene prompt</div>
+        <div class="pstep" id="pstep-3" data-status="processing">🎬 Generating video (Kling AI)</div>
+        <div class="pstep" id="pstep-4" data-status="completed">⚡ Assembling final reel</div>
+      </div>
+    </div>
+  </div>
+
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+// ── Drop zones ──
+['photo', 'audio'].forEach(type => {
+  const zone  = document.getElementById(`${type}-drop`);
+  const input = document.getElementById(`${type}-input`);
+
+  zone.addEventListener('click', e => {
+    if (!e.target.closest('.drop-remove')) input.click();
+  });
+
+  zone.addEventListener('dragover', e => { e.preventDefault(); zone.classList.add('drag-over'); });
+  zone.addEventListener('dragleave', () => zone.classList.remove('drag-over'));
+  zone.addEventListener('drop', e => {
+    e.preventDefault();
+    zone.classList.remove('drag-over');
+    const file = e.dataTransfer.files[0];
+    if (file) setFile(type, file);
+  });
+
+  input.addEventListener('change', () => {
+    if (input.files[0]) setFile(type, input.files[0]);
+  });
+});
+
+const _files = {};
+
+function setFile(type, file) {
+  _files[type] = file;
+  const dt = new DataTransfer();
+  dt.items.add(file);
+  document.getElementById(`${type}-input`).files = dt.files;
+
+  document.getElementById(`${type}-inner`).style.display   = 'none';
+  document.getElementById(`${type}-preview`).style.display = 'flex';
+
+  if (type === 'photo') {
+    document.getElementById('photo-img').src = URL.createObjectURL(file);
+  } else {
+    document.getElementById('audio-name').textContent  = file.name;
+    document.getElementById('audio-player').src        = URL.createObjectURL(file);
+  }
+
+  checkReady();
+}
+
+function clearFile(type) {
+  delete _files[type];
+  document.getElementById(`${type}-input`).value            = '';
+  document.getElementById(`${type}-inner`).style.display    = 'flex';
+  document.getElementById(`${type}-preview`).style.display  = 'none';
+  checkReady();
+}
+
+function checkReady() {
+  document.getElementById('generate-btn').disabled = !(_files.photo && _files.audio);
+}
+
+// ── Style selector ──
+document.getElementById('style-grid').addEventListener('click', e => {
+  const btn = e.target.closest('.style-btn');
+  if (!btn) return;
+  document.querySelectorAll('.style-btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  document.getElementById('style-input').value = btn.dataset.style;
+});
+
+// ── AR radio styling ──
+document.querySelectorAll('.ar-btn input').forEach(inp => {
+  inp.addEventListener('change', () => {
+    document.querySelectorAll('.ar-btn').forEach(l => l.classList.remove('active'));
+    if (inp.checked) inp.closest('.ar-btn').classList.add('active');
+  });
+});
+document.querySelector('.ar-btn input[checked]')?.closest('.ar-btn')?.classList.add('active');
+
+// ── Submit ──
+document.getElementById('upload-form').addEventListener('submit', async e => {
+  e.preventDefault();
+  const btn = document.getElementById('generate-btn');
+  const err = document.getElementById('upload-error');
+  err.style.display = 'none';
+  btn.disabled = true;
+  btn.textContent = 'Starting…';
+
+  const fd = new FormData();
+  fd.append('photo', _files.photo);
+  fd.append('audio', _files.audio);
+  fd.append('style', document.getElementById('style-input').value);
+  fd.append('aspect_ratio', document.querySelector('[name="aspect_ratio"]:checked').value);
+
+  try {
+    const res  = await fetch('/video/generate', { method: 'POST', body: fd });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Generation failed');
+
+    // Show progress overlay and start polling
+    document.getElementById('progress-overlay').style.display = 'flex';
+    pollStatus(data.job_id);
+  } catch (ex) {
+    err.textContent = ex.message;
+    err.style.display = 'block';
+    btn.disabled = false;
+    btn.textContent = 'Generate Reel →';
+  }
+});
+
+// ── Status polling ──
+const STATUS_COPY = {
+  queued:     ['Queued…',            'Waiting for a generation slot'],
+  analyzing:  ['Analyzing audio…',   'Detecting BPM, energy peaks, and structure'],
+  generating: ['Writing scene…',     'Claude AI is designing your video prompt'],
+  processing: ['Generating video…',  'Kling 3.0 Pro is building your reel (~90s)'],
+  completed:  ['Done! 🎉',           'Your reel is ready'],
+  failed:     ['Generation failed',  'Something went wrong'],
+};
+
+const STATUS_STEP = { analyzing: 1, generating: 2, processing: 3, completed: 4 };
+
+function setStep(status) {
+  const stepNum = STATUS_STEP[status] || 0;
+  document.querySelectorAll('.pstep').forEach((el, i) => {
+    el.classList.toggle('pstep-done',    i + 1 < stepNum);
+    el.classList.toggle('pstep-active',  i + 1 === stepNum);
+  });
+  const [title, sub] = STATUS_COPY[status] || ['Working…', ''];
+  document.getElementById('progress-title').textContent = title;
+  document.getElementById('progress-sub').textContent   = sub;
+}
+
+async function pollStatus(jobId) {
+  setStep('queued');
+  const interval = setInterval(async () => {
+    try {
+      const res  = await fetch(`/video/status/${jobId}`);
+      const data = await res.json();
+      setStep(data.status);
+      if (data.status === 'completed') {
+        clearInterval(interval);
+        window.location.href = `/result/${jobId}`;
+      }
+      if (data.status === 'failed') {
+        clearInterval(interval);
+        document.getElementById('progress-overlay').style.display = 'none';
+        const err = document.getElementById('upload-error');
+        err.textContent = data.error_message || 'Generation failed. Please try again.';
+        err.style.display = 'block';
+        document.getElementById('generate-btn').disabled = false;
+        document.getElementById('generate-btn').textContent = 'Generate Reel →';
+      }
+    } catch (ex) { /* network hiccup, keep polling */ }
+  }, 8000);
+}
+</script>
+{% endblock %}

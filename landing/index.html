@@ -1,0 +1,1203 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>DELULUREEL — Be delulu enough to drop your reel.</title>
+  <meta name="description" content="Upload your track + photo. Get a professional AI videoclip in minutes. Optimized for TikTok, Reels & Shorts.">
+  <meta property="og:title" content="DELULUREEL — Be delulu enough to drop your reel.">
+  <meta property="og:description" content="Upload your track + photo. AI generates a professional videoclip in minutes.">
+  <meta property="og:type" content="website">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:ital,wght@0,400;0,500;0,600;0,700;0,800;0,900;1,800&display=swap" rel="stylesheet">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:        #06020E;
+      --surface:   #0F071E;
+      --surface2:  #180E30;
+      --border:    rgba(180, 94, 255, 0.15);
+      --primary:   #B45EFF;
+      --secondary: #FF3CAC;
+      --accent:    #FF6B2B;
+      --text:      #EEE6FF;
+      --muted:     rgba(238, 230, 255, 0.45);
+      --grad:      linear-gradient(135deg, #B45EFF 0%, #FF3CAC 55%, #FF6B2B 100%);
+    }
+
+    html { scroll-behavior: smooth; }
+
+    body {
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.6;
+      overflow-x: hidden;
+    }
+
+    /* Subtle noise */
+    body::after {
+      content: '';
+      position: fixed;
+      inset: 0;
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='300' height='300'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='300' height='300' filter='url(%23n)' opacity='0.035'/%3E%3C/svg%3E");
+      pointer-events: none;
+      z-index: 9999;
+      opacity: 0.5;
+    }
+
+    /* ─── UTILITIES ─── */
+    .grad-text {
+      background: var(--grad);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+
+    .container {
+      max-width: 1140px;
+      margin: 0 auto;
+      padding: 0 24px;
+    }
+
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 13px 26px;
+      border-radius: 12px;
+      font-weight: 700;
+      font-size: 15px;
+      cursor: pointer;
+      text-decoration: none;
+      transition: all .22s ease;
+      border: none;
+      white-space: nowrap;
+    }
+    .btn-primary {
+      background: var(--grad);
+      color: #fff;
+      box-shadow: 0 0 28px rgba(180,94,255,.4);
+    }
+    .btn-primary:hover { transform: translateY(-2px); box-shadow: 0 0 44px rgba(180,94,255,.65); }
+    .btn-ghost {
+      background: rgba(180,94,255,.09);
+      color: var(--primary);
+      border: 1px solid var(--border);
+    }
+    .btn-ghost:hover { background: rgba(180,94,255,.18); border-color: var(--primary); }
+    .btn-lg { padding: 16px 34px; font-size: 16px; border-radius: 14px; }
+
+    /* ─── NAV ─── */
+    nav {
+      position: fixed;
+      top: 0; left: 0; right: 0;
+      z-index: 200;
+      padding: 15px 0;
+      backdrop-filter: blur(22px);
+      -webkit-backdrop-filter: blur(22px);
+      border-bottom: 1px solid rgba(180,94,255,.07);
+      background: rgba(6,2,14,.72);
+      transition: background .3s;
+    }
+    .nav-inner {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .logo {
+      font-size: 19px;
+      font-weight: 900;
+      letter-spacing: -.5px;
+      text-decoration: none;
+    }
+    .nav-links {
+      display: flex;
+      align-items: center;
+      gap: 30px;
+      list-style: none;
+    }
+    .nav-links a {
+      color: var(--muted);
+      text-decoration: none;
+      font-size: 14px;
+      font-weight: 500;
+      transition: color .2s;
+    }
+    .nav-links a:hover { color: var(--text); }
+    .nav-cta { display: flex; align-items: center; gap: 12px; }
+    .nav-login {
+      color: var(--muted);
+      text-decoration: none;
+      font-size: 14px;
+      font-weight: 500;
+      transition: color .2s;
+    }
+    .nav-login:hover { color: var(--text); }
+
+    /* ─── HERO ─── */
+    .hero {
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      padding-top: 80px;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .orb {
+      position: absolute;
+      border-radius: 50%;
+      filter: blur(110px);
+      pointer-events: none;
+    }
+    .orb-1 {
+      width: 640px; height: 640px;
+      background: radial-gradient(circle, rgba(180,94,255,.22) 0%, transparent 70%);
+      top: -160px; left: -200px;
+    }
+    .orb-2 {
+      width: 520px; height: 520px;
+      background: radial-gradient(circle, rgba(255,60,172,.18) 0%, transparent 70%);
+      top: 80px; right: -180px;
+    }
+    .orb-3 {
+      width: 420px; height: 420px;
+      background: radial-gradient(circle, rgba(255,107,43,.14) 0%, transparent 70%);
+      bottom: 0; left: 35%;
+    }
+
+    .hero-inner {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 64px;
+      align-items: center;
+      padding: 80px 0;
+    }
+
+    .hero-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 5px 14px;
+      background: rgba(180,94,255,.1);
+      border: 1px solid rgba(180,94,255,.28);
+      border-radius: 100px;
+      font-size: 11px;
+      font-weight: 700;
+      color: var(--primary);
+      margin-bottom: 22px;
+      letter-spacing: .8px;
+      text-transform: uppercase;
+    }
+    .badge-dot {
+      width: 6px; height: 6px;
+      background: var(--primary);
+      border-radius: 50%;
+      box-shadow: 0 0 8px var(--primary);
+      animation: badge-pulse 2s ease-in-out infinite;
+    }
+    @keyframes badge-pulse {
+      0%,100% { opacity: 1; transform: scale(1); }
+      50%      { opacity: .45; transform: scale(.75); }
+    }
+
+    .hero-title {
+      font-size: clamp(40px, 4.8vw, 64px);
+      font-weight: 900;
+      line-height: 1.04;
+      letter-spacing: -2px;
+      margin-bottom: 22px;
+    }
+
+    .hero-sub {
+      font-size: 17px;
+      color: var(--muted);
+      line-height: 1.65;
+      margin-bottom: 38px;
+      max-width: 460px;
+    }
+
+    .hero-actions {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      flex-wrap: wrap;
+    }
+
+    .hero-trust {
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      margin-top: 22px;
+      font-size: 12.5px;
+      color: var(--muted);
+    }
+    .hero-trust-dot { color: rgba(180,94,255,.5); }
+
+    /* ── PHONE MOCKUP ── */
+    .hero-visual {
+      display: flex;
+      justify-content: center;
+      align-items: center;
+    }
+    .phone-wrap { position: relative; }
+    .phone-glow {
+      position: absolute;
+      inset: -50px;
+      background: radial-gradient(ellipse, rgba(180,94,255,.28) 0%, transparent 65%);
+      border-radius: 50%;
+      animation: glow-pulse 3.2s ease-in-out infinite;
+    }
+    @keyframes glow-pulse {
+      0%,100% { opacity: .6; transform: scale(1); }
+      50%      { opacity: 1;  transform: scale(1.06); }
+    }
+
+    .phone {
+      width: 216px;
+      height: 452px;
+      background: #150B28;
+      border-radius: 42px;
+      border: 2px solid rgba(180,94,255,.38);
+      box-shadow: 0 0 64px rgba(180,94,255,.22), inset 0 0 28px rgba(0,0,0,.55);
+      overflow: hidden;
+      position: relative;
+      z-index: 1;
+    }
+    .phone-notch {
+      width: 68px; height: 20px;
+      background: #06020E;
+      border-radius: 0 0 14px 14px;
+      margin: 0 auto;
+      position: relative;
+      z-index: 2;
+    }
+    .phone-screen {
+      position: absolute;
+      inset: 0;
+      background: linear-gradient(155deg, #7B1FFF, #FF1FA8, #FF6B2B);
+      background-size: 300% 300%;
+      animation: grad-pan 5s ease infinite;
+    }
+    @keyframes grad-pan {
+      0%   { background-position: 0% 50%; }
+      50%  { background-position: 100% 50%; }
+      100% { background-position: 0% 50%; }
+    }
+    .phone-overlay {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      flex-direction: column;
+      justify-content: flex-end;
+      padding: 18px;
+      background: linear-gradient(to top, rgba(0,0,0,.68) 0%, transparent 55%);
+      z-index: 2;
+    }
+    .phone-track { font-size: 13px; font-weight: 700; color: #fff; }
+    .phone-artist { font-size: 11px; color: rgba(255,255,255,.65); margin-top: 2px; }
+    .phone-waveform {
+      display: flex;
+      align-items: flex-end;
+      gap: 3px;
+      height: 26px;
+      margin-top: 9px;
+    }
+    .wf-bar {
+      width: 3px;
+      background: rgba(255,255,255,.82);
+      border-radius: 2px;
+      animation: wf 1.3s ease-in-out infinite;
+    }
+    .wf-bar:nth-child(1)  { height: 35%; animation-delay: 0.00s; }
+    .wf-bar:nth-child(2)  { height: 65%; animation-delay: 0.10s; }
+    .wf-bar:nth-child(3)  { height: 50%; animation-delay: 0.20s; }
+    .wf-bar:nth-child(4)  { height: 90%; animation-delay: 0.30s; }
+    .wf-bar:nth-child(5)  { height: 42%; animation-delay: 0.40s; }
+    .wf-bar:nth-child(6)  { height: 78%; animation-delay: 0.50s; }
+    .wf-bar:nth-child(7)  { height: 58%; animation-delay: 0.60s; }
+    .wf-bar:nth-child(8)  { height: 100%; animation-delay: 0.70s; }
+    .wf-bar:nth-child(9)  { height: 48%; animation-delay: 0.80s; }
+    .wf-bar:nth-child(10) { height: 72%; animation-delay: 0.90s; }
+    .wf-bar:nth-child(11) { height: 38%; animation-delay: 1.00s; }
+    .wf-bar:nth-child(12) { height: 62%; animation-delay: 1.10s; }
+    @keyframes wf {
+      0%,100% { transform: scaleY(.35); }
+      50%      { transform: scaleY(1); }
+    }
+
+    .phone-pill {
+      position: absolute;
+      top: 36px; right: -18px;
+      background: rgba(0,0,0,.85);
+      border: 1px solid rgba(255,255,255,.18);
+      border-radius: 10px;
+      padding: 6px 11px;
+      font-size: 11px;
+      font-weight: 700;
+      color: #fff;
+      z-index: 3;
+      display: flex;
+      align-items: center;
+      gap: 5px;
+    }
+    .phone-views {
+      position: absolute;
+      bottom: 88px; right: -22px;
+      background: rgba(255,255,255,.1);
+      backdrop-filter: blur(10px);
+      border: 1px solid rgba(255,255,255,.18);
+      border-radius: 10px;
+      padding: 8px 13px;
+      z-index: 3;
+      text-align: center;
+    }
+    .views-num { font-size: 18px; font-weight: 900; display: block; color: var(--secondary); }
+    .views-lbl { font-size: 10px; color: rgba(255,255,255,.65); }
+
+    /* ─── STATS BAR ─── */
+    .stats-bar {
+      border-top: 1px solid var(--border);
+      border-bottom: 1px solid var(--border);
+      padding: 18px 0;
+      background: rgba(180,94,255,.025);
+    }
+    .stats-inner {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .stat-item {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 0 36px;
+      border-right: 1px solid var(--border);
+    }
+    .stat-item:last-child { border-right: none; }
+    .stat-icon {
+      width: 36px; height: 36px;
+      border-radius: 10px;
+      background: rgba(180,94,255,.1);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 16px;
+      flex-shrink: 0;
+    }
+    .stat-value { font-size: 14px; font-weight: 700; color: var(--text); }
+    .stat-label { font-size: 12px; color: var(--muted); line-height: 1.3; }
+
+    /* ─── SHARED SECTION ─── */
+    section { padding: 96px 0; }
+
+    .section-label {
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 2px;
+      color: var(--primary);
+      margin-bottom: 10px;
+    }
+    .section-title {
+      font-size: clamp(30px, 3.8vw, 46px);
+      font-weight: 900;
+      line-height: 1.1;
+      letter-spacing: -1.4px;
+      margin-bottom: 14px;
+    }
+    .section-sub {
+      font-size: 16px;
+      color: var(--muted);
+      max-width: 540px;
+      line-height: 1.65;
+    }
+    .section-header { text-align: center; margin-bottom: 60px; }
+    .section-header .section-sub { margin: 0 auto; }
+
+    /* ─── DEMO ─── */
+    .demo-section {
+      background: linear-gradient(180deg, var(--bg) 0%, var(--surface) 50%, var(--bg) 100%);
+    }
+    .demo-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 20px;
+    }
+    .demo-card {
+      border-radius: 20px;
+      overflow: hidden;
+      aspect-ratio: 9/16;
+      position: relative;
+      cursor: pointer;
+      transition: transform .3s ease;
+    }
+    .demo-card:hover { transform: scale(1.025); }
+
+    .demo-bg {
+      position: absolute;
+      inset: 0;
+      background-size: 250% 250%;
+      animation: grad-pan 6s ease infinite;
+    }
+    .demo-card:nth-child(1) .demo-bg { background: linear-gradient(155deg,#6B1FFF,#FF1FA8,#FF6B2B); animation-delay: 0s; }
+    .demo-card:nth-child(2) .demo-bg { background: linear-gradient(155deg,#FF1FA8,#FF6B2B,#FFD93D); animation-delay: -2s; }
+    .demo-card:nth-child(3) .demo-bg { background: linear-gradient(155deg,#1FFFB5,#1F9FFF,#7B1FFF); animation-delay: -4s; }
+
+    .demo-overlay {
+      position: absolute;
+      inset: 0;
+      background: linear-gradient(to top, rgba(0,0,0,.62) 0%, transparent 52%);
+    }
+    .demo-play {
+      position: absolute;
+      top: 50%; left: 50%;
+      transform: translate(-50%,-50%);
+      width: 54px; height: 54px;
+      background: rgba(255,255,255,.18);
+      backdrop-filter: blur(10px);
+      border: 1.5px solid rgba(255,255,255,.4);
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: all .2s;
+    }
+    .demo-card:hover .demo-play { background: rgba(255,255,255,.32); transform: translate(-50%,-50%) scale(1.1); }
+    .demo-play svg { width: 18px; height: 18px; fill: #fff; margin-left: 3px; }
+
+    .demo-meta {
+      position: absolute;
+      bottom: 0; left: 0; right: 0;
+      padding: 14px;
+    }
+    .demo-tag {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      padding: 3px 9px;
+      background: rgba(0,0,0,.52);
+      backdrop-filter: blur(6px);
+      border-radius: 100px;
+      font-size: 10px;
+      font-weight: 600;
+      color: rgba(255,255,255,.85);
+      margin-bottom: 7px;
+    }
+    .demo-title { font-size: 13px; font-weight: 700; color: #fff; }
+
+    .demo-cta { text-align: center; margin-top: 44px; }
+    .demo-cta p { font-size: 13px; color: var(--muted); margin-top: 10px; }
+
+    /* ─── HOW IT WORKS ─── */
+    .how-grid {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 20px;
+      position: relative;
+    }
+    .how-grid::before {
+      content: '';
+      position: absolute;
+      top: 34px;
+      left: calc(12.5% + 18px);
+      right: calc(12.5% + 18px);
+      height: 1px;
+      background: linear-gradient(90deg, transparent, var(--border), var(--primary), var(--border), transparent);
+      pointer-events: none;
+    }
+    .step-card {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      text-align: center;
+      gap: 14px;
+      padding: 28px 18px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 20px;
+      transition: border-color .3s, transform .3s;
+    }
+    .step-card:hover { border-color: rgba(180,94,255,.4); transform: translateY(-4px); }
+    .step-num {
+      width: 52px; height: 52px;
+      border-radius: 15px;
+      background: var(--grad);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 20px;
+      font-weight: 900;
+      color: #fff;
+      box-shadow: 0 0 22px rgba(180,94,255,.4);
+      position: relative;
+      z-index: 1;
+    }
+    .step-emoji { font-size: 26px; }
+    .step-title { font-size: 15px; font-weight: 700; }
+    .step-desc { font-size: 13px; color: var(--muted); line-height: 1.55; }
+
+    /* ─── PRICING ─── */
+    .pricing-section {
+      background: linear-gradient(180deg, var(--bg) 0%, var(--surface) 50%, var(--bg) 100%);
+    }
+
+    .toggle-row {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      justify-content: center;
+      margin-bottom: 44px;
+    }
+    .toggle-lbl {
+      font-size: 14px;
+      font-weight: 600;
+      color: var(--muted);
+      cursor: pointer;
+      transition: color .2s;
+      user-select: none;
+    }
+    .toggle-lbl.on { color: var(--text); }
+    .toggle-sw {
+      width: 50px; height: 27px;
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 100px;
+      cursor: pointer;
+      position: relative;
+      transition: background .2s, border-color .2s;
+    }
+    .toggle-sw.on { background: rgba(180,94,255,.18); border-color: var(--primary); }
+    .toggle-thumb {
+      position: absolute;
+      top: 3px; left: 3px;
+      width: 19px; height: 19px;
+      background: var(--muted);
+      border-radius: 50%;
+      transition: transform .2s, background .2s;
+    }
+    .toggle-sw.on .toggle-thumb { transform: translateX(23px); background: var(--primary); }
+    .toggle-save {
+      font-size: 11px;
+      font-weight: 700;
+      color: #fff;
+      background: var(--grad);
+      padding: 2px 9px;
+      border-radius: 100px;
+    }
+
+    .pricing-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 22px;
+      align-items: start;
+    }
+    .plan-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 22px;
+      padding: 34px 30px;
+      position: relative;
+      transition: border-color .3s, transform .3s;
+    }
+    .plan-card:hover { border-color: rgba(180,94,255,.35); transform: translateY(-4px); }
+    .plan-card.featured {
+      border-color: var(--primary);
+      background: linear-gradient(155deg, var(--surface2) 0%, var(--surface) 100%);
+      box-shadow: 0 0 56px rgba(180,94,255,.18);
+      transform: scale(1.03);
+    }
+    .plan-card.featured:hover { transform: scale(1.03) translateY(-4px); }
+
+    .plan-popular {
+      position: absolute;
+      top: -13px; left: 50%;
+      transform: translateX(-50%);
+      background: var(--grad);
+      color: #fff;
+      font-size: 10px;
+      font-weight: 800;
+      letter-spacing: 1px;
+      text-transform: uppercase;
+      padding: 4px 16px;
+      border-radius: 100px;
+      white-space: nowrap;
+    }
+    .plan-name {
+      font-size: 13px;
+      font-weight: 700;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      margin-bottom: 10px;
+    }
+    .plan-price {
+      display: flex;
+      align-items: baseline;
+      gap: 3px;
+      margin-bottom: 4px;
+    }
+    .price-sym  { font-size: 20px; font-weight: 700; }
+    .price-num  { font-size: 46px; font-weight: 900; letter-spacing: -2px; line-height: 1; }
+    .price-per  { font-size: 13px; color: var(--muted); }
+    .price-annual-note {
+      font-size: 12px;
+      color: var(--muted);
+      margin-bottom: 22px;
+      min-height: 18px;
+    }
+    .price-annual-note span { color: var(--primary); font-weight: 600; }
+
+    .plan-reels { font-size: 22px; font-weight: 900; }
+    .plan-reels-label { font-size: 12px; color: var(--muted); margin-bottom: 22px; }
+    .plan-divider { height: 1px; background: var(--border); margin: 22px 0; }
+
+    .plan-features {
+      list-style: none;
+      display: flex;
+      flex-direction: column;
+      gap: 9px;
+      margin-bottom: 28px;
+    }
+    .plan-features li {
+      display: flex;
+      align-items: center;
+      gap: 9px;
+      font-size: 13px;
+      color: var(--muted);
+    }
+    .feat-chk {
+      width: 17px; height: 17px;
+      border-radius: 5px;
+      background: rgba(180,94,255,.12);
+      border: 1px solid rgba(180,94,255,.28);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+    }
+    .feat-chk svg { width: 9px; height: 9px; stroke: var(--primary); fill: none; stroke-width: 2.8; }
+    .plan-card.featured .feat-chk { background: rgba(180,94,255,.22); border-color: var(--primary); }
+
+    .plan-btn { width: 100%; justify-content: center; }
+    .plan-btn.grad-btn {
+      background: var(--grad);
+      color: #fff;
+      box-shadow: 0 0 26px rgba(180,94,255,.38);
+    }
+    .plan-btn.grad-btn:hover { box-shadow: 0 0 40px rgba(180,94,255,.6); transform: translateY(-2px); }
+
+    .plan-note {
+      text-align: center;
+      margin-top: 10px;
+      font-size: 11px;
+      color: var(--muted);
+    }
+
+    /* ─── TRUST ─── */
+    .trust-section {
+      padding: 72px 0;
+      border-top: 1px solid var(--border);
+    }
+    .trust-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 20px;
+    }
+    .trust-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 18px;
+      padding: 26px;
+    }
+    .trust-emoji { font-size: 28px; margin-bottom: 14px; }
+    .trust-title { font-size: 15px; font-weight: 700; margin-bottom: 7px; }
+    .trust-desc { font-size: 13px; color: var(--muted); line-height: 1.6; }
+
+    /* ─── FINAL CTA ─── */
+    .final-cta {
+      padding: 100px 0;
+      text-align: center;
+      position: relative;
+      overflow: hidden;
+    }
+    .final-orb {
+      position: absolute;
+      inset: -40%;
+      background: radial-gradient(ellipse at center, rgba(180,94,255,.16) 0%, transparent 60%);
+      pointer-events: none;
+    }
+    .final-title {
+      font-size: clamp(34px, 5vw, 58px);
+      font-weight: 900;
+      letter-spacing: -2px;
+      line-height: 1.08;
+      margin-bottom: 14px;
+    }
+    .final-sub { font-size: 17px; color: var(--muted); margin-bottom: 36px; }
+    .final-actions { display: flex; justify-content: center; gap: 14px; flex-wrap: wrap; }
+    .final-note { margin-top: 18px; font-size: 12.5px; color: var(--muted); }
+
+    /* ─── FOOTER ─── */
+    footer {
+      border-top: 1px solid var(--border);
+      padding: 42px 0 28px;
+    }
+    .footer-inner {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 20px;
+    }
+    .footer-logo { font-size: 17px; font-weight: 900; text-decoration: none; }
+    .footer-links { display: flex; gap: 22px; list-style: none; }
+    .footer-links a { color: var(--muted); text-decoration: none; font-size: 13px; transition: color .2s; }
+    .footer-links a:hover { color: var(--text); }
+    .footer-copy { font-size: 12px; color: var(--muted); }
+
+    /* ─── RESPONSIVE ─── */
+    @media (max-width: 920px) {
+      .hero-inner     { grid-template-columns: 1fr; text-align: center; gap: 0; padding: 60px 0; }
+      .hero-visual    { display: none; }
+      .hero-sub       { margin-left: auto; margin-right: auto; }
+      .hero-actions   { justify-content: center; }
+      .hero-trust     { justify-content: center; }
+      .nav-links      { display: none; }
+      .demo-grid      { grid-template-columns: repeat(2, 1fr); }
+      .demo-card:nth-child(3) { display: none; }
+      .how-grid       { grid-template-columns: repeat(2, 1fr); }
+      .how-grid::before { display: none; }
+      .pricing-grid   { grid-template-columns: 1fr; max-width: 380px; margin: 0 auto; }
+      .plan-card.featured { transform: none; }
+      .plan-card.featured:hover { transform: translateY(-4px); }
+      .trust-grid     { grid-template-columns: 1fr; }
+      .stats-inner    { flex-wrap: wrap; justify-content: center; gap: 8px; }
+      .stat-item      { border-right: none; padding: 6px 20px; }
+    }
+    @media (max-width: 480px) {
+      .demo-grid      { grid-template-columns: 1fr; }
+      .demo-card:nth-child(2), .demo-card:nth-child(3) { display: none; }
+      .how-grid       { grid-template-columns: 1fr; }
+      .hero-actions   { flex-direction: column; align-items: center; }
+      .final-actions  { flex-direction: column; align-items: center; }
+    }
+  </style>
+</head>
+<body>
+
+<!-- ═══ NAV ═══ -->
+<nav id="main-nav">
+  <div class="container">
+    <div class="nav-inner">
+      <a href="/" class="logo grad-text">DELULUREEL</a>
+      <ul class="nav-links">
+        <li><a href="#demo">Demo</a></li>
+        <li><a href="#how">How it works</a></li>
+        <li><a href="#pricing">Pricing</a></li>
+      </ul>
+      <div class="nav-cta">
+        <a href="/login" class="nav-login">Log in</a>
+        <a href="/trial" class="btn btn-primary">Start Free Trial</a>
+      </div>
+    </div>
+  </div>
+</nav>
+
+<!-- ═══ HERO ═══ -->
+<section class="hero">
+  <div class="orb orb-1"></div>
+  <div class="orb orb-2"></div>
+  <div class="orb orb-3"></div>
+  <div class="container">
+    <div class="hero-inner">
+
+      <div class="hero-content">
+        <div class="hero-badge">
+          <span class="badge-dot"></span>
+          AI Video Generation
+        </div>
+        <h1 class="hero-title">
+          Be <span class="grad-text">delulu</span><br>
+          enough to drop<br>
+          your reel.
+        </h1>
+        <p class="hero-sub">
+          Upload your track. Add your photo.
+          DELULUREEL generates a professional videoclip
+          synchronized to your music — ready for TikTok, Reels &amp; Shorts.
+        </p>
+        <div class="hero-actions">
+          <a href="/trial" class="btn btn-primary btn-lg">Start Free Trial →</a>
+          <a href="#demo" class="btn btn-ghost btn-lg">Watch Demo</a>
+        </div>
+        <div class="hero-trust">
+          <svg width="13" height="13" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" style="color:var(--primary)">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
+          </svg>
+          7-day free trial
+          <span class="hero-trust-dot">·</span>
+          Card required
+          <span class="hero-trust-dot">·</span>
+          Cancel anytime
+        </div>
+      </div>
+
+      <div class="hero-visual">
+        <div class="phone-wrap">
+          <div class="phone-glow"></div>
+          <div class="phone">
+            <div class="phone-notch"></div>
+            <div class="phone-screen"></div>
+            <div class="phone-overlay">
+              <div class="phone-track">Your Track · 2:47</div>
+              <div class="phone-artist">@yourartistname</div>
+              <div class="phone-waveform">
+                <div class="wf-bar"></div><div class="wf-bar"></div><div class="wf-bar"></div>
+                <div class="wf-bar"></div><div class="wf-bar"></div><div class="wf-bar"></div>
+                <div class="wf-bar"></div><div class="wf-bar"></div><div class="wf-bar"></div>
+                <div class="wf-bar"></div><div class="wf-bar"></div><div class="wf-bar"></div>
+              </div>
+            </div>
+          </div>
+          <div class="phone-pill">
+            <svg width="11" height="11" viewBox="0 0 24 24" fill="white"><path d="M19.59 6.69a4.83 4.83 0 01-3.77-4.25V2h-3.45v13.67a2.89 2.89 0 01-2.88 2.5 2.89 2.89 0 01-2.89-2.89 2.89 2.89 0 012.89-2.89c.28 0 .54.04.79.1V9.01a6.33 6.33 0 00-.79-.05 6.34 6.34 0 00-6.34 6.34 6.34 6.34 0 006.34 6.34 6.34 6.34 0 006.33-6.34V8.69a8.27 8.27 0 004.85 1.56V6.79a4.85 4.85 0 01-1.08-.1z"/></svg>
+            TikTok
+          </div>
+          <div class="phone-views">
+            <span class="views-num">2.4M</span>
+            <span class="views-lbl">views</span>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</section>
+
+<!-- ═══ STATS BAR ═══ -->
+<div class="stats-bar">
+  <div class="container">
+    <div class="stats-inner">
+      <div class="stat-item">
+        <div class="stat-icon">🎬</div>
+        <div>
+          <div class="stat-value">3 Reels</div>
+          <div class="stat-label">during free trial</div>
+        </div>
+      </div>
+      <div class="stat-item">
+        <div class="stat-icon">⚡</div>
+        <div>
+          <div class="stat-value">~2 minutes</div>
+          <div class="stat-label">average generation</div>
+        </div>
+      </div>
+      <div class="stat-item">
+        <div class="stat-icon">📱</div>
+        <div>
+          <div class="stat-value">9:16 / 16:9 / 1:1</div>
+          <div class="stat-label">export formats</div>
+        </div>
+      </div>
+      <div class="stat-item">
+        <div class="stat-icon">🎵</div>
+        <div>
+          <div class="stat-value">Beat-synced</div>
+          <div class="stat-label">AI audio analysis</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══ DEMO ═══ -->
+<section class="demo-section" id="demo">
+  <div class="container">
+    <div class="section-header">
+      <div class="section-label">What you get</div>
+      <h2 class="section-title">AI reels that <span class="grad-text">hit different.</span></h2>
+      <p class="section-sub">Every reel is synchronized to your track's BPM, energy peaks, and structure. No editing experience required.</p>
+    </div>
+    <div class="demo-grid">
+      <div class="demo-card">
+        <div class="demo-bg"></div>
+        <div class="demo-overlay"></div>
+        <div class="demo-play"><svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg></div>
+        <div class="demo-meta">
+          <div class="demo-tag">🎵 Hip-Hop · 94 BPM</div>
+          <div class="demo-title">Street Vibes — Demo Reel</div>
+        </div>
+      </div>
+      <div class="demo-card">
+        <div class="demo-bg"></div>
+        <div class="demo-overlay"></div>
+        <div class="demo-play"><svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg></div>
+        <div class="demo-meta">
+          <div class="demo-tag">🎸 Pop · 120 BPM</div>
+          <div class="demo-title">Summer Drop — Demo Reel</div>
+        </div>
+      </div>
+      <div class="demo-card">
+        <div class="demo-bg"></div>
+        <div class="demo-overlay"></div>
+        <div class="demo-play"><svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg></div>
+        <div class="demo-meta">
+          <div class="demo-tag">🔊 Electronic · 140 BPM</div>
+          <div class="demo-title">Neon Pulse — Demo Reel</div>
+        </div>
+      </div>
+    </div>
+    <div class="demo-cta">
+      <a href="/trial" class="btn btn-primary btn-lg">Create Your First Reel →</a>
+      <p>Photo + track → professional videoclip in minutes</p>
+    </div>
+  </div>
+</section>
+
+<!-- ═══ HOW IT WORKS ═══ -->
+<section id="how">
+  <div class="container">
+    <div class="section-header">
+      <div class="section-label">How it works</div>
+      <h2 class="section-title">Four steps. <span class="grad-text">Zero editing.</span></h2>
+      <p class="section-sub">No timeline. No plugins. No video skills needed. Upload and watch the AI do its thing.</p>
+    </div>
+    <div class="how-grid">
+      <div class="step-card">
+        <div class="step-num">01</div>
+        <div class="step-emoji">📸</div>
+        <div class="step-title">Upload Your Photo</div>
+        <p class="step-desc">One front-facing photo. AI character consistency keeps your look throughout the entire reel.</p>
+      </div>
+      <div class="step-card">
+        <div class="step-num">02</div>
+        <div class="step-emoji">🎵</div>
+        <div class="step-title">Upload Your Track</div>
+        <p class="step-desc">MP3, WAV or M4A. Our AI analyzes BPM, energy peaks, and sections to sync the video perfectly.</p>
+      </div>
+      <div class="step-card">
+        <div class="step-num">03</div>
+        <div class="step-emoji">✨</div>
+        <div class="step-title">AI Builds Your Reel</div>
+        <p class="step-desc">Kling 3.0 Pro generates a beat-synchronized videoclip. ~2 minutes. You get notified when it's ready.</p>
+      </div>
+      <div class="step-card">
+        <div class="step-num">04</div>
+        <div class="step-emoji">🚀</div>
+        <div class="step-title">Download &amp; Post</div>
+        <p class="step-desc">9:16 for TikTok &amp; Reels, 16:9 for YouTube, 1:1 for Instagram feed. Export in one click.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ═══ PRICING ═══ -->
+<section class="pricing-section" id="pricing">
+  <div class="container">
+    <div class="section-header">
+      <div class="section-label">Pricing</div>
+      <h2 class="section-title">Start free. <span class="grad-text">Drop reels.</span></h2>
+      <p class="section-sub">7-day free trial on every plan. Card required. Cancel before Day 7 — you pay nothing.</p>
+    </div>
+
+    <div class="toggle-row">
+      <span class="toggle-lbl on" id="lbl-monthly">Monthly</span>
+      <div class="toggle-sw" id="billing-toggle">
+        <div class="toggle-thumb"></div>
+      </div>
+      <span class="toggle-lbl" id="lbl-annual">Annual</span>
+      <span class="toggle-save">2 months free</span>
+    </div>
+
+    <div class="pricing-grid">
+
+      <!-- CREATOR -->
+      <div class="plan-card">
+        <div class="plan-name">Creator</div>
+        <div class="plan-price">
+          <span class="price-sym">€</span>
+          <span class="price-num" data-m="14.99" data-a="12.49">14.99</span>
+          <span class="price-per">/mo</span>
+        </div>
+        <div class="price-annual-note" id="note-creator">&nbsp;</div>
+        <div class="plan-reels">5 Reels</div>
+        <div class="plan-reels-label">per month included</div>
+        <div class="plan-divider"></div>
+        <ul class="plan-features">
+          <li><span class="feat-chk"><svg viewBox="0 0 12 12"><polyline points="1,6 4,9 11,3"/></svg></span>Up to 30-second reels</li>
+          <li><span class="feat-chk"><svg viewBox="0 0 12 12"><polyline points="1,6 4,9 11,3"/></svg></span>9:16 export (TikTok / Reels)</li>
+          <li><span class="feat-chk"><svg viewBox="0 0 12 12"><polyline points="1,6 4,9 11,3"/></svg></span>AI character consistency</li>
+          <li><span class="feat-chk"><svg viewBox="0 0 12 12"><polyline points="1,6 4,9 11,3"/></svg></span>Beat-sync analysis</li>
+          <li><span class="feat-chk"><svg viewBox="0 0 12 12"><polyline points="1,6 4,9 11,3"/></svg></span>24h download access</li>
+        </ul>
+        <a href="/trial?plan=creator" class="btn btn-ghost plan-btn">Start Free Trial</a>
+        <p class="plan-note">7 days free · then €14.99/mo</p>
+      </div>
+
+      <!-- PRO — FEATURED -->
+      <div class="plan-card featured">
+        <div class="plan-popular">Most Popular</div>
+        <div class="plan-name">Pro</div>
+        <div class="plan-price">
+          <span class="price-sym">€</span>
+          <span class="price-num" data-m="34.99" data-a="29.16">34.99</span>
+          <span class="price-per">/mo</span>
+        </div>
+        <div class="price-annual-note" id="note-pro">&nbsp;</div>
+        <div class="plan-reels">15 Reels</div>
+        <div class="plan-reels-label">per month included</div>
+        <div class="plan-divider"></div>
+        <ul class="plan-features">
+          <li><span class="feat-chk"><svg viewBox="0 0 12 12"><polyline points="1,6 4,9 11,3"/></svg></span>Up to 60-second reels</li>
+          <li><span class="feat-chk"><svg viewBox="0 0 12 12"><polyline points="1,6 4,9 11,3"/></svg></span>All formats (9:16, 16:9, 1:1)</li>
+          <li><span class="feat-chk"><svg viewBox="0 0 12 12"><polyline points="1,6 4,9 11,3"/></svg></span>AI character consistency</li>
+          <li><span class="feat-chk"><svg viewBox="0 0 12 12"><polyline points="1,6 4,9 11,3"/></svg></span>Priority queue</li>
+          <li><span class="feat-chk"><svg viewBox="0 0 12 12"><polyline points="1,6 4,9 11,3"/></svg></span>7-day download access</li>
+          <li><span class="feat-chk"><svg viewBox="0 0 12 12"><polyline points="1,6 4,9 11,3"/></svg></span>Style presets library</li>
+        </ul>
+        <a href="/trial?plan=pro" class="btn plan-btn grad-btn">Start Free Trial →</a>
+        <p class="plan-note">7 days free · then €34.99/mo</p>
+      </div>
+
+      <!-- STUDIO -->
+      <div class="plan-card">
+        <div class="plan-name">Studio</div>
+        <div class="plan-price">
+          <span class="price-sym">€</span>
+          <span class="price-num" data-m="79.99" data-a="66.66">79.99</span>
+          <span class="price-per">/mo</span>
+        </div>
+        <div class="price-annual-note" id="note-studio">&nbsp;</div>
+        <div class="plan-reels">40 Reels</div>
+        <div class="plan-reels-label">per month included</div>
+        <div class="plan-divider"></div>
+        <ul class="plan-features">
+          <li><span class="feat-chk"><svg viewBox="0 0 12 12"><polyline points="1,6 4,9 11,3"/></svg></span>Up to 3-minute music videos</li>
+          <li><span class="feat-chk"><svg viewBox="0 0 12 12"><polyline points="1,6 4,9 11,3"/></svg></span>All export formats</li>
+          <li><span class="feat-chk"><svg viewBox="0 0 12 12"><polyline points="1,6 4,9 11,3"/></svg></span>Multiple characters per reel</li>
+          <li><span class="feat-chk"><svg viewBox="0 0 12 12"><polyline points="1,6 4,9 11,3"/></svg></span>Top priority queue</li>
+          <li><span class="feat-chk"><svg viewBox="0 0 12 12"><polyline points="1,6 4,9 11,3"/></svg></span>30-day download access</li>
+          <li><span class="feat-chk"><svg viewBox="0 0 12 12"><polyline points="1,6 4,9 11,3"/></svg></span>Custom style prompts</li>
+          <li><span class="feat-chk"><svg viewBox="0 0 12 12"><polyline points="1,6 4,9 11,3"/></svg></span>API access (coming soon)</li>
+        </ul>
+        <a href="/trial?plan=studio" class="btn btn-ghost plan-btn">Start Free Trial</a>
+        <p class="plan-note">7 days free · then €79.99/mo</p>
+      </div>
+
+    </div>
+  </div>
+</section>
+
+<!-- ═══ TRUST ═══ -->
+<section class="trust-section">
+  <div class="container">
+    <div class="trust-grid">
+      <div class="trust-card">
+        <div class="trust-emoji">🔒</div>
+        <div class="trust-title">Your content, your rights</div>
+        <p class="trust-desc">Your photos and tracks stay private. We never use your content to train AI models. You own everything you create.</p>
+      </div>
+      <div class="trust-card">
+        <div class="trust-emoji">💳</div>
+        <div class="trust-title">Transparent billing</div>
+        <p class="trust-desc">Cancel before Day 7 and you pay nothing. Automatic Day 5 reminder email. No gotchas, ever.</p>
+      </div>
+      <div class="trust-card">
+        <div class="trust-emoji">⚡</div>
+        <div class="trust-title">Built for creators</div>
+        <p class="trust-desc">No video editing skills needed. If you can upload a file, you can drop a professional reel. That's the whole point.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ═══ FINAL CTA ═══ -->
+<section class="final-cta">
+  <div class="final-orb"></div>
+  <div class="container" style="position:relative;z-index:1">
+    <div class="section-label" style="text-align:center;margin-bottom:14px">Ready?</div>
+    <h2 class="final-title">
+      Stop watching.<br>
+      <span class="grad-text">Start dropping.</span>
+    </h2>
+    <p class="final-sub">Your first reel is 2 minutes away.</p>
+    <div class="final-actions">
+      <a href="/trial" class="btn btn-primary btn-lg">Start Free Trial — 7 Days Free →</a>
+    </div>
+    <p class="final-note">Card required &nbsp;·&nbsp; Cancel before Day 7 &nbsp;·&nbsp; Zero charge</p>
+  </div>
+</section>
+
+<!-- ═══ FOOTER ═══ -->
+<footer>
+  <div class="container">
+    <div class="footer-inner">
+      <a href="/" class="footer-logo grad-text">DELULUREEL</a>
+      <ul class="footer-links">
+        <li><a href="/privacy">Privacy</a></li>
+        <li><a href="/terms">Terms</a></li>
+        <li><a href="/contact">Contact</a></li>
+      </ul>
+      <p class="footer-copy">© 2026 Obiriec Labs · All rights reserved</p>
+    </div>
+  </div>
+</footer>
+
+<script>
+  // ── Pricing toggle ──
+  const toggle   = document.getElementById('billing-toggle');
+  const lblM     = document.getElementById('lbl-monthly');
+  const lblA     = document.getElementById('lbl-annual');
+  const notes    = {
+    creator: document.getElementById('note-creator'),
+    pro:     document.getElementById('note-pro'),
+    studio:  document.getElementById('note-studio')
+  };
+  const annualBilled = {
+    creator: 'Billed €149.90/year',
+    pro:     'Billed €349.90/year',
+    studio:  'Billed €799.90/year'
+  };
+  let annual = false;
+
+  toggle.addEventListener('click', () => {
+    annual = !annual;
+    toggle.classList.toggle('on', annual);
+    lblM.classList.toggle('on', !annual);
+    lblA.classList.toggle('on', annual);
+
+    document.querySelectorAll('.price-num').forEach(el => {
+      el.textContent = annual ? el.dataset.a : el.dataset.m;
+    });
+    Object.entries(notes).forEach(([k, el]) => {
+      el.innerHTML = annual ? '<span>' + annualBilled[k] + '</span>' : '&nbsp;';
+    });
+    document.querySelectorAll('.plan-note').forEach(el => {
+      const base = el.textContent.split(' · then')[0];
+      const plans = { creator: '14.99', pro: '34.99', studio: '79.99' };
+      const card  = el.closest('.plan-card');
+      const name  = card.querySelector('.plan-name').textContent.toLowerCase();
+      el.textContent = '7 days free · then €' + (annual ? (name === 'creator' ? '12.49' : name === 'pro' ? '29.16' : '66.66') : plans[name]) + '/mo';
+    });
+  });
+
+  // ── Nav scroll effect ──
+  window.addEventListener('scroll', () => {
+    document.getElementById('main-nav').style.background =
+      window.scrollY > 30 ? 'rgba(6,2,14,.94)' : 'rgba(6,2,14,.72)';
+  }, { passive: true });
+
+  // ── Smooth scroll ──
+  document.querySelectorAll('a[href^="#"]').forEach(a => {
+    a.addEventListener('click', e => {
+      const target = document.querySelector(a.getAttribute('href'));
+      if (target) { e.preventDefault(); target.scrollIntoView({ behavior: 'smooth' }); }
+    });
+  });
+</script>
+</body>
+</html>

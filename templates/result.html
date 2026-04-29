@@ -1,0 +1,169 @@
+{% extends 'base.html' %}
+{% block title %}Your Reel — DELULUREEL{% endblock %}
+
+{% block nav_extra %}
+<a href="/dashboard" class="nav-back">← Dashboard</a>
+{% endblock %}
+
+{% block content %}
+<div class="container result-container">
+
+  <!-- Loading state -->
+  <div class="result-loading" id="result-loading">
+    <div class="spinner spinner-lg"></div>
+    <p>Loading your reel…</p>
+  </div>
+
+  <!-- Processing state -->
+  <div class="result-processing" id="result-processing" style="display:none">
+    <div class="processing-card">
+      <div class="progress-anim"></div>
+      <h2 id="proc-title">Generating your reel…</h2>
+      <p id="proc-sub" class="proc-sub"></p>
+      <div class="progress-steps">
+        <div class="pstep" id="rs-1">🎵 Analyzing audio</div>
+        <div class="pstep" id="rs-2">✨ Writing scene prompt</div>
+        <div class="pstep" id="rs-3">🎬 Generating video (Kling AI)</div>
+        <div class="pstep" id="rs-4">⚡ Assembling final reel</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Failed state -->
+  <div class="result-failed" id="result-failed" style="display:none">
+    <div class="failed-icon">😔</div>
+    <h2>Generation failed</h2>
+    <p id="failed-msg" class="failed-msg"></p>
+    <a href="/upload" class="btn btn-primary">Try Again →</a>
+  </div>
+
+  <!-- Completed state -->
+  <div class="result-done" id="result-done" style="display:none">
+
+    <div class="result-inner">
+
+      <!-- Video player -->
+      <div class="result-player-wrap" id="player-wrap">
+        <video
+          id="result-video"
+          controls
+          playsinline
+          loop
+          class="result-video"
+        ></video>
+        <div class="video-gradient-overlay"></div>
+      </div>
+
+      <!-- Info & actions -->
+      <div class="result-info">
+        <div class="result-badge">✅ Reel ready</div>
+        <h1 class="result-title">Your reel is ready.</h1>
+        <p class="result-sub" id="result-meta"></p>
+
+        <div class="result-actions">
+          <a id="download-btn" href="#" download class="btn btn-primary btn-lg">
+            ↓ Download Reel
+          </a>
+          <a href="/upload" class="btn btn-ghost btn-lg">+ Create Another</a>
+        </div>
+
+        <!-- Prompt used (collapsible) -->
+        <details class="prompt-details">
+          <summary>AI prompt used</summary>
+          <p id="prompt-text" class="prompt-text"></p>
+        </details>
+
+        <div class="result-formats" id="result-formats">
+          <p class="formats-label">Need another format?</p>
+          <p class="formats-note">Upgrade to Pro to get 9:16, 16:9, and 1:1 exports from the same generation.</p>
+        </div>
+      </div>
+
+    </div>
+
+  </div>
+
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const JOB_ID = '{{ job_id }}';
+
+const STATUS_STEP = { analyzing: 1, generating: 2, processing: 3, completed: 4 };
+const STATUS_COPY = {
+  queued:     ['Queued…',            'Waiting for an available generation slot'],
+  analyzing:  ['Analyzing audio…',   'Detecting BPM and energy peaks'],
+  generating: ['Writing scene…',     'Claude AI is designing your video'],
+  processing: ['Generating video…',  'Kling 3.0 Pro is building your reel (~90s)'],
+};
+
+function showState(id) {
+  ['result-loading','result-processing','result-failed','result-done'].forEach(s => {
+    document.getElementById(s).style.display = s === id ? (id === 'result-inner' ? 'grid' : 'flex') : 'none';
+  });
+}
+
+function setStep(status) {
+  const n = STATUS_STEP[status] || 0;
+  [1,2,3,4].forEach(i => {
+    const el = document.getElementById(`rs-${i}`);
+    if (!el) return;
+    el.classList.toggle('pstep-done',   i < n);
+    el.classList.toggle('pstep-active', i === n);
+  });
+  const [title, sub] = STATUS_COPY[status] || ['Working…', ''];
+  document.getElementById('proc-title').textContent = title;
+  document.getElementById('proc-sub').textContent   = sub;
+}
+
+async function loadJob() {
+  try {
+    const res  = await fetch(`/video/status/${JOB_ID}`);
+    const data = await res.json();
+
+    if (data.status === 'completed' && data.output_url) {
+      showState('result-done');
+      const video = document.getElementById('result-video');
+      video.src = data.output_url;
+
+      document.getElementById('download-btn').href = data.output_url;
+
+      // Aspect ratio on video element
+      const ar = data.aspect_ratio || '9:16';
+      const arClass = { '9:16': 'ar-portrait', '16:9': 'ar-landscape', '1:1': 'ar-square' }[ar] || 'ar-portrait';
+      document.getElementById('player-wrap').classList.add(arClass);
+
+      // Meta
+      const parts = [];
+      if (data.bpm)          parts.push(`${data.bpm} BPM`);
+      if (data.style)        parts.push(data.style.charAt(0).toUpperCase() + data.style.slice(1));
+      if (data.aspect_ratio) parts.push(data.aspect_ratio);
+      document.getElementById('result-meta').textContent = parts.join(' · ');
+
+      if (data.prompt) {
+        document.getElementById('prompt-text').textContent = data.prompt;
+      }
+
+      return; // done, no more polling
+    }
+
+    if (data.status === 'failed') {
+      showState('result-failed');
+      document.getElementById('failed-msg').textContent = data.error_message || 'An unexpected error occurred.';
+      return;
+    }
+
+    // Still in progress — show processing state and poll
+    showState('result-processing');
+    setStep(data.status);
+    setTimeout(loadJob, 8000);
+
+  } catch (ex) {
+    setTimeout(loadJob, 10000); // retry on network error
+  }
+}
+
+loadJob();
+</script>
+{% endblock %}

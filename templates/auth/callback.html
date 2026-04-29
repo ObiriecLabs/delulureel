@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Confirming… — DELULUREEL</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/static/css/main.css">
+  <style>
+    .callback-wrap {
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 1.5rem;
+      text-align: center;
+      padding: 2rem;
+    }
+    .logo { font-size: 1.6rem; font-weight: 800; background: var(--grad-main); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+    .spinner {
+      width: 48px; height: 48px;
+      border: 3px solid rgba(255,255,255,0.1);
+      border-top-color: #a78bfa;
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .msg { color: var(--text-muted); font-size: 0.95rem; }
+    .msg.error { color: #f87171; }
+  </style>
+</head>
+<body>
+  <div class="callback-wrap">
+    <div class="logo">DELULUREEL</div>
+    <div class="spinner" id="spinner"></div>
+    <p class="msg" id="msg">Confirming your email…</p>
+  </div>
+
+  <script>
+    (async function() {
+      const hash = window.location.hash.substring(1);
+      const params = new URLSearchParams(hash);
+      const accessToken  = params.get('access_token');
+      const refreshToken = params.get('refresh_token') || '';
+      const errorDesc    = params.get('error_description');
+
+      const msgEl = document.getElementById('msg');
+      const spinner = document.getElementById('spinner');
+
+      if (errorDesc) {
+        spinner.style.display = 'none';
+        msgEl.textContent = 'Confirmation failed: ' + decodeURIComponent(errorDesc.replace(/\+/g, ' '));
+        msgEl.classList.add('error');
+        setTimeout(() => window.location.href = '/auth/signup', 4000);
+        return;
+      }
+
+      if (!accessToken) {
+        // No fragment — maybe already confirmed, redirect to login
+        window.location.href = '/auth/login';
+        return;
+      }
+
+      try {
+        const res = await fetch('/auth/callback/complete', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ access_token: accessToken, refresh_token: refreshToken })
+        });
+        const data = await res.json();
+        if (data.redirect) {
+          msgEl.textContent = 'Email confirmed! Redirecting…';
+          window.location.href = data.redirect;
+        } else {
+          throw new Error(data.error || 'Unknown error');
+        }
+      } catch (err) {
+        spinner.style.display = 'none';
+        msgEl.textContent = 'Something went wrong: ' + err.message;
+        msgEl.classList.add('error');
+        setTimeout(() => window.location.href = '/auth/login', 4000);
+      }
+    })();
+  </script>
+</body>
+</html>

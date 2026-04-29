@@ -1,0 +1,52 @@
+services:
+  - type: web
+    name: delulureel
+    runtime: python
+    region: frankfurt
+    plan: starter
+    buildCommand: pip install -r requirements.txt
+    startCommand: gunicorn app_server:app --workers 2 --threads 4 --timeout 120
+    healthCheckPath: /health
+    envVars:
+      - key: FLASK_ENV
+        value: production
+      - key: PORT
+        value: 10000
+      - key: FAL_KEY
+        sync: false
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_ANON_KEY
+        sync: false
+      - key: SUPABASE_SERVICE_KEY
+        sync: false
+      - key: STRIPE_SECRET_KEY
+        sync: false
+      - key: STRIPE_WEBHOOK_SECRET
+        sync: false
+      - key: STRIPE_PRICE_CREATOR_MONTHLY
+        sync: false
+      - key: STRIPE_PRICE_CREATOR_ANNUAL
+        sync: false
+      - key: STRIPE_PRICE_PRO_MONTHLY
+        sync: false
+      - key: STRIPE_PRICE_PRO_ANNUAL
+        sync: false
+      - key: STRIPE_PRICE_STUDIO_MONTHLY
+        sync: false
+      - key: STRIPE_PRICE_STUDIO_ANNUAL
+        sync: false
+      - key: ANTHROPIC_API_KEY
+        sync: false
+      - key: RESEND_API_KEY
+        sync: false
+      - key: SECRET_KEY
+        sync: false
+      - key: FFMPEG_PATH
+        value: /usr/bin/ffmpeg
+      - key: DAILY_BUDGET_CAP_USD
+        value: "200"
+      - key: MAX_CONCURRENT_GLOBAL
+        value: "10"
+      - key: TRIAL_MAX_GENERATIONS
+        value: "3"
