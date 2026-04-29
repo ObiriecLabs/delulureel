@@ -25,10 +25,6 @@ _daily: dict      = {'date': str(date.today()), 'usd': 0.0}
 _lock             = threading.Lock()
 
 
-def _sb_anon():
-    return create_client(os.getenv('SUPABASE_URL', ''), os.getenv('SUPABASE_ANON_KEY', ''))
-
-
 def _sb_service():
     return create_client(os.getenv('SUPABASE_URL', ''), os.getenv('SUPABASE_SERVICE_KEY', ''))
 
@@ -69,7 +65,7 @@ def generate():
             return jsonify({'error': 'Service at capacity. Please try again in a few minutes.'}), 429
 
     # Fetch profile
-    sb = _sb_anon()
+    sb = _sb_service()
     try:
         prof = sb.table('profiles').select('*').eq('user_id', user_id).single().execute().data
     except Exception:
@@ -225,7 +221,7 @@ def _run_pipeline(job_id, user_id, photo_path, audio_path, style, aspect_ratio, 
 @require_auth_api
 def status(job_id):
     user_id = request.current_user.id
-    sb = _sb_anon()
+    sb = _sb_service()
     try:
         job = sb.table('reel_jobs').select(
             'id,status,output_url,error_message,bpm,prompt,created_at,style,aspect_ratio'
@@ -242,7 +238,7 @@ def status_stream(job_id):
 
     def _gen():
         import time
-        sb = _sb_anon()
+        sb = _sb_service()
         for _ in range(80):  # max ~13 min at 10s interval
             try:
                 job = sb.table('reel_jobs').select(
@@ -270,7 +266,7 @@ def status_stream(job_id):
 @require_auth_api
 def history():
     user_id = request.current_user.id
-    sb = _sb_anon()
+    sb = _sb_service()
     jobs = (
         sb.table('reel_jobs')
         .select('id,status,output_url,created_at,style,aspect_ratio,bpm')
@@ -288,7 +284,7 @@ def history():
 @require_auth_api
 def profile():
     user_id = request.current_user.id
-    sb = _sb_anon()
+    sb = _sb_service()
     try:
         prof = sb.table('profiles').select(
             'plan,status,reel_limit,reels_used_this_month,trial_reels_used'
