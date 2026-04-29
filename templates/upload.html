@@ -205,18 +205,13 @@
   line-height: 1;
 }
 
-/* Equalizer bars — step 1 only, shown when active */
+/* Equalizer bars (step 1) */
 .eq-icon {
   display: none;
   align-items: flex-end;
   gap: 2px;
   height: 16px;
 }
-.eq-emoji { display: inline; }
-
-.pstep-active[data-step="1"] .eq-icon  { display: inline-flex; }
-.pstep-active[data-step="1"] .eq-emoji { display: none; }
-
 .eq-bar {
   display: inline-block;
   width: 3px;
@@ -224,18 +219,17 @@
   background: linear-gradient(to top, #B45EFF, #FF3CAC);
   animation: eq-anim .48s ease-in-out infinite alternate;
 }
-.eq-bar:nth-child(1) { height: 5px;  animation-delay: 0s;    }
-.eq-bar:nth-child(2) { height: 14px; animation-delay: .12s;  }
-.eq-bar:nth-child(3) { height: 9px;  animation-delay: .06s;  }
-.eq-bar:nth-child(4) { height: 16px; animation-delay: .18s;  }
-.eq-bar:nth-child(5) { height: 7px;  animation-delay: .09s;  }
-
+.eq-bar:nth-child(1) { height: 5px;  animation-delay: 0s;   }
+.eq-bar:nth-child(2) { height: 14px; animation-delay: .12s; }
+.eq-bar:nth-child(3) { height: 9px;  animation-delay: .06s; }
+.eq-bar:nth-child(4) { height: 16px; animation-delay: .18s; }
+.eq-bar:nth-child(5) { height: 7px;  animation-delay: .09s; }
 @keyframes eq-anim {
-  0%   { transform: scaleY(.2);  opacity: .6; }
-  100% { transform: scaleY(1);   opacity: 1; }
+  0%   { transform: scaleY(.2); opacity: .6; }
+  100% { transform: scaleY(1);  opacity: 1;  }
 }
 
-/* Step 2 — sparkle burst: creative explosion */
+/* Step-icon animation classes — applied by JS on setStep() */
 @keyframes icon-sparkle {
   0%,100% { transform: scale(1)    rotate(0deg);   filter: brightness(1); }
   15%     { transform: scale(1.55) rotate(28deg);  filter: brightness(2.2) drop-shadow(0 0 8px rgba(255,235,80,.9)); }
@@ -243,23 +237,12 @@
   55%     { transform: scale(1.4)  rotate(22deg);  filter: brightness(1.8) drop-shadow(0 0 6px rgba(180,94,255,.8)); }
   75%     { transform: scale(.92)  rotate(-6deg);  filter: brightness(1); }
 }
-.pstep-active[data-step="2"] .step-icon {
-  animation: icon-sparkle 1.6s ease-in-out infinite;
-}
-
-/* Step 3 — clapperboard snap: precise, mechanical */
 @keyframes icon-film {
   0%,100% { transform: rotate(0deg)   scale(1); }
   6%      { transform: rotate(-13deg) scale(1.12); filter: drop-shadow(0 0 5px rgba(180,94,255,.55)); }
   12%     { transform: rotate(4deg)   scale(.96); }
   18%     { transform: rotate(0deg)   scale(1); }
-  /* long pause before next snap */
 }
-.pstep-active[data-step="3"] .step-icon {
-  animation: icon-film 2.4s ease-in-out infinite;
-}
-
-/* Step 4 — electric zap: rapid burst, then calm */
 @keyframes icon-zap {
   0%,100% { transform: scale(1);    filter: brightness(1); }
   7%      { transform: scale(1.65); filter: brightness(3.2) drop-shadow(0 0 12px rgba(255,107,43,1)); }
@@ -267,9 +250,40 @@
   21%     { transform: scale(1.3);  filter: brightness(2.1) drop-shadow(0 0 7px rgba(180,94,255,.9)); }
   28%     { transform: scale(1);    filter: brightness(1); }
 }
-.pstep-active[data-step="4"] .step-icon {
-  animation: icon-zap 1.2s ease-out infinite;
+/* Step icon animation classes — applied by JS */
+.si-anim-sparkle { animation: icon-sparkle 1.6s ease-in-out infinite !important; }
+.si-anim-film    { animation: icon-film    2.4s ease-in-out infinite !important; }
+.si-anim-zap     { animation: icon-zap     1.2s ease-out   infinite !important; }
+
+/* ── Big orb per-step animations ─────────────────────────────────────────── */
+/* Step 1 — audio: horizontal beat pulse (orb breathes like sound) */
+@keyframes orb-audio {
+  0%,100% { transform: scale(1) scaleX(1);    filter: brightness(1)   hue-rotate(0deg); }
+  50%     { transform: scale(1.18) scaleX(.88); filter: brightness(1.35) hue-rotate(-10deg) drop-shadow(0 0 28px rgba(180,94,255,.6)); }
 }
+/* Step 2 — scene: slow creative shimmer + hue drift */
+@keyframes orb-scene {
+  0%,100% { transform: scale(1);    filter: brightness(1)   hue-rotate(0deg); }
+  33%     { transform: scale(1.12); filter: brightness(1.5) hue-rotate(25deg)  drop-shadow(0 0 24px rgba(255,235,80,.5)); }
+  66%     { transform: scale(.94);  filter: brightness(.9)  hue-rotate(-15deg); }
+}
+/* Step 3 — video: film-reel spin */
+@keyframes orb-video {
+  0%   { transform: rotate(0deg)   scale(1); }
+  100% { transform: rotate(360deg) scale(1); }
+}
+/* Step 4 — assemble: electric zap bursts */
+@keyframes orb-zap {
+  0%,100% { transform: scale(1);    filter: brightness(1); }
+  8%      { transform: scale(1.35); filter: brightness(2.8) drop-shadow(0 0 36px rgba(255,107,43,.9)); }
+  16%     { transform: scale(.82);  filter: brightness(.65); }
+  24%     { transform: scale(1.18); filter: brightness(2)   drop-shadow(0 0 20px rgba(180,94,255,.8)); }
+  32%     { transform: scale(1);    filter: brightness(1); }
+}
+.orb-audio   { animation: orb-audio  .75s ease-in-out infinite !important; }
+.orb-scene   { animation: orb-scene  2.2s ease-in-out infinite !important; }
+.orb-video   { animation: orb-video  1.6s linear     infinite !important; }
+.orb-assemble { animation: orb-zap   1.3s ease-out   infinite !important; }
 
 /* ── Duration picker ─────────────────────────────────────────────────────── */
 .dur-grid {
@@ -610,22 +624,61 @@ document.getElementById('upload-form').addEventListener('submit', async e => {
 
 // ── Status polling ──
 const STATUS_COPY = {
-  queued:     ['Queued…',             'Waiting for a generation slot'],
-  analyzing:  ['Analyzing audio…',    'Detecting BPM, energy peaks, and structure'],
-  generating: ['Writing scene…',      'Claude AI is designing your video prompt'],
-  processing: ['Generating video…',   'AI is building your reel'],
-  completed:  ['Done! 🎉',       'Your reel is ready'],
-  failed:     ['Generation failed',        'Something went wrong'],
+  queued:     ['Queued…',           'Waiting for a generation slot'],
+  analyzing:  ['Analyzing audio…',  'Detecting BPM, energy peaks, and structure'],
+  generating: ['Writing scene…',    'Claude AI is designing your video prompt'],
+  processing: ['Generating video…', 'AI is building your reel'],
+  completed:  ['Done! 🎉',          'Your reel is ready'],
+  failed:     ['Generation failed', 'Something went wrong'],
 };
 
 const STATUS_STEP = { analyzing: 1, generating: 2, processing: 3, completed: 4 };
 
+// Per-step animation config
+const STEP_CONFIG = {
+  1: { iconAnim: null,             orbAnim: 'orb-audio' },
+  2: { iconAnim: 'si-anim-sparkle', orbAnim: 'orb-scene' },
+  3: { iconAnim: 'si-anim-film',    orbAnim: 'orb-video' },
+  4: { iconAnim: 'si-anim-zap',     orbAnim: 'orb-assemble' },
+};
+const ALL_ICON_ANIMS = ['si-anim-sparkle', 'si-anim-film', 'si-anim-zap'];
+const ALL_ORB_ANIMS  = ['orb-audio', 'orb-scene', 'orb-video', 'orb-assemble'];
+
 function setStep(status) {
   const stepNum = STATUS_STEP[status] || 0;
+  const cfg     = STEP_CONFIG[stepNum];
+
+  // ── Big orb ──
+  const orb = document.querySelector('.progress-anim');
+  if (orb) {
+    ALL_ORB_ANIMS.forEach(c => orb.classList.remove(c));
+    if (cfg) orb.classList.add(cfg.orbAnim);
+  }
+
+  // ── Step rows ──
   document.querySelectorAll('.pstep').forEach((el, i) => {
-    el.classList.toggle('pstep-done',   i + 1 < stepNum);
-    el.classList.toggle('pstep-active', i + 1 === stepNum);
+    const n      = i + 1;
+    const active = (n === stepNum);
+    el.classList.toggle('pstep-done',   n < stepNum);
+    el.classList.toggle('pstep-active', active);
+
+    // Icon animation classes
+    const icon = el.querySelector('.step-icon');
+    if (icon) {
+      ALL_ICON_ANIMS.forEach(c => icon.classList.remove(c));
+      if (active && cfg?.iconAnim) icon.classList.add(cfg.iconAnim);
+    }
+
+    // Eq bars (step 1 only)
+    const eqBars  = el.querySelector('.eq-icon');
+    const eqEmoji = el.querySelector('.eq-emoji');
+    if (eqBars && eqEmoji) {
+      eqBars.style.display  = (active && n === 1) ? 'inline-flex' : 'none';
+      eqEmoji.style.display = (active && n === 1) ? 'none'        : 'inline';
+    }
   });
+
+  // ── Title / sub ──
   const [title, sub] = STATUS_COPY[status] || ['Working…', ''];
   document.getElementById('progress-title').textContent = title;
   document.getElementById('progress-sub').textContent   = sub;
