@@ -11,7 +11,7 @@ def analyze_audio(file_path: str, max_duration: float = 30.0) -> Dict:
     """
     # Load audio — kaiser_fast resampler avoids heavy computation
     y, sr = librosa.load(file_path, mono=True, duration=max_duration,
-                         res_type='kaiser_fast', sr=22050)
+                         res_type='soxr_vhq', sr=22050)
     duration = float(librosa.get_duration(y=y, sr=sr))
 
     # BPM via tempo (lightweight, numba-free)
