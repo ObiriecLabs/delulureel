@@ -2,7 +2,7 @@
 {% block title %}Create Reel — DELULUREEL{% endblock %}
 
 {% block nav_extra %}
-<a href="/dashboard" class="nav-back">← Dashboard</a>
+<a href="/dashboard" class="nav-back">&larr; Dashboard</a>
 {% endblock %}
 
 {% block content %}
@@ -22,14 +22,14 @@
       <div class="drop-zone" id="photo-drop" data-field="photo">
         <input type="file" id="photo-input" name="photo" accept="image/*" hidden>
         <div class="drop-inner" id="photo-inner">
-          <div class="drop-icon">📸</div>
+          <div class="drop-icon">&#x1F4F8;</div>
           <div class="drop-title">Your Photo</div>
           <div class="drop-sub">Front-facing, clear background works best</div>
-          <div class="drop-formats">JPG, PNG, WEBP · max 10 MB</div>
+          <div class="drop-formats">JPG, PNG, WEBP &middot; max 10 MB</div>
         </div>
         <div class="drop-preview" id="photo-preview" style="display:none">
           <img id="photo-img" src="" alt="Photo preview">
-          <button type="button" class="drop-remove" onclick="clearFile('photo')">×</button>
+          <button type="button" class="drop-remove" onclick="clearFile('photo')">&times;</button>
         </div>
       </div>
 
@@ -37,16 +37,16 @@
       <div class="drop-zone" id="audio-drop" data-field="audio">
         <input type="file" id="audio-input" name="audio" accept="audio/*" hidden>
         <div class="drop-inner" id="audio-inner">
-          <div class="drop-icon">🎵</div>
+          <div class="drop-icon">&#x1F3B5;</div>
           <div class="drop-title">Your Track</div>
           <div class="drop-sub">AI will analyze BPM and sync the video</div>
-          <div class="drop-formats">MP3, WAV, M4A · max 50 MB</div>
+          <div class="drop-formats">MP3, WAV, M4A &middot; max 50 MB</div>
         </div>
         <div class="drop-preview" id="audio-preview" style="display:none">
-          <div class="audio-preview-icon">🎵</div>
+          <div class="audio-preview-icon">&#x1F3B5;</div>
           <div class="audio-preview-name" id="audio-name"></div>
           <audio id="audio-player" controls></audio>
-          <button type="button" class="drop-remove" onclick="clearFile('audio')">×</button>
+          <button type="button" class="drop-remove" onclick="clearFile('audio')">&times;</button>
         </div>
       </div>
 
@@ -58,11 +58,11 @@
       <div class="option-group">
         <label class="option-label">Style</label>
         <div class="style-grid" id="style-grid">
-          <button type="button" class="style-btn active" data-style="cinematic">🎬 Cinematic</button>
-          <button type="button" class="style-btn" data-style="neon">💜 Neon</button>
-          <button type="button" class="style-btn" data-style="dreamy">✨ Dreamy</button>
-          <button type="button" class="style-btn" data-style="street">🔥 Street</button>
-          <button type="button" class="style-btn" data-style="minimal">⬜ Minimal</button>
+          <button type="button" class="style-btn active" data-style="cinematic">&#x1F3AC; Cinematic</button>
+          <button type="button" class="style-btn" data-style="neon">&#x1F49C; Neon</button>
+          <button type="button" class="style-btn" data-style="dreamy">&#x2728; Dreamy</button>
+          <button type="button" class="style-btn" data-style="street">&#x1F525; Street</button>
+          <button type="button" class="style-btn" data-style="minimal">&#x2B1C; Minimal</button>
         </div>
         <input type="hidden" name="style" id="style-input" value="cinematic">
       </div>
@@ -72,22 +72,73 @@
         <div class="ar-grid">
           <label class="ar-btn">
             <input type="radio" name="aspect_ratio" value="9:16" checked>
-            <span class="ar-icon">📱</span>
+            <span class="ar-icon">&#x1F4F1;</span>
             <span class="ar-label">9:16</span>
             <span class="ar-sub">TikTok / Reels</span>
           </label>
           <label class="ar-btn">
             <input type="radio" name="aspect_ratio" value="16:9">
-            <span class="ar-icon">🖥</span>
+            <span class="ar-icon">&#x1F5A5;</span>
             <span class="ar-label">16:9</span>
             <span class="ar-sub">YouTube</span>
           </label>
           <label class="ar-btn">
             <input type="radio" name="aspect_ratio" value="1:1">
-            <span class="ar-icon">⬛</span>
+            <span class="ar-icon">&#x2B1B;</span>
             <span class="ar-label">1:1</span>
             <span class="ar-sub">Feed</span>
           </label>
+        </div>
+      </div>
+
+      <!-- Duration picker -->
+      <div class="option-group">
+        <label class="option-label">Video Duration</label>
+        <div class="dur-grid" id="dur-grid">
+
+          <button type="button" class="dur-btn" data-dur="5">
+            <span class="dur-time">5s</span>
+            <span class="dur-name">Quick clip</span>
+            <span class="dur-cost">&#x20AC;1.30</span>
+            <span class="dur-badge">Kling Pro</span>
+          </button>
+
+          <button type="button" class="dur-btn active" data-dur="10">
+            <span class="dur-time">10s</span>
+            <span class="dur-name">Short reel</span>
+            <span class="dur-cost">&#x20AC;2.59</span>
+            <span class="dur-badge">Kling Pro</span>
+          </button>
+
+          <button type="button" class="dur-btn" data-dur="30">
+            <span class="dur-time">30s</span>
+            <span class="dur-name">Extended &middot; 3 clips</span>
+            <span class="dur-cost">&#x20AC;4.85</span>
+            <span class="dur-badge">Kling Turbo</span>
+          </button>
+
+          <button type="button" class="dur-btn dur-btn-full" data-dur="full" id="dur-full-btn" disabled>
+            <span class="dur-time">Full Track</span>
+            <span class="dur-name" id="dur-full-name">Load audio to calculate</span>
+            <span class="dur-cost" id="dur-full-cost">&mdash;</span>
+            <span class="dur-badge">Kling Turbo</span>
+          </button>
+
+        </div>
+
+        <!-- Hidden fields sent with form -->
+        <input type="hidden" name="video_duration"    id="video-duration-input"    value="10">
+        <input type="hidden" name="audio_duration_sec" id="audio-duration-sec-input" value="0">
+
+        <!-- Live cost banner -->
+        <div class="cost-banner" id="cost-banner">
+          <div class="cost-left">
+            <span class="cost-label">Est. cost</span>
+            <span class="cost-value" id="cost-display">&#x20AC;2.59</span>
+          </div>
+          <div class="cost-right">
+            <span class="cost-detail" id="cost-detail">1 clip &middot; Kling 3.0 Pro &middot; included in your plan</span>
+          </div>
         </div>
       </div>
 
@@ -99,9 +150,9 @@
     <!-- Submit -->
     <div class="upload-actions">
       <button type="submit" class="btn btn-primary btn-lg" id="generate-btn" disabled>
-        Generate Reel →
+        Generate Reel &rarr;
       </button>
-      <p class="upload-note">~2 minutes · Your plan includes this generation</p>
+      <p class="upload-note" id="upload-note">~2 min &middot; Your plan includes this generation</p>
     </div>
 
   </form>
@@ -110,18 +161,135 @@
   <div class="progress-overlay" id="progress-overlay" style="display:none">
     <div class="progress-card">
       <div class="progress-anim"></div>
-      <h2 class="progress-title" id="progress-title">Analyzing your track…</h2>
+      <h2 class="progress-title" id="progress-title">Analyzing your track&hellip;</h2>
       <p class="progress-sub" id="progress-sub">Detecting BPM and energy peaks</p>
       <div class="progress-steps">
-        <div class="pstep" id="pstep-1" data-status="analyzing">🎵 Analyzing audio</div>
-        <div class="pstep" id="pstep-2" data-status="generating">✨ Writing scene prompt</div>
-        <div class="pstep" id="pstep-3" data-status="processing">🎬 Generating video (Kling AI)</div>
-        <div class="pstep" id="pstep-4" data-status="completed">⚡ Assembling final reel</div>
+        <div class="pstep" id="pstep-1" data-status="analyzing">&#x1F3B5; Analyzing audio</div>
+        <div class="pstep" id="pstep-2" data-status="generating">&#x2728; Writing scene prompt</div>
+        <div class="pstep" id="pstep-3" data-status="processing" id="pstep-video">&#x1F3AC; <span id="pstep-video-label">Generating video (Kling AI)</span></div>
+        <div class="pstep" id="pstep-4" data-status="completed">&#x26A1; Assembling final reel</div>
       </div>
     </div>
   </div>
 
 </div>
+
+<style>
+/* ── Duration picker ─────────────────────────────────────────────────────── */
+.dur-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.dur-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 14px 10px 12px;
+  border-radius: 14px;
+  border: 1.5px solid rgba(255,255,255,0.08);
+  background: rgba(255,255,255,0.03);
+  cursor: pointer;
+  transition: border-color .2s, background .2s, transform .1s;
+  text-align: center;
+  color: inherit;
+}
+.dur-btn:hover:not(:disabled) {
+  border-color: rgba(180,94,255,0.5);
+  background: rgba(180,94,255,0.07);
+  transform: translateY(-1px);
+}
+.dur-btn.active {
+  border-color: #B45EFF;
+  background: rgba(180,94,255,0.12);
+}
+.dur-btn:disabled {
+  opacity: .45;
+  cursor: not-allowed;
+}
+.dur-btn.enabled {
+  opacity: 1;
+  cursor: pointer;
+}
+
+.dur-time {
+  font-size: 17px;
+  font-weight: 800;
+  color: #fff;
+  letter-spacing: -.3px;
+}
+.dur-name {
+  font-size: 11px;
+  color: #a090c0;
+  line-height: 1.3;
+}
+.dur-cost {
+  font-size: 15px;
+  font-weight: 700;
+  background: linear-gradient(135deg,#B45EFF,#FF3CAC,#FF6B2B);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  margin-top: 2px;
+}
+.dur-badge {
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: .4px;
+  text-transform: uppercase;
+  color: #6b5a8a;
+  margin-top: 2px;
+}
+
+/* ── Cost banner ─────────────────────────────────────────────────────────── */
+.cost-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 12px 18px;
+  border-radius: 12px;
+  background: rgba(180,94,255,0.08);
+  border: 1px solid rgba(180,94,255,0.2);
+  margin-top: 4px;
+}
+.cost-left {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  flex-shrink: 0;
+}
+.cost-label {
+  font-size: 12px;
+  color: #8a6fc0;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: .4px;
+}
+.cost-value {
+  font-size: 22px;
+  font-weight: 800;
+  background: linear-gradient(135deg,#B45EFF,#FF3CAC,#FF6B2B);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+.cost-detail {
+  font-size: 12px;
+  color: #8a6fc0;
+  text-align: right;
+  line-height: 1.5;
+}
+
+@media (max-width: 580px) {
+  .dur-grid { grid-template-columns: repeat(2, 1fr); }
+  .cost-banner { flex-direction: column; align-items: flex-start; gap: 4px; }
+  .cost-detail { text-align: left; }
+}
+</style>
 {% endblock %}
 
 {% block scripts %}
@@ -150,6 +318,7 @@
 });
 
 const _files = {};
+let _audioDurSec = 0;
 
 function setFile(type, file) {
   _files[type] = file;
@@ -164,7 +333,15 @@ function setFile(type, file) {
     document.getElementById('photo-img').src = URL.createObjectURL(file);
   } else {
     document.getElementById('audio-name').textContent  = file.name;
-    document.getElementById('audio-player').src        = URL.createObjectURL(file);
+    const player = document.getElementById('audio-player');
+    player.src = URL.createObjectURL(file);
+    // Detect duration once metadata loads
+    player.addEventListener('loadedmetadata', () => {
+      _audioDurSec = Math.round(player.duration) || 0;
+      document.getElementById('audio-duration-sec-input').value = _audioDurSec;
+      updateFullTrackBtn();
+      updateCostBanner();
+    }, { once: true });
   }
 
   checkReady();
@@ -172,6 +349,20 @@ function setFile(type, file) {
 
 function clearFile(type) {
   delete _files[type];
+  if (type === 'audio') {
+    _audioDurSec = 0;
+    document.getElementById('audio-duration-sec-input').value = '0';
+    const fb = document.getElementById('dur-full-btn');
+    fb.disabled = true;
+    fb.classList.remove('enabled');
+    document.getElementById('dur-full-name').textContent = 'Load audio to calculate';
+    document.getElementById('dur-full-cost').textContent = '—';
+    // If full was selected, fall back to 10s
+    if (document.getElementById('video-duration-input').value === 'full') {
+      selectDur('10');
+    }
+    updateCostBanner();
+  }
   document.getElementById(`${type}-input`).value            = '';
   document.getElementById(`${type}-inner`).style.display    = 'flex';
   document.getElementById(`${type}-preview`).style.display  = 'none';
@@ -181,6 +372,83 @@ function clearFile(type) {
 function checkReady() {
   document.getElementById('generate-btn').disabled = !(_files.photo && _files.audio);
 }
+
+// ── Cost constants (margin 2.5x · USD→EUR 0.925) ──
+const KLING_PER_SEC_EUR = 0.112 * 2.5 * 0.925;  // ≈ 0.259 €/sec
+const TURBO_PER_SEC_EUR = 0.070 * 2.5 * 0.925;  // ≈ 0.162 €/sec
+const CLIP_LEN          = 10;                     // secs per Turbo clip
+const MAX_AUDIO_SEC     = 600;
+
+function fmtDur(s) {
+  const m = Math.floor(s / 60);
+  const r = Math.floor(s % 60);
+  return m > 0 ? `${m}:${String(r).padStart(2,'0')}` : `${r}s`;
+}
+
+function calcCost(dur) {
+  if (dur === '5')  return { eur: (5  * KLING_PER_SEC_EUR).toFixed(2), clips: 1,  detail: '1 clip · Kling 3.0 Pro · included in your plan' };
+  if (dur === '10') return { eur: (10 * KLING_PER_SEC_EUR).toFixed(2), clips: 1,  detail: '1 clip · Kling 3.0 Pro · included in your plan' };
+  if (dur === '30') {
+    const n   = Math.ceil(30 / CLIP_LEN);
+    return { eur: (30 * TURBO_PER_SEC_EUR).toFixed(2), clips: n, detail: `${n} clips stitched · Kling 2.5 Turbo · included in your plan` };
+  }
+  if (dur === 'full') {
+    if (!_audioDurSec) return { eur: '—', clips: 0, detail: 'Load audio to calculate' };
+    const secs = Math.min(_audioDurSec, MAX_AUDIO_SEC);
+    const n    = Math.ceil(secs / CLIP_LEN);
+    return {
+      eur:    (secs * TURBO_PER_SEC_EUR).toFixed(2),
+      clips:  n,
+      detail: `${n} clips · ${fmtDur(secs)} · Kling 2.5 Turbo · included in your plan`,
+    };
+  }
+  return { eur: '—', clips: 0, detail: '' };
+}
+
+function updateFullTrackBtn() {
+  const fb   = document.getElementById('dur-full-btn');
+  const name = document.getElementById('dur-full-name');
+  const cost = document.getElementById('dur-full-cost');
+  if (_audioDurSec > 0) {
+    const secs = Math.min(_audioDurSec, MAX_AUDIO_SEC);
+    const n    = Math.ceil(secs / CLIP_LEN);
+    name.textContent = `${fmtDur(secs)} · ${n} clips`;
+    cost.textContent = `€${(secs * TURBO_PER_SEC_EUR).toFixed(2)}`;
+    fb.disabled = false;
+    fb.classList.add('enabled');
+  }
+}
+
+function updateCostBanner() {
+  const dur   = document.getElementById('video-duration-input').value;
+  const { eur, detail } = calcCost(dur);
+  document.getElementById('cost-display').textContent = eur !== '—' ? `€${eur}` : '—';
+  document.getElementById('cost-detail').textContent  = detail;
+  // Update time estimate note
+  const dur10 = dur === '5' ? '~90s' : dur === '10' ? '~2 min' : dur === '30' ? '~6 min' : 'may take 20–40+ min';
+  document.getElementById('upload-note').textContent = `${dur10} · Your plan includes this generation`;
+}
+
+// ── Duration selector ──
+let _selectedDur = '10';
+
+function selectDur(dur) {
+  _selectedDur = dur;
+  document.querySelectorAll('.dur-btn').forEach(b => b.classList.remove('active'));
+  const btn = document.querySelector(`.dur-btn[data-dur="${dur}"]`);
+  if (btn) btn.classList.add('active');
+  document.getElementById('video-duration-input').value = dur;
+  updateCostBanner();
+}
+
+document.getElementById('dur-grid').addEventListener('click', e => {
+  const btn = e.target.closest('.dur-btn');
+  if (!btn || btn.disabled) return;
+  selectDur(btn.dataset.dur);
+});
+
+// Initial banner
+updateCostBanner();
 
 // ── Style selector ──
 document.getElementById('style-grid').addEventListener('click', e => {
@@ -209,18 +477,31 @@ document.getElementById('upload-form').addEventListener('submit', async e => {
   btn.disabled = true;
   btn.textContent = 'Starting…';
 
+  const dur = document.getElementById('video-duration-input').value;
+  const { clips } = calcCost(dur);
+
+  // Update step 3 label for multi-clip jobs
+  if (clips > 1) {
+    document.getElementById('pstep-video-label').textContent =
+      `Generating ${clips} clips (Kling 2.5 Turbo)`;
+  } else {
+    document.getElementById('pstep-video-label').textContent =
+      'Generating video (Kling 3.0 Pro)';
+  }
+
   const fd = new FormData();
-  fd.append('photo', _files.photo);
-  fd.append('audio', _files.audio);
-  fd.append('style', document.getElementById('style-input').value);
-  fd.append('aspect_ratio', document.querySelector('[name="aspect_ratio"]:checked').value);
+  fd.append('photo',             _files.photo);
+  fd.append('audio',             _files.audio);
+  fd.append('style',             document.getElementById('style-input').value);
+  fd.append('aspect_ratio',      document.querySelector('[name="aspect_ratio"]:checked').value);
+  fd.append('video_duration',    document.getElementById('video-duration-input').value);
+  fd.append('audio_duration_sec', document.getElementById('audio-duration-sec-input').value);
 
   try {
     const res  = await fetch('/video/generate', { method: 'POST', body: fd });
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || 'Generation failed');
 
-    // Show progress overlay and start polling
     document.getElementById('progress-overlay').style.display = 'flex';
     pollStatus(data.job_id);
   } catch (ex) {
@@ -233,12 +514,12 @@ document.getElementById('upload-form').addEventListener('submit', async e => {
 
 // ── Status polling ──
 const STATUS_COPY = {
-  queued:     ['Queued…',            'Waiting for a generation slot'],
-  analyzing:  ['Analyzing audio…',   'Detecting BPM, energy peaks, and structure'],
-  generating: ['Writing scene…',     'Claude AI is designing your video prompt'],
-  processing: ['Generating video…',  'Kling 3.0 Pro is building your reel (~90s)'],
-  completed:  ['Done! 🎉',           'Your reel is ready'],
-  failed:     ['Generation failed',  'Something went wrong'],
+  queued:     ['Queued…',             'Waiting for a generation slot'],
+  analyzing:  ['Analyzing audio…',    'Detecting BPM, energy peaks, and structure'],
+  generating: ['Writing scene…',      'Claude AI is designing your video prompt'],
+  processing: ['Generating video…',   'AI is building your reel'],
+  completed:  ['Done! 🎉',       'Your reel is ready'],
+  failed:     ['Generation failed',        'Something went wrong'],
 };
 
 const STATUS_STEP = { analyzing: 1, generating: 2, processing: 3, completed: 4 };
@@ -246,8 +527,8 @@ const STATUS_STEP = { analyzing: 1, generating: 2, processing: 3, completed: 4 }
 function setStep(status) {
   const stepNum = STATUS_STEP[status] || 0;
   document.querySelectorAll('.pstep').forEach((el, i) => {
-    el.classList.toggle('pstep-done',    i + 1 < stepNum);
-    el.classList.toggle('pstep-active',  i + 1 === stepNum);
+    el.classList.toggle('pstep-done',   i + 1 < stepNum);
+    el.classList.toggle('pstep-active', i + 1 === stepNum);
   });
   const [title, sub] = STATUS_COPY[status] || ['Working…', ''];
   document.getElementById('progress-title').textContent = title;

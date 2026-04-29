@@ -1,11 +1,16 @@
 import os
 import time
-from typing import Dict, Optional
+import math
+from typing import Dict, List
+
 import fal_client
 
-# Primary: Kling 3.0 Pro — $0.112/sec audio OFF
+
+# ── Endpoints ─────────────────────────────────────────────────────────────────
+
+# Single-clip: highest quality
 ENDPOINT_PRO   = 'fal-ai/kling-video/v3/pro/image-to-video'
-# Fallback: Kling 2.5 Turbo — $0.070/sec
+# Multi-clip: cost-optimised (~38% cheaper, same API)
 ENDPOINT_TURBO = 'fal-ai/kling-video/v2.5/turbo/image-to-video'
 
 COST_PER_SEC = {
@@ -13,27 +18,59 @@ COST_PER_SEC = {
     ENDPOINT_TURBO: 0.070,
 }
 
-POLL_INTERVAL = 8    # seconds between status checks
-MAX_WAIT      = 600  # 10 minutes hard limit
+# ── Pricing ───────────────────────────────────────────────────────────────────
 
+MARGIN_MULTIPLIER = float(os.getenv('COST_MARGIN_MULTIPLIER', '2.5'))
+USD_TO_EUR        = 0.925   # update as needed
+
+# ── Clip settings ─────────────────────────────────────────────────────────────
+
+CLIP_LEN_MULTI = 10    # seconds per Kling Turbo clip in multi-clip mode
+MAX_AUDIO_SEC  = 600   # cap full-track at 10 min
+
+# ── Polling ───────────────────────────────────────────────────────────────────
+
+POLL_INTERVAL   = 8      # seconds between status checks
+MAX_WAIT_SINGLE = 600    # 10 min for a single clip
+MAX_WAIT_MULTI  = 2700   # 45 min for multi-clip (full track)
+
+
+# ── Cost helpers ──────────────────────────────────────────────────────────────
 
 def estimate_cost(duration_seconds: int, endpoint: str = ENDPOINT_PRO) -> float:
+    """Raw API cost in USD (for internal tracking / budget cap)."""
     return round(duration_seconds * COST_PER_SEC.get(endpoint, 0.112), 4)
 
+
+def estimate_user_cost_eur(duration_seconds: int, endpoint: str = ENDPOINT_PRO) -> float:
+    """User-facing cost in EUR including margin."""
+    raw = duration_seconds * COST_PER_SEC.get(endpoint, 0.112)
+    return round(raw * MARGIN_MULTIPLIER * USD_TO_EUR, 2)
+
+
+def n_clips_for_duration(target_sec: int, clip_len: int = CLIP_LEN_MULTI) -> int:
+    """Number of clips needed to cover target_sec seconds."""
+    return max(1, math.ceil(target_sec / clip_len))
+
+
+def endpoint_for_duration(target_sec: int) -> str:
+    """Choose model based on target duration."""
+    return ENDPOINT_PRO if target_sec <= 10 else ENDPOINT_TURBO
+
+
+# ── Submission ────────────────────────────────────────────────────────────────
 
 def submit_reel(
     image_url: str,
     prompt: str,
-    duration: int = 5,
+    duration: int = 10,
     aspect_ratio: str = '9:16',
-    use_turbo: bool = False,
+    endpoint: str = ENDPOINT_PRO,
 ) -> Dict:
     """
-    Submit a Kling generation job to fal.ai.
+    Submit a single clip to fal.ai.
     Returns {'request_id', 'endpoint', 'estimated_cost'}.
     """
-    endpoint = ENDPOINT_TURBO if use_turbo else ENDPOINT_PRO
-
     handle = fal_client.submit(
         endpoint,
         arguments={
@@ -43,7 +80,6 @@ def submit_reel(
             'aspect_ratio': aspect_ratio,
         },
     )
-
     return {
         'request_id':     handle.request_id,
         'endpoint':       endpoint,
@@ -51,12 +87,47 @@ def submit_reel(
     }
 
 
-def poll_until_done(request_id: str, endpoint: str = ENDPOINT_PRO) -> str:
+def submit_multi_reel(
+    image_url: str,
+    prompt: str,
+    n_clips: int,
+    clip_len: int = CLIP_LEN_MULTI,
+    aspect_ratio: str = '9:16',
+) -> List[Dict]:
+    """
+    Submit N Kling Turbo clips in parallel (all enqueued before polling begins).
+    Returns list of {'request_id', 'endpoint'}.
+    """
+    handles = []
+    for _ in range(n_clips):
+        h = fal_client.submit(
+            ENDPOINT_TURBO,
+            arguments={
+                'prompt':       prompt,
+                'image_url':    image_url,
+                'duration':     str(clip_len),
+                'aspect_ratio': aspect_ratio,
+            },
+        )
+        handles.append({
+            'request_id': h.request_id,
+            'endpoint':   ENDPOINT_TURBO,
+        })
+    return handles
+
+
+# ── Polling ───────────────────────────────────────────────────────────────────
+
+def poll_until_done(
+    request_id: str,
+    endpoint: str = ENDPOINT_PRO,
+    max_wait: int = MAX_WAIT_SINGLE,
+) -> str:
     """
     Blocks until the fal.ai job is COMPLETED or raises on FAILED / timeout.
     Returns the video URL.
     """
-    deadline = time.time() + MAX_WAIT
+    deadline = time.time() + max_wait
 
     while time.time() < deadline:
         status = fal_client.status(endpoint, request_id, with_logs=False)
@@ -74,4 +145,4 @@ def poll_until_done(request_id: str, endpoint: str = ENDPOINT_PRO) -> str:
 
         time.sleep(POLL_INTERVAL)
 
-    raise TimeoutError(f'fal.ai job {request_id} did not complete within {MAX_WAIT}s')
+    raise TimeoutError(f'fal.ai job {request_id} did not complete within {max_wait}s')

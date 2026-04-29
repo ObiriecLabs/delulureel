@@ -43,7 +43,6 @@ def _record_spend(cost: float):
         _daily['date'] = today
         _daily['usd']  = 0.0
     _daily['usd'] = round(_daily['usd'] + cost, 4)
-    # Also persist to DB for multi-instance accuracy
     try:
         _sb_service().rpc('add_daily_spend', {'p_usd': cost}).execute()
     except Exception:
@@ -90,15 +89,36 @@ def generate():
     style        = (request.form.get('style', 'cinematic') or 'cinematic').lower()
     aspect_ratio = request.form.get('aspect_ratio', '9:16') or '9:16'
 
-    # Cost estimate (5-second Kling clip)
-    from core.video_generator import estimate_cost, ENDPOINT_PRO
-    est_cost = estimate_cost(5, ENDPOINT_PRO)
+    # ── Duration / clip count ────────────────────────────────────────────────
+    from core.video_generator import (
+        estimate_cost, endpoint_for_duration,
+        n_clips_for_duration, CLIP_LEN_MULTI, MAX_AUDIO_SEC,
+        ENDPOINT_PRO, ENDPOINT_TURBO,
+    )
+
+    video_duration = (request.form.get('video_duration', '10') or '10').strip()
+
+    try:
+        audio_dur_sec = max(0.0, float(request.form.get('audio_duration_sec', '0') or '0'))
+    except ValueError:
+        audio_dur_sec = 0.0
+
+    if video_duration == 'full':
+        target_secs = min(int(audio_dur_sec), MAX_AUDIO_SEC) if audio_dur_sec > 0 else 10
+    elif video_duration in ('5', '10', '30'):
+        target_secs = int(video_duration)
+    else:
+        target_secs = 10
+
+    endpoint = endpoint_for_duration(target_secs)
+    n_clips  = n_clips_for_duration(target_secs) if target_secs > 10 else 1
+    est_cost = estimate_cost(target_secs, endpoint)
 
     if not _budget_ok(est_cost):
         return jsonify({'error': 'Service temporarily unavailable (daily budget reached).'}), 503
 
     # Save uploads to temp dir
-    tmp_dir = tempfile.mkdtemp(prefix='dlr_')
+    tmp_dir   = tempfile.mkdtemp(prefix='dlr_')
     ext_photo = (photo.filename or 'photo.jpg').rsplit('.', 1)[-1].lower() or 'jpg'
     ext_audio = (audio.filename or 'audio.mp3').rsplit('.', 1)[-1].lower() or 'mp3'
     photo_path = os.path.join(tmp_dir, f'photo.{ext_photo}')
@@ -110,11 +130,11 @@ def generate():
 
     # Persist job
     _sb_service().table('reel_jobs').insert({
-        'id':            job_id,
-        'user_id':       user_id,
-        'status':        'queued',
-        'style':         style,
-        'aspect_ratio':  aspect_ratio,
+        'id':             job_id,
+        'user_id':        user_id,
+        'status':         'queued',
+        'style':          style,
+        'aspect_ratio':   aspect_ratio,
         'estimated_cost': est_cost,
     }).execute()
 
@@ -125,22 +145,38 @@ def generate():
 
     thread = threading.Thread(
         target=_run_pipeline,
-        args=(job_id, user_id, photo_path, audio_path, style, aspect_ratio, est_cost, tmp_dir),
+        args=(job_id, user_id, photo_path, audio_path, style, aspect_ratio,
+              est_cost, tmp_dir, target_secs, n_clips),
         daemon=True,
     )
     thread.start()
 
-    return jsonify({'job_id': job_id, 'status': 'queued'})
+    return jsonify({
+        'job_id':       job_id,
+        'status':       'queued',
+        'target_secs':  target_secs,
+        'n_clips':      n_clips,
+    })
 
 
 # ── Background pipeline ───────────────────────────────────────────────────────
 
-def _run_pipeline(job_id, user_id, photo_path, audio_path, style, aspect_ratio, est_cost, tmp_dir):
+def _run_pipeline(job_id, user_id, photo_path, audio_path, style, aspect_ratio,
+                  est_cost, tmp_dir, target_secs=10, n_clips=1):
     global _global_active
     sb = _sb_service()
 
     def update(status, **kw):
         sb.table('reel_jobs').update({'status': status, **kw}).eq('id', job_id).execute()
+
+    def download_video(url: str, filename: str) -> str:
+        path = os.path.join(tmp_dir, filename)
+        resp = _requests.get(url, stream=True, timeout=180)
+        resp.raise_for_status()
+        with open(path, 'wb') as fh:
+            for chunk in resp.iter_content(chunk_size=65536):
+                fh.write(chunk)
+        return path
 
     try:
         # 1 — Audio analysis
@@ -160,33 +196,54 @@ def _run_pipeline(job_id, user_id, photo_path, audio_path, style, aspect_ratio, 
                 storage_key, fh.read(),
                 file_options={'content-type': 'image/jpeg'},
             )
-        signed     = sb.storage.from_('reel-uploads').create_signed_url(storage_key, 3600)
-        photo_url  = signed.get('signedURL') or signed.get('signed_url') or signed.get('data', {}).get('signedUrl', '')
+        signed    = sb.storage.from_('reel-uploads').create_signed_url(storage_key, 3600)
+        photo_url = signed.get('signedURL') or signed.get('signed_url') or signed.get('data', {}).get('signedUrl', '')
 
-        # 4 — Submit to fal.ai (Kling 3.0 Pro)
-        update('processing', fal_request_id='pending', prompt=prompt)
-        from core.video_generator import submit_reel, poll_until_done
-        fal = submit_reel(photo_url, prompt, duration=5, aspect_ratio=aspect_ratio)
-        update('processing', fal_request_id=fal['request_id'], fal_endpoint=fal['endpoint'])
+        # 4 — Submit to fal.ai
+        from core.video_generator import (
+            submit_reel, submit_multi_reel, poll_until_done,
+            ENDPOINT_PRO, ENDPOINT_TURBO,
+            MAX_WAIT_SINGLE, MAX_WAIT_MULTI,
+        )
 
-        # 5 — Poll fal.ai until done
-        raw_video_url = poll_until_done(fal['request_id'], fal['endpoint'])
-
-        # 6 — Download raw video
-        raw_path = os.path.join(tmp_dir, 'raw.mp4')
-        resp = _requests.get(raw_video_url, stream=True, timeout=180)
-        resp.raise_for_status()
-        with open(raw_path, 'wb') as fh:
-            for chunk in resp.iter_content(chunk_size=65536):
-                fh.write(chunk)
-
-        # 7 — Assemble (FFmpeg: raw video + original audio)
         ar_slug    = aspect_ratio.replace(':', 'x')
         final_path = os.path.join(tmp_dir, f'reel_{ar_slug}.mp4')
-        from core.assembler import assemble_reel
-        assemble_reel([raw_path], audio_path, final_path, aspect_ratio)
 
-        # 8 — Upload final reel
+        if n_clips == 1:
+            # ── Single clip (Kling 3.0 Pro) ───────────────────────────────────
+            clip_len = min(target_secs, 10)
+            update('processing', fal_request_id='pending', prompt=prompt)
+            fal = submit_reel(
+                photo_url, prompt,
+                duration=clip_len, aspect_ratio=aspect_ratio, endpoint=ENDPOINT_PRO,
+            )
+            update('processing', fal_request_id=fal['request_id'], fal_endpoint=fal['endpoint'])
+            raw_url  = poll_until_done(fal['request_id'], fal['endpoint'], MAX_WAIT_SINGLE)
+            raw_path = download_video(raw_url, 'raw_0.mp4')
+            video_clips = [raw_path]
+
+        else:
+            # ── Multi-clip (Kling 2.5 Turbo, parallel submit) ─────────────────
+            update('processing',
+                   fal_request_id=f'multi:{n_clips}',
+                   fal_endpoint=ENDPOINT_TURBO,
+                   prompt=prompt)
+            handles = submit_multi_reel(
+                photo_url, prompt, n_clips,
+                aspect_ratio=aspect_ratio,
+            )
+            video_clips = []
+            for i, h in enumerate(handles):
+                url  = poll_until_done(h['request_id'], h['endpoint'], MAX_WAIT_MULTI)
+                path = download_video(url, f'clip_{i}.mp4')
+                video_clips.append(path)
+
+        # 5 — Assemble (FFmpeg: clips + original audio, trimmed to target_secs)
+        from core.assembler import assemble_reel
+        assemble_reel(video_clips, audio_path, final_path, aspect_ratio,
+                      max_duration=float(target_secs))
+
+        # 6 — Upload final reel
         output_key = f'jobs/{job_id}/reel_{ar_slug}.mp4'
         with open(final_path, 'rb') as fh:
             sb.storage.from_('reel-outputs').upload(
@@ -195,11 +252,11 @@ def _run_pipeline(job_id, user_id, photo_path, audio_path, style, aspect_ratio, 
             )
         final_url = sb.storage.from_('reel-outputs').get_public_url(output_key)
 
-        # 9 — Mark completed
+        # 7 — Mark completed
         _record_spend(est_cost)
         update('completed', output_url=final_url, actual_cost=est_cost)
 
-        # 10 — Increment reel counter
+        # 8 — Increment reel counter
         sb.rpc('increment_reel_count', {'p_user_id': user_id}).execute()
 
     except Exception as exc:
