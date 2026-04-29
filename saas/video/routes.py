@@ -191,33 +191,23 @@ def _run_pipeline(job_id, user_id, photo_path, audio_path, style, aspect_ratio,
         from core.scene_director import generate_scene_prompt
         prompt = generate_scene_prompt(analysis, style)
 
-        # 3 — Upload photo to Supabase Storage (private bucket → signed URL for fal.ai)
-        storage_key = f'jobs/{job_id}/source.jpg'
+        # 3 — Upload photo directly to fal.ai CDN (guarantees accessibility from fal.ai workers)
+        import fal_client as _fal
         with open(photo_path, 'rb') as fh:
-            sb.storage.from_('reel-uploads').upload(
-                storage_key, fh.read(),
-                file_options={'content-type': 'image/jpeg'},
-            )
-        signed = sb.storage.from_('reel-uploads').create_signed_url(storage_key, 3600)
-        # Handle all Supabase Python SDK response formats (varies by version)
-        if isinstance(signed, dict):
-            photo_url = (
-                signed.get('signedURL') or
-                signed.get('signedUrl') or
-                signed.get('signed_url') or
-                (signed.get('data') or {}).get('signedURL') or
-                (signed.get('data') or {}).get('signedUrl') or
-                ''
-            )
-        else:
-            photo_url = getattr(signed, 'signed_url', '') or getattr(signed, 'signedUrl', '') or ''
-
+            photo_url = _fal.upload(fh.read(), 'image/jpeg')
         if not photo_url:
-            # Fallback: public URL (works if bucket is public)
-            photo_url = sb.storage.from_('reel-uploads').get_public_url(storage_key)
+            raise RuntimeError('fal_client.upload() returned empty URL')
 
-        if not photo_url:
-            raise RuntimeError('Could not obtain a URL for the uploaded photo')
+        # Archive photo to Supabase Storage for our records (fire-and-forget)
+        try:
+            storage_key = f'jobs/{job_id}/source.jpg'
+            with open(photo_path, 'rb') as fh:
+                sb.storage.from_('reel-uploads').upload(
+                    storage_key, fh.read(),
+                    file_options={'content-type': 'image/jpeg'},
+                )
+        except Exception:
+            pass  # non-critical — generation continues regardless
 
         # 4 — Submit to fal.ai
         from core.video_generator import (
