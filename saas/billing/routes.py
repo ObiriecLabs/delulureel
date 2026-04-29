@@ -129,24 +129,6 @@ def webhook():
     return jsonify({'status': 'ok'})
 
 
-@billing_bp.route('/debug-sb')
-def debug_sb():
-    """Temporary debug endpoint — remove after diagnosis."""
-    try:
-        sb = _sb_service()
-        result = sb.table('profiles').upsert({
-            'user_id':               'fcfeabef-c296-4e92-b90d-074197f5c51c',
-            'plan':                  'pro',
-            'status':                'trial',
-            'stripe_subscription_id':'sub_1TRcnsLXmB9msHgIu83GwYzk',
-            'stripe_customer_id':    'cus_UQTlqGq1rQQeZT',
-            'reel_limit':            15,
-            'reels_used_this_month': 0,
-            'trial_reels_used':      0,
-        }).execute()
-        return jsonify({'status': 'ok', 'data': result.data})
-    except Exception as e:
-        return jsonify({'status': 'error', 'detail': str(e), 'trace': traceback.format_exc()}), 500
 
 
 def _on_subscription_created(sub):
