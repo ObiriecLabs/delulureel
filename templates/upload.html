@@ -100,28 +100,24 @@
             <span class="dur-time">5s</span>
             <span class="dur-name">Quick clip</span>
             <span class="dur-cost">&#x20AC;1.30</span>
-            <span class="dur-badge">Kling Pro</span>
           </button>
 
           <button type="button" class="dur-btn active" data-dur="10">
             <span class="dur-time">10s</span>
             <span class="dur-name">Short reel</span>
             <span class="dur-cost">&#x20AC;2.59</span>
-            <span class="dur-badge">Kling Pro</span>
           </button>
 
           <button type="button" class="dur-btn" data-dur="30">
             <span class="dur-time">30s</span>
             <span class="dur-name">Extended &middot; 3 clips</span>
             <span class="dur-cost">&#x20AC;4.85</span>
-            <span class="dur-badge">Kling Turbo</span>
           </button>
 
           <button type="button" class="dur-btn dur-btn-full" data-dur="full" id="dur-full-btn" disabled>
             <span class="dur-time">Full Track</span>
             <span class="dur-name" id="dur-full-name">Load audio to calculate</span>
             <span class="dur-cost" id="dur-full-cost">&mdash;</span>
-            <span class="dur-badge">Kling Turbo</span>
           </button>
 
         </div>
@@ -166,7 +162,7 @@
       <div class="progress-steps">
         <div class="pstep" id="pstep-1" data-status="analyzing">&#x1F3B5; Analyzing audio</div>
         <div class="pstep" id="pstep-2" data-status="generating">&#x2728; Writing scene prompt</div>
-        <div class="pstep" id="pstep-3" data-status="processing" id="pstep-video">&#x1F3AC; <span id="pstep-video-label">Generating video (Kling AI)</span></div>
+        <div class="pstep" id="pstep-3" data-status="processing">&#x1F3AC; <span id="pstep-video-label">Generating video</span></div>
         <div class="pstep" id="pstep-4" data-status="completed">&#x26A1; Assembling final reel</div>
       </div>
     </div>
@@ -386,11 +382,11 @@ function fmtDur(s) {
 }
 
 function calcCost(dur) {
-  if (dur === '5')  return { eur: (5  * KLING_PER_SEC_EUR).toFixed(2), clips: 1,  detail: '1 clip · Kling 3.0 Pro · included in your plan' };
-  if (dur === '10') return { eur: (10 * KLING_PER_SEC_EUR).toFixed(2), clips: 1,  detail: '1 clip · Kling 3.0 Pro · included in your plan' };
+  if (dur === '5')  return { eur: (5  * KLING_PER_SEC_EUR).toFixed(2), clips: 1,  detail: '1 clip · included in your plan' };
+  if (dur === '10') return { eur: (10 * KLING_PER_SEC_EUR).toFixed(2), clips: 1,  detail: '1 clip · included in your plan' };
   if (dur === '30') {
     const n   = Math.ceil(30 / CLIP_LEN);
-    return { eur: (30 * TURBO_PER_SEC_EUR).toFixed(2), clips: n, detail: `${n} clips stitched · Kling 2.5 Turbo · included in your plan` };
+    return { eur: (30 * TURBO_PER_SEC_EUR).toFixed(2), clips: n, detail: `${n} clips stitched · included in your plan` };
   }
   if (dur === 'full') {
     if (!_audioDurSec) return { eur: '—', clips: 0, detail: 'Load audio to calculate' };
@@ -399,7 +395,7 @@ function calcCost(dur) {
     return {
       eur:    (secs * TURBO_PER_SEC_EUR).toFixed(2),
       clips:  n,
-      detail: `${n} clips · ${fmtDur(secs)} · Kling 2.5 Turbo · included in your plan`,
+      detail: `${n} clips · ${fmtDur(secs)} · included in your plan`,
     };
   }
   return { eur: '—', clips: 0, detail: '' };
@@ -483,10 +479,10 @@ document.getElementById('upload-form').addEventListener('submit', async e => {
   // Update step 3 label for multi-clip jobs
   if (clips > 1) {
     document.getElementById('pstep-video-label').textContent =
-      `Generating ${clips} clips (Kling 2.5 Turbo)`;
+      `Generating ${clips} video clips`;
   } else {
     document.getElementById('pstep-video-label').textContent =
-      'Generating video (Kling 3.0 Pro)';
+      'Generating video';
   }
 
   const fd = new FormData();
