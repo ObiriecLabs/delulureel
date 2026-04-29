@@ -8,10 +8,10 @@ import fal_client
 
 # ── Endpoints ─────────────────────────────────────────────────────────────────
 
-# Single-clip: highest quality
+# Single-clip: highest quality (Kling 3.0 Pro)
 ENDPOINT_PRO   = 'fal-ai/kling-video/v3/pro/image-to-video'
-# Multi-clip: cost-optimised (~38% cheaper, same API)
-ENDPOINT_TURBO = 'fal-ai/kling-video/v2.5/turbo/image-to-video'
+# Multi-clip: cost-optimised (~38% cheaper, Kling 2.5 Turbo Pro)
+ENDPOINT_TURBO = 'fal-ai/kling-video/v2.5-turbo/pro/image-to-video'
 
 COST_PER_SEC = {
     ENDPOINT_PRO:   0.112,
@@ -74,10 +74,11 @@ def submit_reel(
     handle = fal_client.submit(
         endpoint,
         arguments={
-            'prompt':       prompt,
-            'image_url':    image_url,
-            'duration':     duration,       # integer, not string — Kling v3 API
-            'aspect_ratio': aspect_ratio,
+            'prompt':          prompt,
+            'start_image_url': image_url,   # Kling v3 Pro uses start_image_url
+            'duration':        duration,    # integer (3-15 for v3 Pro)
+            'aspect_ratio':    aspect_ratio,
+            'generate_audio':  False,       # we mux our own audio via FFmpeg
         },
     )
     return {
@@ -104,8 +105,8 @@ def submit_multi_reel(
             ENDPOINT_TURBO,
             arguments={
                 'prompt':       prompt,
-                'image_url':    image_url,
-                'duration':     clip_len,   # integer, not string
+                'image_url':    image_url,  # Kling 2.5 Turbo uses image_url
+                'duration':     clip_len,   # integer: 5 or 10
                 'aspect_ratio': aspect_ratio,
             },
         )

@@ -193,10 +193,9 @@ def _run_pipeline(job_id, user_id, photo_path, audio_path, style, aspect_ratio,
 
         # 3 — Upload photo directly to fal.ai CDN (guarantees accessibility from fal.ai workers)
         import fal_client as _fal
-        with open(photo_path, 'rb') as fh:
-            photo_url = _fal.upload(fh.read(), 'image/jpeg')
+        photo_url = _fal.upload_file(photo_path)
         if not photo_url:
-            raise RuntimeError('fal_client.upload() returned empty URL')
+            raise RuntimeError('fal_client.upload_file() returned empty URL')
 
         # Archive photo to Supabase Storage for our records (fire-and-forget)
         try:
