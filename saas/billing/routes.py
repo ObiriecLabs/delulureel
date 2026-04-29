@@ -1,4 +1,5 @@
 import os
+import traceback
 import stripe
 import requests as _requests
 from flask import Blueprint, request, session, redirect, url_for, jsonify, render_template
@@ -122,10 +123,21 @@ def webhook():
         try:
             handler(event['data']['object'])
         except Exception as e:
-            # Log but return 200 so Stripe doesn't retry infinitely
             print(f'[webhook] {event["type"]} handler error: {e}')
+            print(traceback.format_exc())
 
     return jsonify({'status': 'ok'})
+
+
+@billing_bp.route('/debug-sb')
+def debug_sb():
+    """Temporary debug endpoint — remove after diagnosis."""
+    try:
+        sb = _sb_service()
+        result = sb.table('profiles').select('user_id').limit(1).execute()
+        return jsonify({'status': 'ok', 'supabase': 'connected', 'rows': len(result.data)})
+    except Exception as e:
+        return jsonify({'status': 'error', 'detail': str(e), 'trace': traceback.format_exc()}), 500
 
 
 def _on_subscription_created(sub):
