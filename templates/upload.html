@@ -160,10 +160,32 @@
       <h2 class="progress-title" id="progress-title">Analyzing your track&hellip;</h2>
       <p class="progress-sub" id="progress-sub">Detecting BPM and energy peaks</p>
       <div class="progress-steps">
-        <div class="pstep" id="pstep-1" data-status="analyzing">&#x1F3B5; Analyzing audio</div>
-        <div class="pstep" id="pstep-2" data-status="generating">&#x2728; Writing scene prompt</div>
-        <div class="pstep" id="pstep-3" data-status="processing">&#x1F3AC; <span id="pstep-video-label">Generating video</span></div>
-        <div class="pstep" id="pstep-4" data-status="completed">&#x26A1; Assembling final reel</div>
+
+        <div class="pstep" id="pstep-1" data-step="1" data-status="analyzing">
+          <span class="step-icon">
+            <span class="eq-icon" aria-hidden="true">
+              <i class="eq-bar"></i><i class="eq-bar"></i><i class="eq-bar"></i><i class="eq-bar"></i><i class="eq-bar"></i>
+            </span>
+            <span class="eq-emoji">&#x1F3B5;</span>
+          </span>
+          Analyzing audio
+        </div>
+
+        <div class="pstep" id="pstep-2" data-step="2" data-status="generating">
+          <span class="step-icon si-sparkle">&#x2728;</span>
+          Writing scene prompt
+        </div>
+
+        <div class="pstep" id="pstep-3" data-step="3" data-status="processing">
+          <span class="step-icon si-film">&#x1F3AC;</span>
+          <span id="pstep-video-label">Generating video</span>
+        </div>
+
+        <div class="pstep" id="pstep-4" data-step="4" data-status="completed">
+          <span class="step-icon si-zap">&#x26A1;</span>
+          Assembling final reel
+        </div>
+
       </div>
     </div>
   </div>
@@ -171,6 +193,84 @@
 </div>
 
 <style>
+/* ── Progress step icon animations ──────────────────────────────────────── */
+
+.step-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin-right: 6px;
+  font-size: 1.05em;
+  vertical-align: middle;
+  line-height: 1;
+}
+
+/* Equalizer bars — step 1 only, shown when active */
+.eq-icon {
+  display: none;
+  align-items: flex-end;
+  gap: 2px;
+  height: 16px;
+}
+.eq-emoji { display: inline; }
+
+.pstep-active[data-step="1"] .eq-icon  { display: inline-flex; }
+.pstep-active[data-step="1"] .eq-emoji { display: none; }
+
+.eq-bar {
+  display: inline-block;
+  width: 3px;
+  border-radius: 2px;
+  background: linear-gradient(to top, #B45EFF, #FF3CAC);
+  animation: eq-anim .48s ease-in-out infinite alternate;
+}
+.eq-bar:nth-child(1) { height: 5px;  animation-delay: 0s;    }
+.eq-bar:nth-child(2) { height: 14px; animation-delay: .12s;  }
+.eq-bar:nth-child(3) { height: 9px;  animation-delay: .06s;  }
+.eq-bar:nth-child(4) { height: 16px; animation-delay: .18s;  }
+.eq-bar:nth-child(5) { height: 7px;  animation-delay: .09s;  }
+
+@keyframes eq-anim {
+  0%   { transform: scaleY(.2);  opacity: .6; }
+  100% { transform: scaleY(1);   opacity: 1; }
+}
+
+/* Step 2 — sparkle burst: creative explosion */
+@keyframes icon-sparkle {
+  0%,100% { transform: scale(1)    rotate(0deg);   filter: brightness(1); }
+  15%     { transform: scale(1.55) rotate(28deg);  filter: brightness(2.2) drop-shadow(0 0 8px rgba(255,235,80,.9)); }
+  30%     { transform: scale(.8)   rotate(-14deg); filter: brightness(.9); }
+  55%     { transform: scale(1.4)  rotate(22deg);  filter: brightness(1.8) drop-shadow(0 0 6px rgba(180,94,255,.8)); }
+  75%     { transform: scale(.92)  rotate(-6deg);  filter: brightness(1); }
+}
+.pstep-active[data-step="2"] .step-icon {
+  animation: icon-sparkle 1.6s ease-in-out infinite;
+}
+
+/* Step 3 — clapperboard snap: precise, mechanical */
+@keyframes icon-film {
+  0%,100% { transform: rotate(0deg)   scale(1); }
+  6%      { transform: rotate(-13deg) scale(1.12); filter: drop-shadow(0 0 5px rgba(180,94,255,.55)); }
+  12%     { transform: rotate(4deg)   scale(.96); }
+  18%     { transform: rotate(0deg)   scale(1); }
+  /* long pause before next snap */
+}
+.pstep-active[data-step="3"] .step-icon {
+  animation: icon-film 2.4s ease-in-out infinite;
+}
+
+/* Step 4 — electric zap: rapid burst, then calm */
+@keyframes icon-zap {
+  0%,100% { transform: scale(1);    filter: brightness(1); }
+  7%      { transform: scale(1.65); filter: brightness(3.2) drop-shadow(0 0 12px rgba(255,107,43,1)); }
+  14%     { transform: scale(.82);  filter: brightness(.7); }
+  21%     { transform: scale(1.3);  filter: brightness(2.1) drop-shadow(0 0 7px rgba(180,94,255,.9)); }
+  28%     { transform: scale(1);    filter: brightness(1); }
+}
+.pstep-active[data-step="4"] .step-icon {
+  animation: icon-zap 1.2s ease-out infinite;
+}
+
 /* ── Duration picker ─────────────────────────────────────────────────────── */
 .dur-grid {
   display: grid;

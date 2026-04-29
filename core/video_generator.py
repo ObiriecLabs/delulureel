@@ -126,13 +126,26 @@ def poll_until_done(
     """
     Blocks until the fal.ai job is COMPLETED or raises on FAILED / timeout.
     Returns the video URL.
+
+    Compatible with both fal-client API styles:
+    - Old (<0.10): status object has a .status string attribute ('COMPLETED', 'FAILED', …)
+    - New (>=0.10): status() returns typed objects (Queued, InProgress, Completed)
     """
     deadline = time.time() + max_wait
 
     while time.time() < deadline:
         status = fal_client.status(endpoint, request_id, with_logs=False)
 
-        if status.status == 'COMPLETED':
+        # Detect API style from the returned object
+        status_type = type(status).__name__          # 'Queued' | 'InProgress' | 'Completed' (new)
+        status_str  = getattr(status, 'status', '')  # 'COMPLETED' | 'FAILED' | '' (old)
+
+        is_done   = (status_type == 'Completed') or (status_str == 'COMPLETED')
+        is_failed = (status_type not in ('Queued', 'InProgress', 'Completed')) \
+                    and status_type not in ('', 'NoneType') \
+                    or (status_str == 'FAILED')
+
+        if is_done:
             result = fal_client.result(endpoint, request_id)
             video = result.get('video') or {}
             url = video.get('url') or result.get('video_url')
@@ -140,9 +153,11 @@ def poll_until_done(
                 raise RuntimeError('fal.ai returned no video URL')
             return url
 
-        if status.status == 'FAILED':
-            raise RuntimeError(f'fal.ai generation failed: {getattr(status, "error", "unknown")}')
+        if is_failed:
+            err = getattr(status, 'error', None) or getattr(status, 'message', status_type)
+            raise RuntimeError(f'fal.ai generation failed: {err}')
 
+        # Queued or InProgress — keep waiting
         time.sleep(POLL_INTERVAL)
 
     raise TimeoutError(f'fal.ai job {request_id} did not complete within {max_wait}s')
