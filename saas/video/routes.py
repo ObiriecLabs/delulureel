@@ -1,4 +1,5 @@
 import os
+import gc
 import json
 import uuid
 import shutil
@@ -183,6 +184,7 @@ def _run_pipeline(job_id, user_id, photo_path, audio_path, style, aspect_ratio,
         update('analyzing')
         from core.audio_analyzer import analyze_audio
         analysis = analyze_audio(audio_path)
+        gc.collect()   # free numpy arrays immediately after analysis
 
         # 2 — Scene prompt (Claude)
         update('generating', bpm=analysis['bpm'])
@@ -239,9 +241,11 @@ def _run_pipeline(job_id, user_id, photo_path, audio_path, style, aspect_ratio,
                 video_clips.append(path)
 
         # 5 — Assemble (FFmpeg: clips + original audio, trimmed to target_secs)
+        gc.collect()   # free download buffers before FFmpeg
         from core.assembler import assemble_reel
         assemble_reel(video_clips, audio_path, final_path, aspect_ratio,
                       max_duration=float(target_secs))
+        gc.collect()   # free after FFmpeg
 
         # 6 — Upload final reel
         output_key = f'jobs/{job_id}/reel_{ar_slug}.mp4'
