@@ -76,7 +76,7 @@ def submit_reel(
         arguments={
             'prompt':       prompt,
             'image_url':    image_url,
-            'duration':     str(duration),
+            'duration':     duration,       # integer, not string — Kling v3 API
             'aspect_ratio': aspect_ratio,
         },
     )
@@ -105,7 +105,7 @@ def submit_multi_reel(
             arguments={
                 'prompt':       prompt,
                 'image_url':    image_url,
-                'duration':     str(clip_len),
+                'duration':     clip_len,   # integer, not string
                 'aspect_ratio': aspect_ratio,
             },
         )

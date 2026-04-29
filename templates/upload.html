@@ -648,11 +648,16 @@ function setStep(status) {
   const stepNum = STATUS_STEP[status] || 0;
   const cfg     = STEP_CONFIG[stepNum];
 
-  // ── Big orb ──
+  // ── Big orb — inline style overrides everything in main.css ──
   const orb = document.querySelector('.progress-anim');
   if (orb) {
-    ALL_ORB_ANIMS.forEach(c => orb.classList.remove(c));
-    if (cfg) orb.classList.add(cfg.orbAnim);
+    const orbInline = {
+      1: 'orb-audio  .75s ease-in-out infinite',
+      2: 'orb-scene  2.2s ease-in-out infinite',
+      3: 'orb-video  1.6s linear     infinite',
+      4: 'orb-zap    1.3s ease-out   infinite',
+    };
+    orb.style.animation = orbInline[stepNum] || '';
   }
 
   // ── Step rows ──

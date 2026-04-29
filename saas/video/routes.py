@@ -198,8 +198,26 @@ def _run_pipeline(job_id, user_id, photo_path, audio_path, style, aspect_ratio,
                 storage_key, fh.read(),
                 file_options={'content-type': 'image/jpeg'},
             )
-        signed    = sb.storage.from_('reel-uploads').create_signed_url(storage_key, 3600)
-        photo_url = signed.get('signedURL') or signed.get('signed_url') or signed.get('data', {}).get('signedUrl', '')
+        signed = sb.storage.from_('reel-uploads').create_signed_url(storage_key, 3600)
+        # Handle all Supabase Python SDK response formats (varies by version)
+        if isinstance(signed, dict):
+            photo_url = (
+                signed.get('signedURL') or
+                signed.get('signedUrl') or
+                signed.get('signed_url') or
+                (signed.get('data') or {}).get('signedURL') or
+                (signed.get('data') or {}).get('signedUrl') or
+                ''
+            )
+        else:
+            photo_url = getattr(signed, 'signed_url', '') or getattr(signed, 'signedUrl', '') or ''
+
+        if not photo_url:
+            # Fallback: public URL (works if bucket is public)
+            photo_url = sb.storage.from_('reel-uploads').get_public_url(storage_key)
+
+        if not photo_url:
+            raise RuntimeError('Could not obtain a URL for the uploaded photo')
 
         # 4 — Submit to fal.ai
         from core.video_generator import (
