@@ -78,7 +78,6 @@ def submit_reel(
             'start_image_url': image_url,   # Kling v3 Pro uses start_image_url
             'duration':        duration,    # integer (3-15 for v3 Pro)
             'aspect_ratio':    aspect_ratio,
-            'generate_audio':  False,       # we mux our own audio via FFmpeg
         },
     )
     return {

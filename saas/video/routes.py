@@ -193,9 +193,12 @@ def _run_pipeline(job_id, user_id, photo_path, audio_path, style, aspect_ratio,
 
         # 3 — Upload photo directly to fal.ai CDN (guarantees accessibility from fal.ai workers)
         import fal_client as _fal
-        photo_url = _fal.upload_file(photo_path)
-        if not photo_url:
-            raise RuntimeError('fal_client.upload_file() returned empty URL')
+        try:
+            photo_url = _fal.upload_file(photo_path)
+        except Exception as upload_exc:
+            raise RuntimeError(f'upload_file failed: {upload_exc}') from upload_exc
+        if not photo_url or not isinstance(photo_url, str):
+            raise RuntimeError(f'upload_file returned invalid URL: {type(photo_url).__name__}={photo_url!r:.80}')
 
         # Archive photo to Supabase Storage for our records (fire-and-forget)
         try:
@@ -222,10 +225,16 @@ def _run_pipeline(job_id, user_id, photo_path, audio_path, style, aspect_ratio,
             # ── Single clip (Kling 3.0 Pro) ───────────────────────────────────
             clip_len = min(target_secs, 10)
             update('processing', fal_request_id='pending', prompt=prompt)
-            fal = submit_reel(
-                photo_url, prompt,
-                duration=clip_len, aspect_ratio=aspect_ratio, endpoint=ENDPOINT_PRO,
-            )
+            try:
+                fal = submit_reel(
+                    photo_url, prompt,
+                    duration=clip_len, aspect_ratio=aspect_ratio, endpoint=ENDPOINT_PRO,
+                )
+            except Exception as fal_exc:
+                raise RuntimeError(
+                    f'fal submit failed [endpoint={ENDPOINT_PRO}, dur={clip_len}, ar={aspect_ratio}, '
+                    f'url_prefix={photo_url[:60]}]: {fal_exc}'
+                ) from fal_exc
             update('processing', fal_request_id=fal['request_id'], fal_endpoint=fal['endpoint'])
             raw_url  = poll_until_done(fal['request_id'], fal['endpoint'], MAX_WAIT_SINGLE)
             raw_path = download_video(raw_url, 'raw_0.mp4')
@@ -237,10 +246,16 @@ def _run_pipeline(job_id, user_id, photo_path, audio_path, style, aspect_ratio,
                    fal_request_id=f'multi:{n_clips}',
                    fal_endpoint=ENDPOINT_TURBO,
                    prompt=prompt)
-            handles = submit_multi_reel(
-                photo_url, prompt, n_clips,
-                aspect_ratio=aspect_ratio,
-            )
+            try:
+                handles = submit_multi_reel(
+                    photo_url, prompt, n_clips,
+                    aspect_ratio=aspect_ratio,
+                )
+            except Exception as fal_exc:
+                raise RuntimeError(
+                    f'fal multi-submit failed [endpoint={ENDPOINT_TURBO}, n={n_clips}, ar={aspect_ratio}, '
+                    f'url_prefix={photo_url[:60]}]: {fal_exc}'
+                ) from fal_exc
             video_clips = []
             for i, h in enumerate(handles):
                 url  = poll_until_done(h['request_id'], h['endpoint'], MAX_WAIT_MULTI)
