@@ -18,8 +18,25 @@ def _get_sb() -> Client:
     return _sb
 
 
+def _try_refresh() -> bool:
+    """Attempt to refresh the Supabase session using the stored refresh_token.
+    Returns True and updates session on success, False otherwise."""
+    refresh_token = session.get('refresh_token')
+    if not refresh_token:
+        return False
+    try:
+        sb     = _get_sb()
+        result = sb.auth.refresh_session(refresh_token)
+        session['access_token']  = result.session.access_token
+        session['refresh_token'] = result.session.refresh_token
+        return True
+    except Exception:
+        return False
+
+
 def require_auth(f):
-    """Decorator: redirect to login if no valid session."""
+    """Decorator: redirect to login if no valid session.
+    Auto-refreshes expired tokens before giving up."""
     @wraps(f)
     def decorated(*args, **kwargs):
         token = session.get('access_token')
@@ -29,14 +46,24 @@ def require_auth(f):
             user = _get_sb().auth.get_user(token)
             request.current_user = user.user
         except Exception:
-            session.clear()
-            return redirect(url_for('auth.login'))
+            # Token expired — try silent refresh
+            if _try_refresh():
+                try:
+                    user = _get_sb().auth.get_user(session['access_token'])
+                    request.current_user = user.user
+                except Exception:
+                    session.clear()
+                    return redirect(url_for('auth.login'))
+            else:
+                session.clear()
+                return redirect(url_for('auth.login'))
         return f(*args, **kwargs)
     return decorated
 
 
 def require_auth_api(f):
-    """API variant: returns 401 JSON instead of redirect."""
+    """API variant: returns 401 JSON instead of redirect.
+    Auto-refreshes expired tokens before giving up."""
     @wraps(f)
     def decorated(*args, **kwargs):
         token = session.get('access_token')
@@ -46,8 +73,17 @@ def require_auth_api(f):
             user = _get_sb().auth.get_user(token)
             request.current_user = user.user
         except Exception:
-            session.clear()
-            return jsonify({'error': 'Session expired'}), 401
+            # Token expired — try silent refresh
+            if _try_refresh():
+                try:
+                    user = _get_sb().auth.get_user(session['access_token'])
+                    request.current_user = user.user
+                except Exception:
+                    session.clear()
+                    return jsonify({'error': 'Session expired'}), 401
+            else:
+                session.clear()
+                return jsonify({'error': 'Session expired'}), 401
         return f(*args, **kwargs)
     return decorated
 

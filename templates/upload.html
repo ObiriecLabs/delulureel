@@ -610,6 +610,11 @@ document.getElementById('upload-form').addEventListener('submit', async e => {
   try {
     const res  = await fetch('/video/generate', { method: 'POST', body: fd });
     const data = await res.json();
+    if (res.status === 401) {
+      // Session expired and server-side refresh also failed → send to login
+      window.location.href = '/auth/login';
+      return;
+    }
     if (!res.ok) throw new Error(data.error || 'Generation failed');
 
     document.getElementById('progress-overlay').style.display = 'flex';
