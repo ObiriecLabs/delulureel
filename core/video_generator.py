@@ -1,9 +1,22 @@
+"""
+fal.ai video generation — direct REST API, no fal-client SDK.
+
+fal_client==1.0.0 has a circular import in its __init__.py that causes
+  AttributeError: partially initialized module 'fal_client' has no attribute 'submit'
+on Python 3.14 when the module is first imported from a background thread.
+Using requests directly avoids the SDK entirely.
+
+fal.ai Queue API:
+  POST   https://queue.fal.run/{endpoint}[?fal_webhook={url}]   → {"request_id": "..."}
+  GET    https://queue.fal.run/{endpoint}/requests/{id}/status  → {"status": "IN_QUEUE"|...}
+  GET    https://queue.fal.run/{endpoint}/requests/{id}         → {"video": {"url": "..."}}
+"""
+
 import os
 import time
 import math
-from typing import Dict, List
-
-import fal_client
+import requests as _req
+from typing import Dict, List, Optional
 
 
 # ── Endpoints ─────────────────────────────────────────────────────────────────
@@ -33,6 +46,15 @@ MAX_AUDIO_SEC  = 600   # cap full-track at 10 min
 POLL_INTERVAL   = 8      # seconds between status checks
 MAX_WAIT_SINGLE = 600    # 10 min for a single clip
 MAX_WAIT_MULTI  = 2700   # 45 min for multi-clip (full track)
+
+FAL_QUEUE_BASE = 'https://queue.fal.run'
+
+
+# ── Internal helpers ──────────────────────────────────────────────────────────
+
+def _headers() -> Dict:
+    key = os.getenv('FAL_KEY', '')
+    return {'Authorization': f'Key {key}', 'Content-Type': 'application/json'}
 
 
 # ── Cost helpers ──────────────────────────────────────────────────────────────
@@ -66,33 +88,36 @@ def submit_reel(
     duration: int = 10,
     aspect_ratio: str = '9:16',
     endpoint: str = ENDPOINT_PRO,
-    webhook_url: str | None = None,
+    webhook_url: Optional[str] = None,
 ) -> Dict:
     """
-    Submit a single clip to fal.ai.
-    If webhook_url is provided, fal.ai will POST the result there when done
-    (no polling needed). Returns {'request_id', 'endpoint', 'estimated_cost'}.
+    Submit a single clip to fal.ai queue.
+    Returns {'request_id', 'endpoint', 'estimated_cost'}.
     """
-    submit_kwargs: dict = {}
+    url = f'{FAL_QUEUE_BASE}/{endpoint}'
     if webhook_url:
-        submit_kwargs['webhook_url'] = webhook_url
+        url += f'?fal_webhook={webhook_url}'
 
-    handle = fal_client.submit(
-        endpoint,
-        arguments={
-            'prompt':          prompt,
-            'start_image_url': image_url,   # Kling v2.6/v3 Pro use start_image_url
-            'duration':        str(duration),  # v2.6 Pro expects "5" or "10" string
-            'aspect_ratio':    aspect_ratio,
-            'generate_audio':  False,       # CRITICAL: disable default audio gen
-                                            # (default=True tries to use elements[1],
-                                            # fails with 'Invalid reference index 1'
-                                            # when no voice elements are provided)
-        },
-        **submit_kwargs,
-    )
+    body = {
+        'prompt':          prompt,
+        'start_image_url': image_url,    # Kling v2.6 Pro: start_image_url
+        'duration':        str(duration), # v2.6 Pro expects "5" or "10" string
+        'aspect_ratio':    aspect_ratio,
+        'generate_audio':  False,        # CRITICAL: disable — default=True tries
+                                         # elements[1] (voice), fails with
+                                         # 'Invalid reference index 1' when absent
+    }
+
+    resp = _req.post(url, json=body, headers=_headers(), timeout=60)
+    resp.raise_for_status()
+    data = resp.json()
+
+    req_id = data.get('request_id') or data.get('id') or ''
+    if not req_id:
+        raise RuntimeError(f'fal.ai did not return request_id: {data}')
+
     return {
-        'request_id':     handle.request_id,
+        'request_id':     req_id,
         'endpoint':       endpoint,
         'estimated_cost': estimate_cost(duration, endpoint),
     }
@@ -111,21 +136,40 @@ def submit_multi_reel(
     """
     handles = []
     for _ in range(n_clips):
-        h = fal_client.submit(
-            ENDPOINT_TURBO,
-            arguments={
-                'prompt':          prompt,
-                'image_url':       image_url,   # Kling 2.5 Turbo uses image_url
-                'duration':        clip_len,    # integer: 5 or 10
-                'aspect_ratio':    aspect_ratio,
-                'generate_audio':  False,       # disable default audio gen (same bug)
-            },
-        )
-        handles.append({
-            'request_id': h.request_id,
-            'endpoint':   ENDPOINT_TURBO,
-        })
+        url  = f'{FAL_QUEUE_BASE}/{ENDPOINT_TURBO}'
+        body = {
+            'prompt':         prompt,
+            'image_url':      image_url,  # Kling 2.5 Turbo: image_url
+            'duration':       clip_len,   # integer: 5 or 10
+            'aspect_ratio':   aspect_ratio,
+            'generate_audio': False,
+        }
+        resp = _req.post(url, json=body, headers=_headers(), timeout=60)
+        resp.raise_for_status()
+        data = resp.json()
+        req_id = data.get('request_id') or data.get('id') or ''
+        if not req_id:
+            raise RuntimeError(f'fal.ai did not return request_id: {data}')
+        handles.append({'request_id': req_id, 'endpoint': ENDPOINT_TURBO})
     return handles
+
+
+# ── Status / result ───────────────────────────────────────────────────────────
+
+def fal_status(endpoint: str, request_id: str) -> Dict:
+    """Return fal.ai queue status dict for request_id."""
+    url  = f'{FAL_QUEUE_BASE}/{endpoint}/requests/{request_id}/status'
+    resp = _req.get(url, headers=_headers(), timeout=30)
+    resp.raise_for_status()
+    return resp.json()
+
+
+def fal_result(endpoint: str, request_id: str) -> Dict:
+    """Fetch completed result dict from fal.ai queue."""
+    url  = f'{FAL_QUEUE_BASE}/{endpoint}/requests/{request_id}'
+    resp = _req.get(url, headers=_headers(), timeout=60)
+    resp.raise_for_status()
+    return resp.json()
 
 
 # ── Polling ───────────────────────────────────────────────────────────────────
@@ -138,38 +182,26 @@ def poll_until_done(
     """
     Blocks until the fal.ai job is COMPLETED or raises on FAILED / timeout.
     Returns the video URL.
-
-    Compatible with both fal-client API styles:
-    - Old (<0.10): status object has a .status string attribute ('COMPLETED', 'FAILED', …)
-    - New (>=0.10): status() returns typed objects (Queued, InProgress, Completed)
     """
     deadline = time.time() + max_wait
 
     while time.time() < deadline:
-        status = fal_client.status(endpoint, request_id, with_logs=False)
+        status_data = fal_status(endpoint, request_id)
+        status_str  = status_data.get('status', '')
 
-        # Detect API style from the returned object
-        status_type = type(status).__name__          # 'Queued' | 'InProgress' | 'Completed' (new)
-        status_str  = getattr(status, 'status', '')  # 'COMPLETED' | 'FAILED' | '' (old)
-
-        is_done   = (status_type == 'Completed') or (status_str == 'COMPLETED')
-        is_failed = (status_type not in ('Queued', 'InProgress', 'Completed')) \
-                    and status_type not in ('', 'NoneType') \
-                    or (status_str == 'FAILED')
-
-        if is_done:
-            result = fal_client.result(endpoint, request_id)
-            video = result.get('video') or {}
-            url = video.get('url') or result.get('video_url')
+        if status_str == 'COMPLETED':
+            result = fal_result(endpoint, request_id)
+            video  = result.get('video') or {}
+            url    = video.get('url') or result.get('video_url') or ''
             if not url:
-                raise RuntimeError('fal.ai returned no video URL')
+                raise RuntimeError(f'fal.ai returned no video URL: {result}')
             return url
 
-        if is_failed:
-            err = getattr(status, 'error', None) or getattr(status, 'message', status_type)
+        if status_str == 'FAILED':
+            err = status_data.get('error') or status_data.get('logs') or 'unknown'
             raise RuntimeError(f'fal.ai generation failed: {err}')
 
-        # Queued or InProgress — keep waiting
+        # IN_QUEUE or IN_PROGRESS — keep waiting
         time.sleep(POLL_INTERVAL)
 
     raise TimeoutError(f'fal.ai job {request_id} did not complete within {max_wait}s')

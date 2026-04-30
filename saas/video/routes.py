@@ -10,14 +10,9 @@ from datetime import date, datetime, timedelta, timezone
 from flask import Blueprint, request, session, jsonify, Response, stream_with_context, redirect, url_for
 from supabase import create_client
 
-# Import fal_client at module level — avoids partial-initialisation errors
-# that occur when the module is first imported inside a background thread
-# (Python's per-module import lock can return a partially-initialized object
-# when a circular import is detected mid-flight inside fal_client itself).
-import fal_client as _fal
-
 from core.video_generator import (
     submit_reel, submit_multi_reel, poll_until_done,
+    fal_result,
     estimate_cost, endpoint_for_duration, n_clips_for_duration,
     CLIP_LEN_MULTI, MAX_AUDIO_SEC, MAX_WAIT_MULTI,
     ENDPOINT_PRO, ENDPOINT_TURBO,
@@ -122,9 +117,9 @@ def _startup_recovery():
 
             # Try to fetch the completed result from fal.ai
             try:
-                fal_result = _fal.result(endpoint, req_id)
-                video_url  = ((fal_result.get('video') or {}).get('url')
-                              or fal_result.get('video_url') or '')
+                result_data = fal_result(endpoint, req_id)
+                video_url   = ((result_data.get('video') or {}).get('url')
+                               or result_data.get('video_url') or '')
                 if not video_url:
                     failed_ids.append(job_id)
                     continue
@@ -614,23 +609,21 @@ def _run_pipeline(job_id, user_id, photo_path, audio_path, style, aspect_ratio,
         update('generating', bpm=analysis['bpm'])
         prompt = generate_scene_prompt(analysis, style)
 
-        # 3 — Upload photo to fal.ai CDN
-        try:
-            photo_url = _fal.upload_file(photo_path)
-        except Exception as upload_exc:
-            raise RuntimeError(f'upload_file failed: {upload_exc}') from upload_exc
-        if not photo_url or not isinstance(photo_url, str):
-            raise RuntimeError(f'upload_file returned invalid URL: {photo_url!r:.80}')
-
-        # Archive photo (fire-and-forget)
+        # 3 — Upload photo to Supabase Storage → signed URL for fal.ai
+        ext_photo = (photo_path.rsplit('.', 1)[-1].lower()) or 'jpg'
+        photo_key = f'jobs/{job_id}/source.{ext_photo}'
         try:
             with open(photo_path, 'rb') as fh:
                 sb.storage.from_('reel-uploads').upload(
-                    f'jobs/{job_id}/source.jpg', fh.read(),
-                    file_options={'content-type': 'image/jpeg'},
+                    photo_key, fh.read(),
+                    file_options={'content-type': f'image/{ext_photo}'},
                 )
-        except Exception:
-            pass
+            signed_photo = sb.storage.from_('reel-uploads').create_signed_url(photo_key, 3600)
+            photo_url = signed_photo.get('signedURL') or signed_photo.get('signedUrl') or ''
+            if not photo_url:
+                raise RuntimeError(f'Could not get signed URL for photo: {signed_photo}')
+        except Exception as exc:
+            raise RuntimeError(f'Photo upload to Supabase failed: {exc}') from exc
 
         # 4 — Submit multi-clip to fal.ai (parallel, polling)
         ar_slug    = aspect_ratio.replace(':', 'x')
