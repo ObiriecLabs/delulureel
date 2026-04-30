@@ -711,9 +711,26 @@ function setStep(status) {
   document.getElementById('progress-sub').textContent   = sub;
 }
 
+function _resetForm(errMsg) {
+  document.getElementById('progress-overlay').style.display = 'none';
+  const err = document.getElementById('upload-error');
+  err.textContent = errMsg;
+  err.style.display = 'block';
+  document.getElementById('generate-btn').disabled = false;
+  document.getElementById('generate-btn').textContent = 'Generate Reel →';
+}
+
 async function pollStatus(jobId) {
   setStep('queued');
+  let polls = 0;
+  const MAX_POLLS = 90;   // 90 × 8s = 12 min hard ceiling
   const interval = setInterval(async () => {
+    polls++;
+    if (polls > MAX_POLLS) {
+      clearInterval(interval);
+      _resetForm('Generation timed out. Please try again.');
+      return;
+    }
     try {
       const res  = await fetch(`/video/status/${jobId}`);
       const data = await res.json();
@@ -724,12 +741,7 @@ async function pollStatus(jobId) {
       }
       if (data.status === 'failed') {
         clearInterval(interval);
-        document.getElementById('progress-overlay').style.display = 'none';
-        const err = document.getElementById('upload-error');
-        err.textContent = data.error_message || 'Generation failed. Please try again.';
-        err.style.display = 'block';
-        document.getElementById('generate-btn').disabled = false;
-        document.getElementById('generate-btn').textContent = 'Generate Reel →';
+        _resetForm(data.error_message || 'Generation failed. Please try again.');
       }
     } catch (ex) { /* network hiccup, keep polling */ }
   }, 8000);
