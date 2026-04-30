@@ -126,7 +126,9 @@ fetch('/video/history')
         <div class="reel-thumb ${job.status !== 'completed' ? 'reel-thumb-pending' : ''}">
           ${job.status === 'completed'
             ? `<video src="${job.output_url}" muted playsinline loop class="reel-video" onmouseenter="this.play()" onmouseleave="this.pause()"></video>`
-            : `<div class="reel-thumb-placeholder"><div class="spinner"></div></div>`
+            : job.status === 'failed'
+              ? `<div class="reel-thumb-placeholder reel-thumb-error"><span class="reel-fail-icon">✕</span></div>`
+              : `<div class="reel-thumb-placeholder"><div class="spinner"></div></div>`
           }
         </div>
         <div class="reel-meta">
