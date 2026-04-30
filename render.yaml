@@ -5,7 +5,7 @@ services:
     region: frankfurt
     plan: starter
     buildCommand: pip install -r requirements.txt
-    startCommand: gunicorn app_server:app --workers 2 --threads 4 --timeout 120
+    startCommand: gunicorn app_server:app --workers 1 --threads 8 --timeout 300 --worker-class gthread --max-requests 50 --max-requests-jitter 10
     healthCheckPath: /health
     envVars:
       - key: FLASK_ENV

@@ -279,11 +279,11 @@ def _run_pipeline(job_id, user_id, photo_path, audio_path, style, aspect_ratio,
                       max_duration=float(target_secs))
         gc.collect()   # free after FFmpeg
 
-        # 6 — Upload final reel
+        # 6 — Upload final reel (pass file handle — avoids loading entire video into RAM)
         output_key = f'jobs/{job_id}/reel_{ar_slug}.mp4'
         with open(final_path, 'rb') as fh:
             sb.storage.from_('reel-outputs').upload(
-                output_key, fh.read(),
+                output_key, fh,
                 file_options={'content-type': 'video/mp4'},
             )
         final_url = sb.storage.from_('reel-outputs').get_public_url(output_key)
