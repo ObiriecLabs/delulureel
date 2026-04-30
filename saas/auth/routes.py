@@ -2,7 +2,7 @@ import os
 import threading
 from functools import wraps
 from flask import Blueprint, request, session, redirect, url_for, render_template, jsonify
-from supabase import create_client, Client
+from supabase import create_client, Client, ClientOptions
 
 auth_bp = Blueprint('auth', __name__)
 
@@ -10,6 +10,7 @@ auth_bp = Blueprint('auth', __name__)
 # NOT safe to share across gunicorn gthread workers. threading.local() gives
 # each thread its own httpx connection context, eliminating deadlocks on
 # concurrent requests (e.g. /video/profile + /video/history fetched in parallel).
+# Timeout of 10s prevents hanging threads that kill the gunicorn worker (502).
 _sb_local: threading.local = threading.local()
 
 
@@ -18,6 +19,10 @@ def _get_sb() -> Client:
         _sb_local.client = create_client(
             os.getenv('SUPABASE_URL', ''),
             os.getenv('SUPABASE_ANON_KEY', ''),
+            options=ClientOptions(
+                postgrest_client_timeout=10,
+                storage_client_timeout=10,
+            ),
         )
     return _sb_local.client
 

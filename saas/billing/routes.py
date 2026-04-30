@@ -3,7 +3,7 @@ import traceback
 import stripe
 import requests as _requests
 from flask import Blueprint, request, session, redirect, url_for, jsonify, render_template
-from supabase import create_client
+from supabase import create_client, ClientOptions
 
 billing_bp = Blueprint('billing', __name__)
 
@@ -26,6 +26,10 @@ def _sb_service():
     return create_client(
         os.getenv('SUPABASE_URL', ''),
         os.getenv('SUPABASE_SERVICE_KEY', ''),
+        options=ClientOptions(
+            postgrest_client_timeout=10,
+            storage_client_timeout=10,
+        ),
     )
 
 

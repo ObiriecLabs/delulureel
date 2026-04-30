@@ -8,7 +8,7 @@ import threading
 import requests as _requests
 from datetime import date, datetime, timedelta, timezone
 from flask import Blueprint, request, session, jsonify, Response, stream_with_context, redirect, url_for
-from supabase import create_client
+from supabase import create_client, ClientOptions
 
 from core.video_generator import (
     submit_reel, submit_multi_reel, poll_until_done,
@@ -53,6 +53,10 @@ def _sb_service():
         _sb_svc_local.svc = create_client(
             os.getenv('SUPABASE_URL', ''),
             os.getenv('SUPABASE_SERVICE_KEY', ''),
+            options=ClientOptions(
+                postgrest_client_timeout=10,
+                storage_client_timeout=30,  # storage uploads need more time
+            ),
         )
     return _sb_svc_local.svc
 
