@@ -331,6 +331,7 @@ def _run_pre_generation(job_id, user_id, photo_path, audio_path, style,
 
         # 3 — Upload photo to Supabase Storage → get signed URL for fal.ai
         # (Avoids fal_client.upload_file() which has no timeout and hangs on slow networks)
+        ext_photo = (photo_path.rsplit('.', 1)[-1].lower()) or 'jpg'
         photo_key = f'jobs/{job_id}/source.{ext_photo}'
         _log(f'supabase photo upload START key={photo_key}')
         try:
