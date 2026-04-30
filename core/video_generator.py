@@ -8,8 +8,8 @@ import fal_client
 
 # ── Endpoints ─────────────────────────────────────────────────────────────────
 
-# Single-clip: highest quality (Kling 3.0 Pro)
-ENDPOINT_PRO   = 'fal-ai/kling-video/v3/pro/image-to-video'
+# Single-clip: stable quality (Kling 2.6 Pro — v3 Pro has schema bug on elements field)
+ENDPOINT_PRO   = 'fal-ai/kling-video/v2.6/pro/image-to-video'
 # Multi-clip: cost-optimised (~38% cheaper, Kling 2.5 Turbo Pro)
 ENDPOINT_TURBO = 'fal-ai/kling-video/v2.5-turbo/pro/image-to-video'
 
@@ -75,8 +75,8 @@ def submit_reel(
         endpoint,
         arguments={
             'prompt':          prompt,
-            'start_image_url': image_url,   # Kling v3 Pro uses start_image_url
-            'duration':        duration,    # integer (3-15 for v3 Pro)
+            'start_image_url': image_url,   # Kling v2.6/v3 Pro use start_image_url
+            'duration':        str(duration),  # v2.6 Pro expects "5" or "10" string
             'aspect_ratio':    aspect_ratio,
         },
     )

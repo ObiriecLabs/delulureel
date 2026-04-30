@@ -236,7 +236,12 @@ def _run_pipeline(job_id, user_id, photo_path, audio_path, style, aspect_ratio,
                     f'url_prefix={photo_url[:60]}]: {fal_exc}'
                 ) from fal_exc
             update('processing', fal_request_id=fal['request_id'], fal_endpoint=fal['endpoint'])
-            raw_url  = poll_until_done(fal['request_id'], fal['endpoint'], MAX_WAIT_SINGLE)
+            try:
+                raw_url = poll_until_done(fal['request_id'], fal['endpoint'], MAX_WAIT_SINGLE)
+            except Exception as poll_exc:
+                raise RuntimeError(
+                    f'poll_until_done failed [req={fal["request_id"]}, ep={fal["endpoint"]}]: {poll_exc}'
+                ) from poll_exc
             raw_path = download_video(raw_url, 'raw_0.mp4')
             video_clips = [raw_path]
 
@@ -258,7 +263,12 @@ def _run_pipeline(job_id, user_id, photo_path, audio_path, style, aspect_ratio,
                 ) from fal_exc
             video_clips = []
             for i, h in enumerate(handles):
-                url  = poll_until_done(h['request_id'], h['endpoint'], MAX_WAIT_MULTI)
+                try:
+                    url = poll_until_done(h['request_id'], h['endpoint'], MAX_WAIT_MULTI)
+                except Exception as poll_exc:
+                    raise RuntimeError(
+                        f'poll_until_done failed [clip={i}, req={h["request_id"]}, ep={h["endpoint"]}]: {poll_exc}'
+                    ) from poll_exc
                 path = download_video(url, f'clip_{i}.mp4')
                 video_clips.append(path)
 
