@@ -8,6 +8,8 @@ services:
     startCommand: gunicorn app_server:app --workers 1 --threads 8 --timeout 300 --worker-class gthread --max-requests 500 --max-requests-jitter 50
     healthCheckPath: /health
     envVars:
+      - key: PYTHON_VERSION
+        value: "3.11.9"
       - key: FLASK_ENV
         value: production
       - key: PORT
