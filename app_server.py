@@ -1,12 +1,24 @@
 import os
 import socket
 from flask import Flask, send_from_directory, redirect, request, session, url_for, render_template, jsonify
+from werkzeug.middleware.proxy_fix import ProxyFix
 from dotenv import load_dotenv
 
 load_dotenv()
 
 app = Flask(__name__)
 app.secret_key = os.getenv('SECRET_KEY', 'dev-secret-key-change-in-prod')
+
+# Trust Cloudflare / Render reverse proxy headers so Flask knows the real
+# scheme (https), host and client IP. Without this, session cookies may be
+# set without Secure flag and url_for(_external=True) generates http:// URLs.
+app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1, x_prefix=1)
+
+app.config.update(
+    SESSION_COOKIE_SECURE=True,    # only send cookie over HTTPS
+    SESSION_COOKIE_HTTPONLY=True,  # block JS access
+    SESSION_COOKIE_SAMESITE='Lax', # allow cross-site navigations (Stripe redirect back)
+)
 
 # ── Blueprints ──
 from saas.auth.routes import auth_bp

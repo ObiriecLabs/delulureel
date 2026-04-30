@@ -137,9 +137,14 @@ def _on_subscription_created(sub):
     user_id = meta.get('user_id')
     plan    = meta.get('plan', 'pro')
 
+    print(f'[sub_created] sub_id={str(sub.get("id",""))[:12]} '
+          f'user_id={user_id} plan={plan} meta={meta}', flush=True)
+
     if not user_id:
+        print('[sub_created] SKIP — user_id missing from subscription metadata', flush=True)
         return
 
+    print(f'[sub_created] upserting profile for user_id={user_id}', flush=True)
     sb.table('profiles').upsert({
         'user_id':                user_id,
         'plan':                   plan,
