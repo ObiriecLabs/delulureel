@@ -77,11 +77,16 @@ def _startup_recovery():
     global _global_active
     try:
         import fal_client as _fal
+        from datetime import datetime, timedelta, timezone
         sb = _sb_service()
+
+        # Only recover jobs older than 60 s — prevents killing brand-new jobs
+        # submitted right after a deploy while startup_recovery is still running.
+        cutoff = (datetime.now(timezone.utc) - timedelta(seconds=60)).isoformat()
 
         result = sb.table('reel_jobs').select(
             'id,user_id,fal_request_id,fal_endpoint,aspect_ratio,estimated_cost'
-        ).in_('status', ['processing', 'queued', 'analyzing', 'generating']).execute()
+        ).in_('status', ['processing', 'queued', 'analyzing', 'generating']).lt('created_at', cutoff).execute()
 
         rows = result.data or []
         if not rows:
@@ -286,8 +291,21 @@ def _run_pre_generation(job_id, user_id, photo_path, audio_path, style,
     import time as _time
     _t0 = _time.time()
     global _global_active
-    sb = _sb_service()
     _jid = job_id[:8]
+
+    # Defensive init — any failure here must still mark the job failed
+    try:
+        sb = _sb_service()
+    except Exception as _e:
+        print(f'[pregen/{_jid}] FATAL: _sb_service() failed: {_e}', flush=True)
+        with _lock:
+            _active_user_jobs.pop(user_id, None)
+            _global_active = max(0, _global_active - 1)
+        try:
+            shutil.rmtree(tmp_dir, ignore_errors=True)
+        except Exception:
+            pass
+        return
 
     def update(status, **kw):
         sb.table('reel_jobs').update({'status': status, **kw}).eq('id', job_id).execute()
