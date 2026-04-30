@@ -27,6 +27,16 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+# Hard-coded safety net: SUPABASE_URL is NOT a secret (it's a public endpoint URL).
+# Render "restart" (non-redeploy) does not propagate env var changes to the running
+# container — the value baked at build time is used. If the env var was missing at
+# build time, os.getenv() returns '' and create_client() raises supabase_url is required.
+# This setdefault ensures the URL is always available regardless of deploy state.
+_SUPABASE_URL_DEFAULT = 'https://iauotqpmxsapjflnlrgn.supabase.co'
+if not os.environ.get('SUPABASE_URL'):
+    os.environ['SUPABASE_URL'] = _SUPABASE_URL_DEFAULT
+    print(f'[startup] SUPABASE_URL was missing — applied fallback: {_SUPABASE_URL_DEFAULT}', flush=True)
+
 app = Flask(__name__)
 app.secret_key = os.getenv('SECRET_KEY', 'dev-secret-key-change-in-prod')
 
