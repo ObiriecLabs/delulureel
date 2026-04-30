@@ -20,6 +20,7 @@ def _get_sb() -> Client:
             os.getenv('SUPABASE_URL', ''),
             os.getenv('SUPABASE_ANON_KEY', ''),
             options=ClientOptions(
+                timeout=10,
                 postgrest_client_timeout=10,
                 storage_client_timeout=10,
             ),
