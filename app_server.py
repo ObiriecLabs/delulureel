@@ -54,7 +54,13 @@ def result_page(job_id):
 # Health check (Render uses this)
 @app.route('/health')
 def health():
-    return jsonify({'status': 'ok', 'version': '0.1.0'})
+    import subprocess
+    try:
+        sha = subprocess.check_output(['git', 'rev-parse', '--short', 'HEAD'],
+                                      cwd=os.path.dirname(__file__) or '.').decode().strip()
+    except Exception:
+        sha = 'unknown'
+    return jsonify({'status': 'ok', 'version': 'baaa1bd', 'sha': sha, 'fal_client': '1.0.0'})
 
 
 def _find_free_port(start: int = 5000, end: int = 5100) -> int:
