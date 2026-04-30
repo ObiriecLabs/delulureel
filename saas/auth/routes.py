@@ -118,7 +118,8 @@ def login():
         session['refresh_token'] = result.session.refresh_token
         session['user_id']       = result.user.id
         return redirect(url_for('dashboard'))
-    except Exception:
+    except Exception as e:
+        print(f'[login] FAILED email={email} error={type(e).__name__}: {e}', flush=True)
         return render_template('auth/login.html', error='Invalid email or password')
 
 
