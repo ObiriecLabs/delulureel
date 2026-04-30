@@ -63,8 +63,9 @@ def health():
     return jsonify({'status': 'ok', 'version': 'baaa1bd', 'sha': sha, 'fal_client': '1.0.0'})
 
 
+import threading
 from saas.video.routes import _startup_recovery
-_startup_recovery()
+threading.Thread(target=_startup_recovery, daemon=True).start()
 
 
 def _find_free_port(start: int = 5000, end: int = 5100) -> int:
