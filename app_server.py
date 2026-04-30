@@ -1,5 +1,16 @@
 import os
 import socket
+
+# Pre-import httpcore/httpx/supabase in the main process BEFORE gunicorn
+# spawns gthread workers. Python 3.14 has a race condition in the import lock
+# when multiple threads import httpcore concurrently for the first time —
+# the module appears partially initialised and raises AttributeError on
+# 'ConnectionPool'. Eager import here ensures sys.modules is populated once,
+# so every thread just gets the cached, fully-initialised module.
+import httpcore   # noqa: F401
+import httpx      # noqa: F401
+import supabase   # noqa: F401
+
 from flask import Flask, send_from_directory, redirect, request, session, url_for, render_template, jsonify
 from werkzeug.middleware.proxy_fix import ProxyFix
 from dotenv import load_dotenv
