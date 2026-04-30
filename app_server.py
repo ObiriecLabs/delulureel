@@ -63,27 +63,8 @@ def health():
     return jsonify({'status': 'ok', 'version': 'baaa1bd', 'sha': sha, 'fal_client': '1.0.0'})
 
 
-def _cleanup_orphaned_jobs():
-    """Mark any processing/queued jobs as failed on startup.
-    These are orphans from the previous process (deploy, crash, OOM).
-    Called once per gunicorn worker boot — idempotent.
-    """
-    try:
-        from supabase import create_client
-        sb = create_client(os.getenv('SUPABASE_URL', ''), os.getenv('SUPABASE_SERVICE_KEY', ''))
-        result = (
-            sb.table('reel_jobs')
-            .update({'status': 'failed', 'error_message': 'Server restarted during processing. Please retry.'})
-            .in_('status', ['processing', 'queued', 'analyzing', 'generating'])
-            .execute()
-        )
-        rows = result.data or []
-        if rows:
-            print(f'⚠️  Cleaned {len(rows)} orphaned job(s) on startup')
-    except Exception as e:
-        print(f'⚠️  Orphan cleanup failed (non-critical): {e}')
-
-_cleanup_orphaned_jobs()
+from saas.video.routes import _startup_recovery
+_startup_recovery()
 
 
 def _find_free_port(start: int = 5000, end: int = 5100) -> int:

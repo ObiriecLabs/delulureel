@@ -57,6 +57,87 @@ def _record_spend(cost: float):
         pass
 
 
+# ── Startup recovery ─────────────────────────────────────────────────────────
+
+def _startup_recovery():
+    """On startup: recover jobs where fal.ai completed but post-gen was killed.
+
+    For each job stuck in processing/queued/analyzing/generating:
+    - If it has a valid single-clip fal_request_id: fetch the completed result
+      from fal.ai and restart _run_post_generation.
+    - Otherwise: mark failed (unrecoverable — e.g. multi-clip, pre-gen killed).
+
+    Called from app_server.py after blueprint registration.
+    """
+    global _global_active
+    try:
+        import fal_client as _fal
+        sb = _sb_service()
+
+        result = sb.table('reel_jobs').select(
+            'id,user_id,fal_request_id,fal_endpoint,aspect_ratio,estimated_cost'
+        ).in_('status', ['processing', 'queued', 'analyzing', 'generating']).execute()
+
+        rows = result.data or []
+        if not rows:
+            return
+
+        failed_ids = []
+        recovered  = 0
+
+        for job in rows:
+            req_id   = (job.get('fal_request_id') or '').strip()
+            endpoint = (job.get('fal_endpoint') or 'fal-ai/kling-video/v2.6/pro/image-to-video')
+            job_id   = job['id']
+            user_id  = job['user_id']
+
+            # Multi-clip, pre-gen killed, or no fal_request_id — unrecoverable
+            if not req_id or req_id.startswith('multi:') or req_id == 'pending':
+                failed_ids.append(job_id)
+                continue
+
+            # Try to fetch the completed result from fal.ai
+            try:
+                fal_result = _fal.result(endpoint, req_id)
+                video_url  = ((fal_result.get('video') or {}).get('url')
+                              or fal_result.get('video_url') or '')
+                if not video_url:
+                    failed_ids.append(job_id)
+                    continue
+
+                # fal.ai job was already done — restart post-generation
+                with _lock:
+                    _active_user_jobs[user_id] = job_id
+                    _global_active += 1
+
+                threading.Thread(
+                    target=_run_post_generation,
+                    args=(job_id, user_id, video_url,
+                          job.get('aspect_ratio', '9:16'),
+                          float(job.get('estimated_cost') or 0)),
+                    daemon=True,
+                ).start()
+                recovered += 1
+                print(f'🔄  Recovering job {job_id[:8]}... (fal.ai result retrieved)')
+
+            except Exception:
+                # Not found / expired / still running — unrecoverable
+                failed_ids.append(job_id)
+
+        if failed_ids:
+            sb.table('reel_jobs').update({
+                'status':        'failed',
+                'error_message': 'Server restarted during processing. Please retry.',
+            }).in_('id', failed_ids).execute()
+            print(f'⚠️  Marked {len(failed_ids)} unrecoverable orphaned job(s) as failed')
+
+        if recovered:
+            print(f'🔄  Recovered {recovered} orphaned job(s) — post-generation resumed')
+
+    except Exception as e:
+        print(f'⚠️  Startup recovery failed (non-critical): {e}')
+
+
 # ── Generate ──────────────────────────────────────────────────────────────────
 
 @video_bp.route('/generate', methods=['POST'])
