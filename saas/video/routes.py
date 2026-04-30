@@ -400,12 +400,20 @@ def _run_pre_generation(job_id, user_id, photo_path, audio_path, style,
         # Execution resumes in _run_post_generation when the webhook fires.
 
     except Exception as exc:
-        update('failed', error_message=str(exc)[:500])
+        # Wrap update() in its own try so a Supabase error here doesn't
+        # prevent the finally-block cleanup (slot release).
+        try:
+            update('failed', error_message=str(exc)[:500])
+        except Exception as _ue:
+            print(f'[pregen/{_jid}] WARNING: could not mark job failed: {_ue}', flush=True)
+
+    finally:
+        # ALWAYS release the in-memory slot, regardless of how we exited.
+        # Previously this was only in the except block — if update() threw,
+        # the slot was never released and the user was permanently locked out.
         with _lock:
             _active_user_jobs.pop(user_id, None)
             _global_active = max(0, _global_active - 1)
-
-    finally:
         # Local files no longer needed — audio is now on Supabase
         try:
             shutil.rmtree(tmp_dir, ignore_errors=True)

@@ -25,8 +25,11 @@ def analyze_audio(file_path: str) -> Dict:
         pass
 
     # ── Load first 10 s at 11025 Hz (mono) ───────────────────────────────────
+    # res_type='kaiser_fast' uses scipy (always available with librosa).
+    # 'soxr_vhq' would require the optional soxr package which is NOT in
+    # our requirements — causing librosa.load() to crash on Render.
     y, sr = librosa.load(file_path, mono=True, duration=10.0,
-                         res_type='soxr_vhq', sr=11025)
+                         res_type='kaiser_fast', sr=11025)
 
     hop_length = 512
     n_fft      = 512
