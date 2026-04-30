@@ -403,14 +403,19 @@ def _run_pre_generation(job_id, user_id, photo_path, audio_path, style,
             ) from exc
         _log(f'fal submit DONE req_id={fal["request_id"]}')
 
-        # Register request_id so the webhook handler can find this job
-        with _webhook_lock:
-            _fal_req_to_job[fal['request_id']] = job_id
-
+        # CRITICAL ORDER: persist fal_request_id to DB FIRST.
+        # If the server crashes after submit_reel() but before this update,
+        # the req_id would be lost and startup_recovery could never find it.
+        # Writing to DB first ensures the req_id survives any subsequent crash.
         update('processing',
                fal_request_id=fal['request_id'],
                fal_endpoint=fal['endpoint'],
                prompt=prompt)
+
+        # Register in-memory AFTER DB write — only used by the webhook handler
+        # on the same server instance (new instances use the DB lookup fallback).
+        with _webhook_lock:
+            _fal_req_to_job[fal['request_id']] = job_id
 
         # Thread ends here. fal.ai is generating the video on their servers.
         # Execution resumes in _run_post_generation when the webhook fires.
