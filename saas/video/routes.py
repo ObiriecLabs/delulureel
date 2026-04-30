@@ -329,28 +329,23 @@ def _run_pre_generation(job_id, user_id, photo_path, audio_path, style,
         prompt = generate_scene_prompt(analysis, style)
         _log(f'claude scene prompt DONE len={len(prompt)}')
 
-        # 3 — Upload photo to fal.ai CDN (accessible from fal.ai workers)
-        import fal_client as _fal
-        _log('fal upload_file START')
+        # 3 — Upload photo to Supabase Storage → get signed URL for fal.ai
+        # (Avoids fal_client.upload_file() which has no timeout and hangs on slow networks)
+        photo_key = f'jobs/{job_id}/source.{ext_photo}'
+        _log(f'supabase photo upload START key={photo_key}')
         try:
-            photo_url = _fal.upload_file(photo_path)
-        except Exception as exc:
-            raise RuntimeError(f'fal upload_file failed: {exc}') from exc
-        if not photo_url or not isinstance(photo_url, str):
-            raise RuntimeError(f'upload_file returned invalid URL: {photo_url!r:.80}')
-        _log(f'fal upload_file DONE url={photo_url[:60]}')
-
-        # Archive photo to Supabase (fire-and-forget)
-        try:
-            _log('supabase photo archive START')
             with open(photo_path, 'rb') as fh:
                 sb.storage.from_('reel-uploads').upload(
-                    f'jobs/{job_id}/source.jpg', fh.read(),
-                    file_options={'content-type': 'image/jpeg'},
+                    photo_key, fh.read(),
+                    file_options={'content-type': f'image/{ext_photo}'},
                 )
-            _log('supabase photo archive DONE')
-        except Exception as e:
-            _log(f'supabase photo archive SKIP (non-critical): {e}')
+            signed_photo = sb.storage.from_('reel-uploads').create_signed_url(photo_key, 3600)
+            photo_url = signed_photo.get('signedURL') or signed_photo.get('signedUrl') or ''
+            if not photo_url:
+                raise RuntimeError(f'Could not get signed URL for photo: {signed_photo}')
+            _log(f'supabase photo upload DONE url={photo_url[:80]}')
+        except Exception as exc:
+            raise RuntimeError(f'Photo upload to Supabase failed: {exc}') from exc
 
         # 4 — Upload audio to Supabase Storage
         audio_key = f'jobs/{job_id}/audio.{ext_audio}'
