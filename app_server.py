@@ -10,6 +10,16 @@ import socket
 import httpcore   # noqa: F401
 import httpx      # noqa: F401
 import supabase   # noqa: F401
+# Force httpcore lazy attributes to fully initialise in the master process
+# BEFORE gunicorn forks gthread workers. Python 3.14 __getattr__ lazy-load
+# is not thread-safe: concurrent threads racing on first access of
+# ConnectionPool raise AttributeError. Accessing here (master/preload)
+# guarantees sys.modules has the fully-initialised module for all workers.
+try:
+    _ = httpcore.ConnectionPool
+    _ = httpcore.AsyncConnectionPool
+except Exception:
+    pass
 
 from flask import Flask, send_from_directory, redirect, request, session, url_for, render_template, jsonify
 from werkzeug.middleware.proxy_fix import ProxyFix
@@ -88,7 +98,9 @@ def health():
 
 import threading
 from saas.video.routes import _startup_recovery
-threading.Thread(target=_startup_recovery, daemon=True).start()
+# Startup recovery runs after a short delay so httpcore is fully
+# initialised in the master before this daemon thread first touches supabase.
+threading.Timer(5.0, _startup_recovery).start()
 
 
 def _find_free_port(start: int = 5000, end: int = 5100) -> int:
