@@ -44,6 +44,8 @@ services:
         sync: false
       - key: FFMPEG_PATH
         value: /usr/bin/ffmpeg
+      - key: APP_BASE_URL
+        value: "https://delulureel.com"
       - key: DAILY_BUDGET_CAP_USD
         value: "200"
       - key: MAX_CONCURRENT_GLOBAL

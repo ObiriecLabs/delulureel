@@ -19,11 +19,18 @@ MAX_CONCURRENT_GLOBAL   = int(os.getenv('MAX_CONCURRENT_GLOBAL',   10))
 TRIAL_MAX_GENERATIONS   = int(os.getenv('TRIAL_MAX_GENERATIONS',   3))
 DAILY_BUDGET_CAP_USD    = float(os.getenv('DAILY_BUDGET_CAP_USD',  200))
 
+# Base URL for webhook (must be externally reachable — set APP_BASE_URL in Render env)
+APP_BASE_URL = os.getenv('APP_BASE_URL', 'https://delulureel.com').rstrip('/')
+
 # In-memory rate-limit state (replace with Redis in production)
 _active_user_jobs: dict[str, str] = {}   # user_id → job_id
 _global_active    = 0
 _daily: dict      = {'date': str(date.today()), 'usd': 0.0}
 _lock             = threading.Lock()
+
+# Webhook tracking: fal request_id → job_id (for single-clip webhook lookup)
+_fal_req_to_job: dict[str, str] = {}
+_webhook_lock = threading.Lock()
 
 
 def _sb_service():
@@ -144,12 +151,23 @@ def generate():
         _active_user_jobs[user_id] = job_id
         _global_active += 1
 
-    thread = threading.Thread(
-        target=_run_pipeline,
-        args=(job_id, user_id, photo_path, audio_path, style, aspect_ratio,
-              est_cost, tmp_dir, target_secs, n_clips),
-        daemon=True,
-    )
+    # ── Dispatch ─────────────────────────────────────────────────────────────
+    # Single clip → webhook-based (fal.ai generates, notifies us when done)
+    # Multi-clip  → polling (N parallel jobs, harder to webhook-aggregate)
+    if n_clips == 1:
+        thread = threading.Thread(
+            target=_run_pre_generation,
+            args=(job_id, user_id, photo_path, audio_path, style, aspect_ratio,
+                  est_cost, tmp_dir, target_secs, ext_audio),
+            daemon=True,
+        )
+    else:
+        thread = threading.Thread(
+            target=_run_pipeline,
+            args=(job_id, user_id, photo_path, audio_path, style, aspect_ratio,
+                  est_cost, tmp_dir, target_secs, n_clips),
+            daemon=True,
+        )
     thread.start()
 
     return jsonify({
@@ -160,7 +178,283 @@ def generate():
     })
 
 
-# ── Background pipeline ───────────────────────────────────────────────────────
+# ── Phase 1: Pre-generation (single clip, webhook mode) ───────────────────────
+# Short-lived thread (~30s): audio analysis + Claude + uploads + fal.ai submit
+# Thread ends as soon as fal.ai acknowledges the job. Generation happens on
+# fal.ai servers — our server is idle until the webhook fires.
+
+def _run_pre_generation(job_id, user_id, photo_path, audio_path, style,
+                        aspect_ratio, est_cost, tmp_dir, target_secs, ext_audio):
+    global _global_active
+    sb = _sb_service()
+
+    def update(status, **kw):
+        sb.table('reel_jobs').update({'status': status, **kw}).eq('id', job_id).execute()
+
+    try:
+        # 1 — Audio analysis
+        update('analyzing')
+        from core.audio_analyzer import analyze_audio
+        analysis = analyze_audio(audio_path)
+        gc.collect()
+
+        # 2 — Scene prompt (Claude)
+        update('generating', bpm=analysis['bpm'])
+        from core.scene_director import generate_scene_prompt
+        prompt = generate_scene_prompt(analysis, style)
+
+        # 3 — Upload photo to fal.ai CDN (accessible from fal.ai workers)
+        import fal_client as _fal
+        try:
+            photo_url = _fal.upload_file(photo_path)
+        except Exception as exc:
+            raise RuntimeError(f'fal upload_file failed: {exc}') from exc
+        if not photo_url or not isinstance(photo_url, str):
+            raise RuntimeError(f'upload_file returned invalid URL: {photo_url!r:.80}')
+
+        # Archive photo to Supabase (fire-and-forget)
+        try:
+            with open(photo_path, 'rb') as fh:
+                sb.storage.from_('reel-uploads').upload(
+                    f'jobs/{job_id}/source.jpg', fh.read(),
+                    file_options={'content-type': 'image/jpeg'},
+                )
+        except Exception:
+            pass
+
+        # 4 — Upload audio to Supabase Storage
+        # The post-generation webhook handler runs in a fresh thread with no
+        # access to the local tmp_dir, so the audio must be persisted in Supabase.
+        audio_key = f'jobs/{job_id}/audio.{ext_audio}'
+        try:
+            with open(audio_path, 'rb') as fh:
+                sb.storage.from_('reel-uploads').upload(
+                    audio_key, fh,
+                    file_options={'content-type': f'audio/{ext_audio}'},
+                )
+        except Exception as exc:
+            raise RuntimeError(f'Audio upload to Supabase failed: {exc}') from exc
+
+        # 5 — Submit to fal.ai WITH webhook URL
+        # fal.ai will call POST /video/webhook/fal when generation is complete.
+        from core.video_generator import submit_reel, ENDPOINT_PRO
+        clip_len    = min(target_secs, 10)
+        webhook_url = f'{APP_BASE_URL}/video/webhook/fal'
+
+        try:
+            fal = submit_reel(
+                photo_url, prompt,
+                duration=clip_len, aspect_ratio=aspect_ratio,
+                endpoint=ENDPOINT_PRO, webhook_url=webhook_url,
+            )
+        except Exception as exc:
+            raise RuntimeError(
+                f'fal submit failed [ep={ENDPOINT_PRO}, dur={clip_len}]: {exc}'
+            ) from exc
+
+        # Register request_id so the webhook handler can find this job
+        with _webhook_lock:
+            _fal_req_to_job[fal['request_id']] = job_id
+
+        update('processing',
+               fal_request_id=fal['request_id'],
+               fal_endpoint=fal['endpoint'],
+               prompt=prompt)
+
+        # Thread ends here. fal.ai is generating the video on their servers.
+        # Execution resumes in _run_post_generation when the webhook fires.
+
+    except Exception as exc:
+        update('failed', error_message=str(exc)[:500])
+        with _lock:
+            _active_user_jobs.pop(user_id, None)
+            _global_active = max(0, _global_active - 1)
+
+    finally:
+        # Local files no longer needed — audio is now on Supabase
+        try:
+            shutil.rmtree(tmp_dir, ignore_errors=True)
+        except Exception:
+            pass
+
+
+# ── Webhook: fal.ai notifies us when generation is complete ───────────────────
+
+@video_bp.route('/webhook/fal', methods=['POST'])
+def fal_webhook():
+    """
+    fal.ai calls this endpoint when a submitted job finishes (OK or ERROR).
+    We must return 200 quickly — fal.ai retries on non-200.
+    Heavy work (download, FFmpeg, upload) is offloaded to _run_post_generation.
+    """
+    data = request.get_json(silent=True) or {}
+
+    # fal.ai payload shape: {"request_id": "...", "status": "OK"|"ERROR", "payload": {...}}
+    req_id = data.get('request_id') or (data.get('request') or {}).get('id') or ''
+    status = data.get('status', '')
+
+    if not req_id:
+        return jsonify({'ok': False, 'reason': 'missing request_id'}), 400
+
+    # Look up job_id from in-memory map
+    with _webhook_lock:
+        job_id = _fal_req_to_job.pop(req_id, None)
+
+    if not job_id:
+        # Could be a late webhook after server restart — try DB lookup by fal_request_id
+        try:
+            sb = _sb_service()
+            rows = sb.table('reel_jobs').select('id,user_id,status,aspect_ratio,estimated_cost') \
+                     .eq('fal_request_id', req_id).limit(1).execute()
+            if rows.data:
+                job_id = rows.data[0]['id']
+            else:
+                return jsonify({'ok': True, 'note': 'unknown request_id'}), 200
+        except Exception:
+            return jsonify({'ok': True, 'note': 'db lookup failed'}), 200
+
+    sb = _sb_service()
+    try:
+        job = sb.table('reel_jobs').select(
+            'id,user_id,status,aspect_ratio,estimated_cost,fal_endpoint'
+        ).eq('id', job_id).single().execute().data
+    except Exception:
+        return jsonify({'ok': True, 'note': 'job not found'}), 200
+
+    # Idempotency guard
+    if job.get('status') in ('completed', 'failed'):
+        return jsonify({'ok': True}), 200
+
+    user_id  = job['user_id']
+    est_cost = float(job.get('estimated_cost') or 0)
+    ar       = job.get('aspect_ratio', '9:16')
+    endpoint = job.get('fal_endpoint', '')
+
+    if status == 'ERROR':
+        err_msg = str(data.get('error', 'fal.ai generation failed'))[:500]
+        sb.table('reel_jobs').update({'status': 'failed', 'error_message': err_msg}) \
+          .eq('id', job_id).execute()
+        with _lock:
+            _active_user_jobs.pop(user_id, None)
+            _global_active = max(0, _global_active - 1)
+        return jsonify({'ok': True}), 200
+
+    if status == 'OK':
+        payload   = data.get('payload') or {}
+        video_obj = payload.get('video') or {}
+        video_url = video_obj.get('url') or payload.get('video_url') or ''
+
+        if not video_url:
+            sb.table('reel_jobs').update({
+                'status': 'failed',
+                'error_message': 'Webhook: no video URL in fal.ai payload',
+            }).eq('id', job_id).execute()
+            with _lock:
+                _active_user_jobs.pop(user_id, None)
+                _global_active = max(0, _global_active - 1)
+            return jsonify({'ok': True}), 200
+
+        # Spawn post-generation thread (download + FFmpeg + Supabase upload)
+        thread = threading.Thread(
+            target=_run_post_generation,
+            args=(job_id, user_id, video_url, ar, est_cost),
+            daemon=True,
+        )
+        thread.start()
+        return jsonify({'ok': True}), 200
+
+    # Unknown status — return 200 to avoid fal.ai retrying indefinitely
+    return jsonify({'ok': True, 'note': f'unrecognised status: {status}'}), 200
+
+
+# ── Phase 2: Post-generation (single clip, after webhook) ─────────────────────
+# Short-lived thread (~60s): download raw video + FFmpeg + upload to Supabase
+
+def _run_post_generation(job_id, user_id, raw_video_url, aspect_ratio, est_cost):
+    global _global_active
+    sb   = _sb_service()
+    tmp  = tempfile.mkdtemp(prefix='dlr_post_')
+
+    def update(status, **kw):
+        sb.table('reel_jobs').update({'status': status, **kw}).eq('id', job_id).execute()
+
+    try:
+        ar_slug    = aspect_ratio.replace(':', 'x')
+        raw_path   = os.path.join(tmp, 'raw.mp4')
+        audio_path = os.path.join(tmp, 'audio')
+        final_path = os.path.join(tmp, f'reel_{ar_slug}.mp4')
+
+        # 1 — Download raw video from fal.ai CDN
+        resp = _requests.get(raw_video_url, stream=True, timeout=180)
+        resp.raise_for_status()
+        with open(raw_path, 'wb') as fh:
+            for chunk in resp.iter_content(chunk_size=65536):
+                fh.write(chunk)
+
+        # 2 — Download audio from Supabase Storage
+        # List the jobs/{job_id}/ folder to find the audio file
+        try:
+            files = sb.storage.from_('reel-uploads').list(f'jobs/{job_id}')
+            audio_file = next(
+                (f for f in files if f.get('name', '').startswith('audio.')), None
+            )
+            if not audio_file:
+                raise RuntimeError('Audio file not found in Supabase Storage')
+            audio_key = f'jobs/{job_id}/{audio_file["name"]}'
+            ext_audio = audio_file['name'].rsplit('.', 1)[-1]
+            audio_path = os.path.join(tmp, f'audio.{ext_audio}')
+
+            signed = sb.storage.from_('reel-uploads').create_signed_url(audio_key, 3600)
+            audio_signed_url = signed.get('signedURL') or signed.get('signedUrl') or ''
+            if not audio_signed_url:
+                raise RuntimeError(f'Could not get signed URL for audio: {signed}')
+
+            resp_audio = _requests.get(audio_signed_url, stream=True, timeout=120)
+            resp_audio.raise_for_status()
+            with open(audio_path, 'wb') as fh:
+                for chunk in resp_audio.iter_content(chunk_size=65536):
+                    fh.write(chunk)
+        except Exception as exc:
+            raise RuntimeError(f'Audio retrieval failed: {exc}') from exc
+
+        # 3 — FFmpeg assembly (raw video + original audio)
+        gc.collect()
+        from core.assembler import assemble_reel
+        assemble_reel([raw_path], audio_path, final_path, aspect_ratio)
+        gc.collect()
+
+        # 4 — Upload final reel to Supabase (streaming — no fh.read() in RAM)
+        output_key = f'jobs/{job_id}/reel_{ar_slug}.mp4'
+        with open(final_path, 'rb') as fh:
+            sb.storage.from_('reel-outputs').upload(
+                output_key, fh,
+                file_options={'content-type': 'video/mp4'},
+            )
+        final_url = sb.storage.from_('reel-outputs').get_public_url(output_key)
+
+        # 5 — Mark completed
+        _record_spend(est_cost)
+        update('completed', output_url=final_url, actual_cost=est_cost)
+
+        # 6 — Increment reel counter
+        sb.rpc('increment_reel_count', {'p_user_id': user_id}).execute()
+
+    except Exception as exc:
+        update('failed', error_message=str(exc)[:500])
+
+    finally:
+        with _lock:
+            _active_user_jobs.pop(user_id, None)
+            _global_active = max(0, _global_active - 1)
+        try:
+            shutil.rmtree(tmp, ignore_errors=True)
+        except Exception:
+            pass
+
+
+# ── Multi-clip pipeline (polling, unchanged) ──────────────────────────────────
+# Used for 30s / Full Track (n_clips > 1). Polling is acceptable here because
+# the assembly requires all N clips before FFmpeg can run.
 
 def _run_pipeline(job_id, user_id, photo_path, audio_path, style, aspect_ratio,
                   est_cost, tmp_dir, target_secs=10, n_clips=1):
@@ -184,102 +478,70 @@ def _run_pipeline(job_id, user_id, photo_path, audio_path, style, aspect_ratio,
         update('analyzing')
         from core.audio_analyzer import analyze_audio
         analysis = analyze_audio(audio_path)
-        gc.collect()   # free numpy arrays immediately after analysis
+        gc.collect()
 
         # 2 — Scene prompt (Claude)
         update('generating', bpm=analysis['bpm'])
         from core.scene_director import generate_scene_prompt
         prompt = generate_scene_prompt(analysis, style)
 
-        # 3 — Upload photo directly to fal.ai CDN (guarantees accessibility from fal.ai workers)
+        # 3 — Upload photo to fal.ai CDN
         import fal_client as _fal
         try:
             photo_url = _fal.upload_file(photo_path)
         except Exception as upload_exc:
             raise RuntimeError(f'upload_file failed: {upload_exc}') from upload_exc
         if not photo_url or not isinstance(photo_url, str):
-            raise RuntimeError(f'upload_file returned invalid URL: {type(photo_url).__name__}={photo_url!r:.80}')
+            raise RuntimeError(f'upload_file returned invalid URL: {photo_url!r:.80}')
 
-        # Archive photo to Supabase Storage for our records (fire-and-forget)
+        # Archive photo (fire-and-forget)
         try:
-            storage_key = f'jobs/{job_id}/source.jpg'
             with open(photo_path, 'rb') as fh:
                 sb.storage.from_('reel-uploads').upload(
-                    storage_key, fh.read(),
+                    f'jobs/{job_id}/source.jpg', fh.read(),
                     file_options={'content-type': 'image/jpeg'},
                 )
         except Exception:
-            pass  # non-critical — generation continues regardless
+            pass
 
-        # 4 — Submit to fal.ai
+        # 4 — Submit multi-clip to fal.ai (parallel, polling)
         from core.video_generator import (
-            submit_reel, submit_multi_reel, poll_until_done,
-            ENDPOINT_PRO, ENDPOINT_TURBO,
-            MAX_WAIT_SINGLE, MAX_WAIT_MULTI,
+            submit_multi_reel, poll_until_done,
+            ENDPOINT_TURBO, MAX_WAIT_MULTI,
         )
 
         ar_slug    = aspect_ratio.replace(':', 'x')
         final_path = os.path.join(tmp_dir, f'reel_{ar_slug}.mp4')
 
-        if n_clips == 1:
-            # ── Single clip (Kling 3.0 Pro) ───────────────────────────────────
-            clip_len = min(target_secs, 10)
-            update('processing', fal_request_id='pending', prompt=prompt)
-            try:
-                fal = submit_reel(
-                    photo_url, prompt,
-                    duration=clip_len, aspect_ratio=aspect_ratio, endpoint=ENDPOINT_PRO,
-                )
-            except Exception as fal_exc:
-                raise RuntimeError(
-                    f'fal submit failed [endpoint={ENDPOINT_PRO}, dur={clip_len}, ar={aspect_ratio}, '
-                    f'url_prefix={photo_url[:60]}]: {fal_exc}'
-                ) from fal_exc
-            update('processing', fal_request_id=fal['request_id'], fal_endpoint=fal['endpoint'])
-            try:
-                raw_url = poll_until_done(fal['request_id'], fal['endpoint'], MAX_WAIT_SINGLE)
-            except Exception as poll_exc:
-                raise RuntimeError(
-                    f'poll_until_done failed [req={fal["request_id"]}, ep={fal["endpoint"]}]: {poll_exc}'
-                ) from poll_exc
-            raw_path = download_video(raw_url, 'raw_0.mp4')
-            video_clips = [raw_path]
+        update('processing',
+               fal_request_id=f'multi:{n_clips}',
+               fal_endpoint=ENDPOINT_TURBO,
+               prompt=prompt)
+        try:
+            handles = submit_multi_reel(photo_url, prompt, n_clips, aspect_ratio=aspect_ratio)
+        except Exception as exc:
+            raise RuntimeError(
+                f'fal multi-submit failed [n={n_clips}, ar={aspect_ratio}]: {exc}'
+            ) from exc
 
-        else:
-            # ── Multi-clip (Kling 2.5 Turbo, parallel submit) ─────────────────
-            update('processing',
-                   fal_request_id=f'multi:{n_clips}',
-                   fal_endpoint=ENDPOINT_TURBO,
-                   prompt=prompt)
+        video_clips = []
+        for i, h in enumerate(handles):
             try:
-                handles = submit_multi_reel(
-                    photo_url, prompt, n_clips,
-                    aspect_ratio=aspect_ratio,
-                )
-            except Exception as fal_exc:
+                url = poll_until_done(h['request_id'], h['endpoint'], MAX_WAIT_MULTI)
+            except Exception as exc:
                 raise RuntimeError(
-                    f'fal multi-submit failed [endpoint={ENDPOINT_TURBO}, n={n_clips}, ar={aspect_ratio}, '
-                    f'url_prefix={photo_url[:60]}]: {fal_exc}'
-                ) from fal_exc
-            video_clips = []
-            for i, h in enumerate(handles):
-                try:
-                    url = poll_until_done(h['request_id'], h['endpoint'], MAX_WAIT_MULTI)
-                except Exception as poll_exc:
-                    raise RuntimeError(
-                        f'poll_until_done failed [clip={i}, req={h["request_id"]}, ep={h["endpoint"]}]: {poll_exc}'
-                    ) from poll_exc
-                path = download_video(url, f'clip_{i}.mp4')
-                video_clips.append(path)
+                    f'poll_until_done failed [clip={i}, req={h["request_id"]}]: {exc}'
+                ) from exc
+            video_clips.append(download_video(url, f'clip_{i}.mp4'))
 
-        # 5 — Assemble (FFmpeg: clips + original audio, trimmed to target_secs)
-        gc.collect()   # free download buffers before FFmpeg
+        # 5 — Assemble
+        gc.collect()
         from core.assembler import assemble_reel
         assemble_reel(video_clips, audio_path, final_path, aspect_ratio,
                       max_duration=float(target_secs))
-        gc.collect()   # free after FFmpeg
+        gc.collect()
 
-        # 6 — Upload final reel (pass file handle — avoids loading entire video into RAM)
+        # 6 — Upload final reel
         output_key = f'jobs/{job_id}/reel_{ar_slug}.mp4'
         with open(final_path, 'rb') as fh:
             sb.storage.from_('reel-outputs').upload(
@@ -291,8 +553,6 @@ def _run_pipeline(job_id, user_id, photo_path, audio_path, style, aspect_ratio,
         # 7 — Mark completed
         _record_spend(est_cost)
         update('completed', output_url=final_url, actual_cost=est_cost)
-
-        # 8 — Increment reel counter
         sb.rpc('increment_reel_count', {'p_user_id': user_id}).execute()
 
     except Exception as exc:

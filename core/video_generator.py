@@ -66,11 +66,17 @@ def submit_reel(
     duration: int = 10,
     aspect_ratio: str = '9:16',
     endpoint: str = ENDPOINT_PRO,
+    webhook_url: str | None = None,
 ) -> Dict:
     """
     Submit a single clip to fal.ai.
-    Returns {'request_id', 'endpoint', 'estimated_cost'}.
+    If webhook_url is provided, fal.ai will POST the result there when done
+    (no polling needed). Returns {'request_id', 'endpoint', 'estimated_cost'}.
     """
+    submit_kwargs: dict = {}
+    if webhook_url:
+        submit_kwargs['webhook_url'] = webhook_url
+
     handle = fal_client.submit(
         endpoint,
         arguments={
@@ -83,6 +89,7 @@ def submit_reel(
                                             # fails with 'Invalid reference index 1'
                                             # when no voice elements are provided)
         },
+        **submit_kwargs,
     )
     return {
         'request_id':     handle.request_id,
