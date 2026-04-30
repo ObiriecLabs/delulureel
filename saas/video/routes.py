@@ -6,9 +6,25 @@ import shutil
 import tempfile
 import threading
 import requests as _requests
-from datetime import date
+from datetime import date, datetime, timedelta, timezone
 from flask import Blueprint, request, session, jsonify, Response, stream_with_context, redirect, url_for
 from supabase import create_client
+
+# Import fal_client at module level — avoids partial-initialisation errors
+# that occur when the module is first imported inside a background thread
+# (Python's per-module import lock can return a partially-initialized object
+# when a circular import is detected mid-flight inside fal_client itself).
+import fal_client as _fal
+
+from core.video_generator import (
+    submit_reel, submit_multi_reel, poll_until_done,
+    estimate_cost, endpoint_for_duration, n_clips_for_duration,
+    CLIP_LEN_MULTI, MAX_AUDIO_SEC, MAX_WAIT_MULTI,
+    ENDPOINT_PRO, ENDPOINT_TURBO,
+)
+from core.audio_analyzer import analyze_audio
+from core.scene_director import generate_scene_prompt
+from core.assembler import assemble_reel
 
 from saas.auth.routes import require_auth_api
 
@@ -76,8 +92,6 @@ def _startup_recovery():
     """
     global _global_active
     try:
-        import fal_client as _fal
-        from datetime import datetime, timedelta, timezone
         sb = _sb_service()
 
         # Only recover jobs older than 60 s — prevents killing brand-new jobs
@@ -195,12 +209,6 @@ def generate():
     aspect_ratio = request.form.get('aspect_ratio', '9:16') or '9:16'
 
     # ── Duration / clip count ────────────────────────────────────────────────
-    from core.video_generator import (
-        estimate_cost, endpoint_for_duration,
-        n_clips_for_duration, CLIP_LEN_MULTI, MAX_AUDIO_SEC,
-        ENDPOINT_PRO, ENDPOINT_TURBO,
-    )
-
     video_duration = (request.form.get('video_duration', '10') or '10').strip()
 
     try:
@@ -317,7 +325,6 @@ def _run_pre_generation(job_id, user_id, photo_path, audio_path, style,
         # 1 — Audio analysis
         _log('audio analysis START')
         update('analyzing')
-        from core.audio_analyzer import analyze_audio
         analysis = analyze_audio(audio_path)
         gc.collect()
         _log(f'audio analysis DONE bpm={analysis.get("bpm",0):.0f}')
@@ -325,7 +332,6 @@ def _run_pre_generation(job_id, user_id, photo_path, audio_path, style,
         # 2 — Scene prompt (Claude)
         update('generating', bpm=analysis['bpm'])
         _log('claude scene prompt START')
-        from core.scene_director import generate_scene_prompt
         prompt = generate_scene_prompt(analysis, style)
         _log(f'claude scene prompt DONE len={len(prompt)}')
 
@@ -362,7 +368,6 @@ def _run_pre_generation(job_id, user_id, photo_path, audio_path, style,
             raise RuntimeError(f'Audio upload to Supabase failed: {exc}') from exc
 
         # 5 — Submit to fal.ai WITH webhook URL
-        from core.video_generator import submit_reel, ENDPOINT_PRO
         clip_len    = min(target_secs, 10)
         webhook_url = f'{APP_BASE_URL}/video/webhook/fal'
         _log(f'fal submit START dur={clip_len} webhook={webhook_url}')
@@ -546,7 +551,6 @@ def _run_post_generation(job_id, user_id, raw_video_url, aspect_ratio, est_cost)
 
         # 3 — FFmpeg assembly (raw video + original audio)
         gc.collect()
-        from core.assembler import assemble_reel
         assemble_reel([raw_path], audio_path, final_path, aspect_ratio)
         gc.collect()
 
@@ -603,17 +607,14 @@ def _run_pipeline(job_id, user_id, photo_path, audio_path, style, aspect_ratio,
     try:
         # 1 — Audio analysis
         update('analyzing')
-        from core.audio_analyzer import analyze_audio
         analysis = analyze_audio(audio_path)
         gc.collect()
 
         # 2 — Scene prompt (Claude)
         update('generating', bpm=analysis['bpm'])
-        from core.scene_director import generate_scene_prompt
         prompt = generate_scene_prompt(analysis, style)
 
         # 3 — Upload photo to fal.ai CDN
-        import fal_client as _fal
         try:
             photo_url = _fal.upload_file(photo_path)
         except Exception as upload_exc:
@@ -632,11 +633,6 @@ def _run_pipeline(job_id, user_id, photo_path, audio_path, style, aspect_ratio,
             pass
 
         # 4 — Submit multi-clip to fal.ai (parallel, polling)
-        from core.video_generator import (
-            submit_multi_reel, poll_until_done,
-            ENDPOINT_TURBO, MAX_WAIT_MULTI,
-        )
-
         ar_slug    = aspect_ratio.replace(':', 'x')
         final_path = os.path.join(tmp_dir, f'reel_{ar_slug}.mp4')
 
@@ -663,7 +659,6 @@ def _run_pipeline(job_id, user_id, photo_path, audio_path, style, aspect_ratio,
 
         # 5 — Assemble
         gc.collect()
-        from core.assembler import assemble_reel
         assemble_reel(video_clips, audio_path, final_path, aspect_ratio,
                       max_duration=float(target_secs))
         gc.collect()
