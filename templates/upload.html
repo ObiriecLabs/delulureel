@@ -610,7 +610,7 @@ document.getElementById('upload-form').addEventListener('submit', async e => {
   try {
     // 90s timeout for the initial POST (large audio upload can take time)
     const ctrl    = new AbortController();
-    const timer   = setTimeout(() => ctrl.abort(), 90000);
+    const timer   = setTimeout(() => ctrl.abort(), 300000);
     let res, data;
     try {
       res  = await fetch('/video/generate', { method: 'POST', body: fd, signal: ctrl.signal });

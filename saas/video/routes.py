@@ -33,8 +33,13 @@ _fal_req_to_job: dict[str, str] = {}
 _webhook_lock = threading.Lock()
 
 
+_sb_svc = None
+
 def _sb_service():
-    return create_client(os.getenv('SUPABASE_URL', ''), os.getenv('SUPABASE_SERVICE_KEY', ''))
+    global _sb_svc
+    if _sb_svc is None:
+        _sb_svc = create_client(os.getenv('SUPABASE_URL', ''), os.getenv('SUPABASE_SERVICE_KEY', ''))
+    return _sb_svc
 
 
 def _budget_ok(cost: float) -> bool:
@@ -143,8 +148,11 @@ def _startup_recovery():
 @video_bp.route('/generate', methods=['POST'])
 @require_auth_api
 def generate():
+    import time as _time
+    _t0 = _time.time()
     global _global_active
     user_id = request.current_user.id
+    print(f'[generate] START user={user_id[:8]}')
 
     with _lock:
         if user_id in _active_user_jobs:
@@ -153,10 +161,13 @@ def generate():
             return jsonify({'error': 'Service at capacity. Please try again in a few minutes.'}), 429
 
     # Fetch profile
+    print(f'[generate] fetching profile ({_time.time()-_t0:.1f}s)')
     sb = _sb_service()
     try:
         prof = sb.table('profiles').select('*').eq('user_id', user_id).single().execute().data
-    except Exception:
+        print(f'[generate] profile OK ({_time.time()-_t0:.1f}s) status={prof.get("status")}')
+    except Exception as e:
+        print(f'[generate] profile FAILED ({_time.time()-_t0:.1f}s): {e}')
         return jsonify({'error': 'Profile not found. Please contact support.'}), 404
 
     # Access checks
@@ -212,12 +223,15 @@ def generate():
     ext_audio = (audio.filename or 'audio.mp3').rsplit('.', 1)[-1].lower() or 'mp3'
     photo_path = os.path.join(tmp_dir, f'photo.{ext_photo}')
     audio_path = os.path.join(tmp_dir, f'audio.{ext_audio}')
+    print(f'[generate] saving files ({_time.time()-_t0:.1f}s)')
     photo.save(photo_path)
     audio.save(audio_path)
+    print(f'[generate] files saved ({_time.time()-_t0:.1f}s)')
 
     job_id = str(uuid.uuid4())
 
     # Persist job
+    print(f'[generate] inserting job ({_time.time()-_t0:.1f}s)')
     _sb_service().table('reel_jobs').insert({
         'id':             job_id,
         'user_id':        user_id,
@@ -226,6 +240,8 @@ def generate():
         'aspect_ratio':   aspect_ratio,
         'estimated_cost': est_cost,
     }).execute()
+
+    print(f'[generate] job inserted ({_time.time()-_t0:.1f}s)')
 
     # Lock slots
     with _lock:
@@ -251,6 +267,7 @@ def generate():
         )
     thread.start()
 
+    print(f'[generate] DONE returning job_id ({_time.time()-_t0:.1f}s)')
     return jsonify({
         'job_id':       job_id,
         'status':       'queued',
