@@ -35,7 +35,12 @@
       </div>
       <div class="field">
         <label class="field-label">Password</label>
-        <input type="password" name="password" class="field-input" placeholder="At least 8 characters" required minlength="8">
+        <input type="password" name="password" id="password" class="field-input" placeholder="At least 8 characters" required minlength="8">
+      </div>
+      <div class="field">
+        <label class="field-label">Confirm password</label>
+        <input type="password" name="confirm_password" id="confirm_password" class="field-input" placeholder="Repeat your password" required minlength="8">
+        <span class="field-error" id="pw-mismatch" style="display:none;color:var(--error,#f87171);font-size:.8rem;margin-top:.35rem;">Passwords do not match.</span>
       </div>
 
       <button type="submit" class="btn btn-primary btn-full" id="signup-btn">
@@ -55,7 +60,26 @@
 </div>
 
 <script>
-  document.getElementById('signup-form').addEventListener('submit', function() {
+  const pwField      = document.getElementById('password');
+  const confirmField = document.getElementById('confirm_password');
+  const mismatch     = document.getElementById('pw-mismatch');
+
+  function checkMatch() {
+    if (confirmField.value && pwField.value !== confirmField.value) {
+      mismatch.style.display = 'block';
+      confirmField.setCustomValidity('Passwords do not match.');
+    } else {
+      mismatch.style.display = 'none';
+      confirmField.setCustomValidity('');
+    }
+  }
+
+  pwField.addEventListener('input', checkMatch);
+  confirmField.addEventListener('input', checkMatch);
+
+  document.getElementById('signup-form').addEventListener('submit', function(e) {
+    checkMatch();
+    if (!confirmField.checkValidity()) { e.preventDefault(); return; }
     const btn = document.getElementById('signup-btn');
     btn.disabled = true;
     btn.textContent = 'Setting up your account…';
