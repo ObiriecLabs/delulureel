@@ -78,6 +78,10 @@ def submit_reel(
             'start_image_url': image_url,   # Kling v2.6/v3 Pro use start_image_url
             'duration':        str(duration),  # v2.6 Pro expects "5" or "10" string
             'aspect_ratio':    aspect_ratio,
+            'generate_audio':  False,       # CRITICAL: disable default audio gen
+                                            # (default=True tries to use elements[1],
+                                            # fails with 'Invalid reference index 1'
+                                            # when no voice elements are provided)
         },
     )
     return {
@@ -103,10 +107,11 @@ def submit_multi_reel(
         h = fal_client.submit(
             ENDPOINT_TURBO,
             arguments={
-                'prompt':       prompt,
-                'image_url':    image_url,  # Kling 2.5 Turbo uses image_url
-                'duration':     clip_len,   # integer: 5 or 10
-                'aspect_ratio': aspect_ratio,
+                'prompt':          prompt,
+                'image_url':       image_url,   # Kling 2.5 Turbo uses image_url
+                'duration':        clip_len,    # integer: 5 or 10
+                'aspect_ratio':    aspect_ratio,
+                'generate_audio':  False,       # disable default audio gen (same bug)
             },
         )
         handles.append({
