@@ -129,6 +129,7 @@ def _startup_recovery():
                 video_url   = ((result_data.get('video') or {}).get('url')
                                or result_data.get('video_url') or '')
                 if not video_url:
+                    # fal.ai returned something but no URL — genuine failure
                     failed_ids.append(job_id)
                     continue
 
@@ -148,8 +149,23 @@ def _startup_recovery():
                 print(f'🔄  Recovering job {job_id[:8]}... (fal.ai result retrieved)')
 
             except Exception:
-                # Not found / expired / still running — unrecoverable
-                failed_ids.append(job_id)
+                # fal_result() raised — two cases:
+                # a) Job still running on fal.ai (<15 min old): leave in 'processing',
+                #    the webhook will arrive and _run_post_generation will handle it.
+                # b) Job very old (>15 min) and fal.ai has no result: genuine failure.
+                created_str = job.get('created_at', '')
+                try:
+                    created_dt = datetime.fromisoformat(created_str.replace('Z', '+00:00'))
+                    age_minutes = (datetime.now(timezone.utc) - created_dt).total_seconds() / 60
+                except Exception:
+                    age_minutes = 0
+
+                if age_minutes > 15:
+                    failed_ids.append(job_id)
+                    print(f'⚠️  Job {job_id[:8]} has fal_request_id but is >{age_minutes:.0f} min old — marking failed')
+                else:
+                    # Leave in processing — webhook will rescue it
+                    print(f'⏳  Job {job_id[:8]} still in-flight on fal.ai ({age_minutes:.1f} min old) — keeping processing, waiting for webhook')
 
         if failed_ids:
             sb.table('reel_jobs').update({
@@ -464,8 +480,11 @@ def fal_webhook():
     except Exception:
         return jsonify({'ok': True, 'note': 'job not found'}), 200
 
-    # Idempotency guard
-    if job.get('status') in ('completed', 'failed'):
+    # Idempotency guard — only skip truly completed jobs.
+    # Do NOT skip 'failed' jobs: startup_recovery may have marked the job failed
+    # while fal.ai was still generating (server restart mid-job). When fal.ai
+    # fires the webhook we must still process it to save the video.
+    if job.get('status') == 'completed':
         return jsonify({'ok': True}), 200
 
     user_id  = job['user_id']
