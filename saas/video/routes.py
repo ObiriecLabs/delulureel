@@ -283,61 +283,75 @@ def generate():
 
 def _run_pre_generation(job_id, user_id, photo_path, audio_path, style,
                         aspect_ratio, est_cost, tmp_dir, target_secs, ext_audio):
+    import time as _time
+    _t0 = _time.time()
     global _global_active
     sb = _sb_service()
+    _jid = job_id[:8]
 
     def update(status, **kw):
         sb.table('reel_jobs').update({'status': status, **kw}).eq('id', job_id).execute()
 
+    def _log(msg):
+        print(f'[pregen/{_jid}] {msg} ({_time.time()-_t0:.1f}s)', flush=True)
+
     try:
         # 1 — Audio analysis
+        _log('audio analysis START')
         update('analyzing')
         from core.audio_analyzer import analyze_audio
         analysis = analyze_audio(audio_path)
         gc.collect()
+        _log(f'audio analysis DONE bpm={analysis.get("bpm",0):.0f}')
 
         # 2 — Scene prompt (Claude)
         update('generating', bpm=analysis['bpm'])
+        _log('claude scene prompt START')
         from core.scene_director import generate_scene_prompt
         prompt = generate_scene_prompt(analysis, style)
+        _log(f'claude scene prompt DONE len={len(prompt)}')
 
         # 3 — Upload photo to fal.ai CDN (accessible from fal.ai workers)
         import fal_client as _fal
+        _log('fal upload_file START')
         try:
             photo_url = _fal.upload_file(photo_path)
         except Exception as exc:
             raise RuntimeError(f'fal upload_file failed: {exc}') from exc
         if not photo_url or not isinstance(photo_url, str):
             raise RuntimeError(f'upload_file returned invalid URL: {photo_url!r:.80}')
+        _log(f'fal upload_file DONE url={photo_url[:60]}')
 
         # Archive photo to Supabase (fire-and-forget)
         try:
+            _log('supabase photo archive START')
             with open(photo_path, 'rb') as fh:
                 sb.storage.from_('reel-uploads').upload(
                     f'jobs/{job_id}/source.jpg', fh.read(),
                     file_options={'content-type': 'image/jpeg'},
                 )
-        except Exception:
-            pass
+            _log('supabase photo archive DONE')
+        except Exception as e:
+            _log(f'supabase photo archive SKIP (non-critical): {e}')
 
         # 4 — Upload audio to Supabase Storage
-        # The post-generation webhook handler runs in a fresh thread with no
-        # access to the local tmp_dir, so the audio must be persisted in Supabase.
         audio_key = f'jobs/{job_id}/audio.{ext_audio}'
+        _log(f'supabase audio upload START key={audio_key}')
         try:
             with open(audio_path, 'rb') as fh:
                 sb.storage.from_('reel-uploads').upload(
                     audio_key, fh,
                     file_options={'content-type': f'audio/{ext_audio}'},
                 )
+            _log('supabase audio upload DONE')
         except Exception as exc:
             raise RuntimeError(f'Audio upload to Supabase failed: {exc}') from exc
 
         # 5 — Submit to fal.ai WITH webhook URL
-        # fal.ai will call POST /video/webhook/fal when generation is complete.
         from core.video_generator import submit_reel, ENDPOINT_PRO
         clip_len    = min(target_secs, 10)
         webhook_url = f'{APP_BASE_URL}/video/webhook/fal'
+        _log(f'fal submit START dur={clip_len} webhook={webhook_url}')
 
         try:
             fal = submit_reel(
@@ -349,6 +363,7 @@ def _run_pre_generation(job_id, user_id, photo_path, audio_path, style,
             raise RuntimeError(
                 f'fal submit failed [ep={ENDPOINT_PRO}, dur={clip_len}]: {exc}'
             ) from exc
+        _log(f'fal submit DONE req_id={fal["request_id"]}')
 
         # Register request_id so the webhook handler can find this job
         with _webhook_lock:
