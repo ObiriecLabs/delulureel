@@ -12,10 +12,10 @@ def _get_client() -> anthropic.Anthropic:
     return _client
 
 
-_SYSTEM = """You are a professional AI music video director who writes Kling 3.0 Pro prompts.
+_SYSTEM = """You are a professional AI music video director who writes Kling AI image-to-video prompts.
 
 Rules:
-- Always reference the subject as @Element1 (Kling Elements = character consistency)
+- Refer to the subject naturally: "the person", "the subject", "they", "the figure" — NEVER use @Element1 or any @-syntax
 - Keep the prompt under 180 words
 - Be specific: camera angle, motion, lighting, color grade, mood
 - Match energy to BPM: fast BPM = kinetic movement; slow BPM = smooth, cinematic drift
@@ -55,7 +55,7 @@ def generate_scene_prompt(audio_analysis: Dict, style: str = 'cinematic') -> str
         f"Color: {brightness_desc}\n"
         f"Style: {style} — {style_hint}\n"
         f"Format: vertical 9:16 for TikTok/Reels\n\n"
-        f"The subject @Element1 must be the visual focus throughout."
+        f"The subject in the image must be the visual focus throughout."
     )
 
     message = _get_client().messages.create(
@@ -65,4 +65,8 @@ def generate_scene_prompt(audio_analysis: Dict, style: str = 'cinematic') -> str
         messages=[{'role': 'user', 'content': prompt}],
     )
 
-    return message.content[0].text.strip()
+    import re
+    result = message.content[0].text.strip()
+    # Defensive: strip any @Element syntax that would cause fal.ai element reference errors
+    result = re.sub(r'@Element\d+', 'the subject', result, flags=re.IGNORECASE)
+    return result
