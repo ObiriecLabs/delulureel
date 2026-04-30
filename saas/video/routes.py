@@ -54,7 +54,6 @@ def _sb_service():
             os.getenv('SUPABASE_URL', ''),
             os.getenv('SUPABASE_SERVICE_KEY', ''),
             options=ClientOptions(
-                timeout=10,
                 postgrest_client_timeout=10,
                 storage_client_timeout=30,  # storage uploads need more time
             ),
