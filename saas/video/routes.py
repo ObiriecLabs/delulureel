@@ -44,13 +44,17 @@ _fal_req_to_job: dict[str, str] = {}
 _webhook_lock = threading.Lock()
 
 
-_sb_svc = None
+# Per-thread Supabase service client — same thread-safety rationale as auth/routes.py.
+# supabase>=2.0.0 / httpx.Client is NOT safe to share across gunicorn gthread workers.
+_sb_svc_local: threading.local = threading.local()
 
 def _sb_service():
-    global _sb_svc
-    if _sb_svc is None:
-        _sb_svc = create_client(os.getenv('SUPABASE_URL', ''), os.getenv('SUPABASE_SERVICE_KEY', ''))
-    return _sb_svc
+    if not getattr(_sb_svc_local, 'svc', None):
+        _sb_svc_local.svc = create_client(
+            os.getenv('SUPABASE_URL', ''),
+            os.getenv('SUPABASE_SERVICE_KEY', ''),
+        )
+    return _sb_svc_local.svc
 
 
 def _budget_ok(cost: float) -> bool:

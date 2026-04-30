@@ -138,30 +138,35 @@ Trial 7gg su tutti. Annuale = 2 mesi gratis.
 
 ## STATO CORRENTE (2026-04-29)
 
-**Completato questa sessione:**
-- `landing/index.html` — landing page completa (dark, animated phone mockup, pricing toggle, trust section)
-- `app_server.py` — Flask + blueprint wiring + port auto-detect
-- `schema.sql` — tabelle profiles, reel_jobs, daily_budget + RLS + funzioni Supabase
-- `core/audio_analyzer.py` — librosa BPM, beats, energy peaks, spectral centroid
-- `core/scene_director.py` — Claude prompt generation con style hints
-- `core/video_generator.py` — fal.ai Kling 3.0 Pro submit + poll
-- `core/assembler.py` — FFmpeg concat + audio mux + aspect ratio scaling
-- `saas/auth/routes.py` — Supabase auth, login, signup, logout, decoratori
-- `saas/billing/routes.py` — Stripe trial, webhook handlers, billing portal
-- `saas/video/routes.py` — generate (rate limiting completo), status SSE, history, profile
-- `templates/` — base, dashboard, upload (dropzone), result, login, signup
-- `static/css/main.css` — design system completo (dark + grad violet/pink/orange)
-- `static/js/main.js` — session refresh automatico
+**Completato sessione precedente:**
+- MVP completo: landing, auth, billing, video pipeline, templates, CSS, JS
+
+**Completato questa sessione (deploy + infrastruttura):**
+- Render service live: `https://delulureel.onrender.com` (srv-d7p2rj9o3t8c738q8cj0, Starter, Frankfurt)
+- GitHub repo: `ObiriecLabs/delulureel` → auto-deploy da main
+- Stripe webhook produzione: `we_1TRapTLXmB9msHgIKQHEyC4X` → `https://delulureel.onrender.com/billing/webhook`
+  - Secret: `whsec_zUarW7GfBY1r1hxDVlRr5BZZmhvT6b4D`
+- Supabase URL Configuration aggiornata: Site URL + Redirect URLs → produzione
+- Cloudflare: delulureel.com aggiunto (piano Free), CNAME @ e www → delulureel.onrender.com
+- Porkbun nameservers → Cloudflare (cheryl.ns + vin.ns.cloudflare.com)
+- Resend: dominio delulureel.com aggiunto (Ireland eu-west-1), DNS auto-configurati su Cloudflare
+- Bug risolto: PORT=5002 → PORT=10000 in Render env (causa deploy infiniti)
+- Auth callback flow: `/auth/callback` + `/auth/callback/complete` implementati
+- Welcome email: `_send_welcome_email()` in billing/routes.py
+- Storage signed URL: `create_signed_url(3600)` per bucket privati
+
+**Completato questa sessione (custom domain + DNS fix):**
+- Render workspace migrato da Hobby (Legacy) a Hobby (new) → custom domain illimitati a $0.25/extra
+- Custom domain `delulureel.com` + `www.delulureel.com` aggiunti su Render → Verified + Certificate Issued
+- Root cause Error 1000: URL forwarding Porkbun attivo → disabilitato → sito live
+- `delulureel.com` → live e accessibile ✅
+- Resend domain: verificato ✅
 
 **Prossimi step:**
-1. Popolare `.env` con chiavi reali (Supabase, Stripe, fal.ai, Anthropic)
-2. Eseguire `schema.sql` in Supabase SQL Editor
-3. Creare bucket Supabase Storage: `reel-uploads` e `reel-outputs`
-4. Creare prezzi Stripe (6 price_id: 3 piani × 2 billing period)
-5. Configurare Stripe webhook con ngrok in sviluppo
-6. Implementare email reminder Day 5 via Resend (`_on_trial_will_end`)
-7. Test end-to-end della pipeline di generazione
-8. Deploy su Render (dopo test locali)
+1. Test end-to-end: signup → email confirm → trial → pagamento → generazione video
+2. Eseguire Storage RLS policies su Supabase (bucket reel-uploads, reel-outputs)
+3. Implementare email reminder Day 5 via Resend (`_on_trial_will_end`)
+4. Monitorare primo ciclo di fatturazione Stripe in produzione
 
 ---
 
