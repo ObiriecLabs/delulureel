@@ -928,8 +928,10 @@ function setStep(status) {
     orb.style.animation = orbInline[stepNum] || '';
   }
 
-  // ── Step rows ──
-  document.querySelectorAll('.pstep').forEach((el, i) => {
+  // ── Step rows (filter hidden steps so numbering stays correct) ──
+  const visibleSteps = Array.from(document.querySelectorAll('.pstep'))
+    .filter(el => el.style.display !== 'none');
+  visibleSteps.forEach((el, i) => {
     const n      = i + 1;
     const active = (n === stepNum);
     el.classList.toggle('pstep-done',   n < stepNum);
