@@ -30,11 +30,15 @@ CREATE TABLE IF NOT EXISTS reel_jobs (
     bpm              FLOAT,
     output_url       TEXT,
     error_message    TEXT,
-    estimated_cost   FLOAT DEFAULT 0,
-    actual_cost      FLOAT,
-    credits_used     INT DEFAULT 0,                 -- credits deducted for this job
-    created_at       TIMESTAMPTZ DEFAULT NOW(),
-    updated_at       TIMESTAMPTZ DEFAULT NOW()
+    estimated_cost         FLOAT DEFAULT 0,
+    actual_cost            FLOAT,
+    credits_used           INT DEFAULT 0,           -- credits deducted for this job
+    enable_lipsync         BOOLEAN DEFAULT false,   -- stored in DB for cross-instance webhook safety
+    target_secs_requested  INTEGER DEFAULT 10,      -- stored in DB for cross-instance webhook safety
+    n_clips_expected       INTEGER DEFAULT 1,       -- multi-clip: total clips submitted
+    clip_results           JSONB DEFAULT '{}',      -- multi-clip: {idx: url} accumulated by add_clip_result RPC
+    created_at             TIMESTAMPTZ DEFAULT NOW(),
+    updated_at             TIMESTAMPTZ DEFAULT NOW()
 );
 
 -- ── DAILY BUDGET ──────────────────────────────────────────────────────────────

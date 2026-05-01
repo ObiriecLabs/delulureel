@@ -63,11 +63,10 @@ _global_active    = 0
 _daily: dict      = {'date': str(date.today()), 'usd': 0.0}
 _lock             = threading.Lock()
 
-# Webhook tracking: fal request_id → job_id (for single-clip webhook lookup)
+# Webhook tracking: fal request_id → job_id (single-clip, same-instance fast path)
+# enable_lipsync / is_admin / target_secs are read from DB in the webhook handler
+# so they work correctly even when the webhook arrives on a different Render instance.
 _fal_req_to_job: dict[str, str] = {}
-_fal_req_to_lipsync: dict[str, bool] = {}      # request_id → enable_lipsync flag
-_fal_req_to_admin: dict[str, bool] = {}         # request_id → is_admin flag
-_fal_req_to_target_secs: dict[str, int] = {}    # request_id → target_secs
 _webhook_lock = threading.Lock()
 
 # (multi-clip state is now tracked entirely in Supabase via add_clip_result RPC)
@@ -311,12 +310,14 @@ def generate():
     # Persist job
     print(f'[generate] inserting job ({_time.time()-_t0:.1f}s)')
     _sb_service().table('reel_jobs').insert({
-        'id':             job_id,
-        'user_id':        user_id,
-        'status':         'queued',
-        'style':          style,
-        'aspect_ratio':   aspect_ratio,
-        'estimated_cost': est_cost,
+        'id':               job_id,
+        'user_id':          user_id,
+        'status':           'queued',
+        'style':            style,
+        'aspect_ratio':     aspect_ratio,
+        'estimated_cost':   est_cost,
+        'enable_lipsync':   enable_lipsync,       # stored in DB — cross-instance safe
+        'target_secs_requested': int(target_secs), # stored in DB — cross-instance safe
     }).execute()
 
     print(f'[generate] job inserted ({_time.time()-_t0:.1f}s)')
@@ -478,13 +479,11 @@ def _run_pre_generation(job_id, user_id, photo_path, audio_path, style,
                fal_endpoint=fal['endpoint'],
                prompt=prompt)
 
-        # Register in-memory AFTER DB write — only used by the webhook handler
-        # on the same server instance (new instances use the DB lookup fallback).
+        # Register req_id → job_id in-memory (fast path for same-instance webhook).
+        # enable_lipsync / target_secs / is_admin are read from DB in fal_webhook()
+        # so cross-instance webhooks always get the correct values.
         with _webhook_lock:
-            _fal_req_to_job[fal['request_id']]         = job_id
-            _fal_req_to_lipsync[fal['request_id']]     = enable_lipsync
-            _fal_req_to_admin[fal['request_id']]       = is_admin
-            _fal_req_to_target_secs[fal['request_id']] = int(target_secs)
+            _fal_req_to_job[fal['request_id']] = job_id
 
         # Thread ends here. fal.ai is generating the video on their servers.
         # Execution resumes in _run_post_generation when the webhook fires.
@@ -529,18 +528,16 @@ def fal_webhook():
     if not req_id:
         return jsonify({'ok': False, 'reason': 'missing request_id'}), 400
 
-    # Look up job_id and lipsync flag from in-memory maps
+    # Look up job_id from in-memory (fast path: same instance that submitted).
+    # All other flags are read from DB — the only cross-instance-safe source.
     with _webhook_lock:
-        job_id         = _fal_req_to_job.pop(req_id, None)
-        enable_lipsync = _fal_req_to_lipsync.pop(req_id, False)
-        is_admin       = _fal_req_to_admin.pop(req_id, False)
-        target_secs    = _fal_req_to_target_secs.pop(req_id, 10)
+        job_id = _fal_req_to_job.pop(req_id, None)
 
     if not job_id:
-        # Could be a late webhook after server restart — try DB lookup by fal_request_id
+        # Cross-instance or post-restart: look up by fal_request_id in DB
         try:
             sb = _sb_service()
-            rows = sb.table('reel_jobs').select('id,user_id,status,aspect_ratio,estimated_cost') \
+            rows = sb.table('reel_jobs').select('id') \
                      .eq('fal_request_id', req_id).limit(1).execute()
             if rows.data:
                 job_id = rows.data[0]['id']
@@ -552,7 +549,8 @@ def fal_webhook():
     sb = _sb_service()
     try:
         job = sb.table('reel_jobs').select(
-            'id,user_id,status,aspect_ratio,estimated_cost,fal_endpoint'
+            'id,user_id,status,aspect_ratio,estimated_cost,fal_endpoint,'
+            'enable_lipsync,target_secs_requested'
         ).eq('id', job_id).single().execute().data
     except Exception:
         return jsonify({'ok': True, 'note': 'job not found'}), 200
@@ -564,10 +562,20 @@ def fal_webhook():
     if job.get('status') == 'completed':
         return jsonify({'ok': True}), 200
 
-    user_id  = job['user_id']
-    est_cost = float(job.get('estimated_cost') or 0)
-    ar       = job.get('aspect_ratio', '9:16')
-    endpoint = job.get('fal_endpoint', '')
+    user_id        = job['user_id']
+    est_cost       = float(job.get('estimated_cost') or 0)
+    ar             = job.get('aspect_ratio', '9:16')
+    endpoint       = job.get('fal_endpoint', '')
+    # Read from DB — always correct regardless of which Render instance handles the webhook
+    enable_lipsync = bool(job.get('enable_lipsync', False))
+    target_secs    = int(job.get('target_secs_requested') or 10)
+
+    # is_admin from profiles (needed to decide whether to deduct credits)
+    try:
+        prof     = sb.table('profiles').select('is_admin').eq('user_id', user_id).single().execute().data
+        is_admin = bool((prof or {}).get('is_admin', False))
+    except Exception:
+        is_admin = False
 
     if status == 'ERROR':
         err_msg = str(data.get('error', 'fal.ai generation failed'))[:500]
