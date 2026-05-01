@@ -69,10 +69,6 @@ def assemble_reel(
         video_stream = ffmpeg.concat(*streams, v=1, a=0)
 
     # Pad to exact canvas without stretching
-    scale_filter = (
-        f"scale={w}:{h}:force_original_aspect_ratio=decrease,"
-        f"pad={w}:{h}:(ow-iw)/2:(oh-ih)/2:black"
-    )
     video_stream = video_stream.filter('scale', w, h, force_original_aspect_ratio='decrease')
     video_stream = video_stream.filter('pad', w, h, '(ow-iw)/2', '(oh-ih)/2', color='black')
 

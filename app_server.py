@@ -103,7 +103,7 @@ def health():
                                       cwd=os.path.dirname(__file__) or '.').decode().strip()
     except Exception:
         sha = 'unknown'
-    return jsonify({'status': 'ok', 'version': 'baaa1bd', 'sha': sha, 'fal_client': '1.0.0'})
+    return jsonify({'status': 'ok', 'sha': sha})
 
 
 import threading

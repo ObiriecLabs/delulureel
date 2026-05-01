@@ -13,6 +13,7 @@ CREATE TABLE IF NOT EXISTS profiles (
     credits_used_this_month INT DEFAULT 0,          -- credits consumed this billing cycle
     trial_credits_used      INT DEFAULT 0,          -- credits consumed during trial (cap: TRIAL_MAX_CREDITS)
     month_reset_date        DATE DEFAULT CURRENT_DATE,
+    is_admin                BOOLEAN DEFAULT false,  -- admin bypass: skip credit/trial checks
     created_at              TIMESTAMPTZ DEFAULT NOW(),
     updated_at              TIMESTAMPTZ DEFAULT NOW()
 );
@@ -81,6 +82,27 @@ BEGIN
         month_reset_date        = CURRENT_DATE,
         updated_at              = NOW()
     WHERE month_reset_date < DATE_TRUNC('month', CURRENT_DATE);
+END;
+$$;
+
+-- Atomic JSONB merge for multi-clip tracking (cross-instance safe)
+-- Called by fal_webhook_multi on every clip arrival; returns updated clip_results dict.
+CREATE OR REPLACE FUNCTION add_clip_result(p_job_id UUID, p_clip_idx TEXT, p_clip_url TEXT)
+RETURNS JSONB
+LANGUAGE plpgsql
+SECURITY DEFINER
+AS $$
+DECLARE
+    v_results JSONB;
+BEGIN
+    UPDATE reel_jobs
+    SET
+        clip_results = clip_results || jsonb_build_object(p_clip_idx, p_clip_url),
+        updated_at   = NOW()
+    WHERE id = p_job_id
+    RETURNING clip_results INTO v_results;
+
+    RETURN v_results;
 END;
 $$;
 

@@ -32,24 +32,6 @@ MAX_CONCURRENT_GLOBAL   = int(os.getenv('MAX_CONCURRENT_GLOBAL',  10))
 TRIAL_MAX_CREDITS       = int(os.getenv('TRIAL_MAX_CREDITS',       6))   # 6 crediti ≈ 1 reel 30s o 3 reel 10s
 DAILY_BUDGET_CAP_USD    = float(os.getenv('DAILY_BUDGET_CAP_USD', 200))
 
-def _is_admin(user) -> bool:
-    """True if user email is in ADMIN_EMAILS env var.
-    Reads env var at call-time (not import-time) so Render env updates
-    take effect without a redeploy. Handles both User objects and dicts."""
-    admin_emails = {
-        e.strip().lower()
-        for e in os.getenv('ADMIN_EMAILS', '').split(',')
-        if e.strip()
-    }
-    if isinstance(user, dict):
-        email = (user.get('email') or '').lower()
-    else:
-        email = (getattr(user, 'email', None) or '').lower()
-    result = bool(email and email in admin_emails)
-    print(f'[admin_check] email={email!r} admin_set={admin_emails} → {result}', flush=True)
-    return result
-
-
 def _credits_for_duration(target_secs: int) -> int:
     """Calcola i crediti da scalare: 1 credito = 5 secondi di video generato (minimo 1)."""
     return max(1, math.ceil(target_secs / 5))
