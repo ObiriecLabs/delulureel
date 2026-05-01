@@ -18,7 +18,7 @@ from core.video_generator import (
     CLIP_LEN_MULTI, MAX_AUDIO_SEC, MAX_WAIT_MULTI,
     ENDPOINT_PRO, ENDPOINT_TURBO,
 )
-from core.audio_analyzer import analyze_audio
+from core.audio_analyzer import analyze_audio, beat_cut_durations
 from core.scene_director import generate_scene_prompt
 from core.lipsync import apply_lipsync
 from core.assembler import assemble_reel
@@ -714,6 +714,15 @@ def _run_pipeline(job_id, user_id, photo_path, audio_path, style, aspect_ratio,
         analysis = analyze_audio(audio_path)
         gc.collect()
 
+        # Phase 2 — Beat-synced cut durations (derived from BPM, zero extra RAM)
+        clip_durations = beat_cut_durations(
+            bpm=analysis['bpm'],
+            target_secs=float(target_secs),
+            n_clips=n_clips,
+            max_clip_sec=float(CLIP_LEN_MULTI),
+        )
+        print(f'[pipeline/{_jid}] beat cuts BPM={analysis["bpm"]} → {clip_durations}', flush=True)
+
         # 2 — Scene prompt: custom (user) or auto (Claude Vision)
         update('generating', bpm=analysis['bpm'])
         if custom_prompt:
@@ -794,10 +803,11 @@ def _run_pipeline(job_id, user_id, photo_path, audio_path, style, aspect_ratio,
 
             video_clips.append(download_video(clip_url, f'clip_{i}.mp4'))
 
-        # 5 — Assemble all clips + original audio
+        # 5 — Assemble all clips + original audio (beat-synced trim applied inside)
         gc.collect()
         assemble_reel(video_clips, audio_path, final_path, aspect_ratio,
-                      max_duration=float(target_secs))
+                      max_duration=float(target_secs),
+                      clip_durations=clip_durations if n_clips > 1 else None)
         gc.collect()
 
         # 6 — Upload final reel
