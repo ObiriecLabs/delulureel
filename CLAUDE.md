@@ -150,38 +150,40 @@ Annuale = 2 mesi gratis.
 **Completato sessioni precedenti:**
 - MVP completo: landing, auth, billing, video pipeline, templates, CSS, JS
 - Deploy Render + custom domain delulureel.com + Cloudflare + Resend + Stripe webhook produzione
+- Pipeline fixes: fal.ai 405, lyrics-aware prompts, multi-clip cross-instance (webhooks + DB)
+- Admin bypass via `profiles.is_admin BOOLEAN`
 
-**Completato questa sessione (pipeline fixes + lyrics + cross-instance webhooks):**
+**Completato questa sessione — Audit approfondito 8 pass (pass 5→8):**
 
-### Bug fix: fal.ai 405 su tutti i polling endpoint (v2.6/pro)
-- Root cause: fal.ai v2.6/pro non supporta NESSUN endpoint di polling
-- Fix: split headers `_headers_get()` / `_headers_post()` (GET non deve avere Content-Type)
-- Fix definitivo: architettura webhook — polling eliminato per tutti i clip
-- Commits: `1691f81`, `9e74b64`, `eb12f77`
+### Audit pass 5 — nuovi bug trovati e fixati
+- **BUG critico**: `fal_result()` in `video_generator.py` usava un solo URL pattern
+  - Causa: _startup_recovery() falliva silenziosamente nel recuperare job orfani con v2.6/pro
+  - Fix: aggiunto cascade 2-URL identico a fal_status() (endpoint-scoped → global queue)
+  - Commit: `a83642e`
+- Dead code rimosso: `submit_multi_reel()`, `poll_until_done()` da video_generator.py
+- Stale comment fixato: `fly.toml` header aggiornato (era "auto-triggered", ora "MANUALE")
 
-### Feature: lyrics-aware scene prompts
-- `transcribe_audio_fal(audio_url)` → fal-ai/whisper → testo canzone
-- Lyrics (max 600 char) iniettati nel prompt Claude come "primary narrative driver"
-- Fallback graceful: se strumentale → basta analisi melodica/BPM
-- `generate_scene_prompt()` aggiornato: firma `lyrics: Optional[str] = None`
-- Commit: `eb12f77`
+### Audit pass 6 — dead code residuo post-refactoring
+- `fal_status()` rimossa (unico caller era poll_until_done, già rimossa)
+- `POLL_INTERVAL`, `MAX_WAIT_SINGLE` rimossi da video_generator.py (solo per polling)
+- `MAX_WAIT_MULTI` rimosso da import in routes.py (importato ma mai usato)
+- `lipsync.py` docstring aggiornata (riferimento a fal_status → fal_result)
+- Commit: `e527d2c`
 
-### Bug fix: multi-clip cross-instance (Render ha 2+ istanze)
-- Root cause: `_multi_pending` dict in-memory non condiviso tra istanze Render
-  - Istanza A riceveva clip 2 (trovato), istanza B riceveva clip 0 e 1 ("unknown job_id")
-- Fix: tracking atomico su Supabase via RPC `add_clip_result`
-- Schema migration `multi_clip_tracking` applicata su Supabase:
-  - `reel_jobs`: aggiunti `clip_results JSONB`, `n_clips_expected INT`, `target_secs_requested INT`
-  - `add_clip_result(p_job_id, p_clip_idx, p_clip_url) RETURNS JSONB` (UPSERT atomico)
-- `_run_pipeline`: salva stato in DB, rilascia slot/tmp in finally
-- `fal_webhook_multi`: usa RPC add_clip_result, fetcha job data da DB, spawna `_run_assembly`
-- `_run_assembly`: istanza-agnostica — scarica audio da Supabase Storage (non dipende da tmp locale)
-- Commit: `f1a2f6e` (webhook base), `2c9fa2b` (DB-based cross-instance)
+### Audit pass 7 — dead imports
+- `import time` e `List` da typing rimossi da video_generator.py
+- Commit: `0e73789`
 
-### Admin bypass
-- `is_admin` letto da `profiles.is_admin BOOLEAN` (non da env var)
-- Skip: credit limits, trial limits, deduct_credits RPC
-- Confermato funzionante nei log
+### Audit pass 8 — CONVERGENZA ✅
+- Zero nuovi problemi trovati vs pass 7
+- Tutti file .py parsano senza errori di sintassi
+- Nessun simbolo rimosso trovato in codebase
+- Working tree clean
+
+**Stato codebase al termine dell'audit:**
+- `video_generator.py`: solo `submit_reel`, `fal_result`, `transcribe_audio_fal`, helpers di costo
+- Nessun dead code, nessun import orfano, nessun commento stale
+- 3 commit in attesa di push (`a83642e`, `e527d2c`, `0e73789`) — push richiede conferma Armando
 
 **Architettura pipeline multi-clip (definitiva):**
 ```
@@ -204,15 +206,14 @@ _run_assembly (thread breve ~120s, su istanza che ha ricevuto l'ultimo webhook):
 ```
 
 **Costo fal.ai accumulato in test (non recuperabili):** ~$17.51
-- Causa: video generati correttamente ma mai recuperati (polling 405 + no webhook)
-- Soluzione implementata: webhook elimina questo problema
 
 **Prossimi step:**
-1. **TEST end-to-end 30s** su produzione — verificare che tutti 3 clip arrivino e assembly completi
-2. Monitorare log Render per `assembly/{jid} COMPLETED` dopo il nuovo deploy (2c9fa2b)
-3. Eseguire Storage RLS policies su Supabase (bucket reel-uploads, reel-outputs)
-4. Implementare email reminder Day 5 via Resend (`_on_trial_will_end`)
-5. Test signup → email confirm → trial → pagamento → generazione completa
+1. **`git push origin main`** — deployare i 3 commit dell'audit su Render (conferma Armando)
+2. **TEST end-to-end 30s** su produzione — verificare che tutti 3 clip arrivino e assembly completi
+3. Monitorare log Render per `assembly/{jid} COMPLETED`
+4. Eseguire Storage RLS policies su Supabase (bucket reel-uploads, reel-outputs)
+5. Implementare email reminder Day 5 via Resend (`_on_trial_will_end`)
+6. Test signup → email confirm → trial → pagamento → generazione completa
 
 ---
 
