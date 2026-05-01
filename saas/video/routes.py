@@ -229,6 +229,7 @@ def generate():
     style        = (request.form.get('style', 'cinematic') or 'cinematic').lower()
     aspect_ratio = request.form.get('aspect_ratio', '9:16') or '9:16'
     enable_lipsync = request.form.get('enable_lipsync', 'off').lower() in ('on', '1', 'true', 'yes')
+    custom_prompt  = (request.form.get('custom_prompt', '') or '').strip()[:900]
 
     # ── Duration / clip count ────────────────────────────────────────────────
     video_duration = (request.form.get('video_duration', '10') or '10').strip()
@@ -290,14 +291,14 @@ def generate():
         thread = threading.Thread(
             target=_run_pre_generation,
             args=(job_id, user_id, photo_path, audio_path, style, aspect_ratio,
-                  est_cost, tmp_dir, target_secs, ext_audio, enable_lipsync),
+                  est_cost, tmp_dir, target_secs, ext_audio, enable_lipsync, custom_prompt),
             daemon=True,
         )
     else:
         thread = threading.Thread(
             target=_run_pipeline,
             args=(job_id, user_id, photo_path, audio_path, style, aspect_ratio,
-                  est_cost, tmp_dir, target_secs, n_clips, enable_lipsync),
+                  est_cost, tmp_dir, target_secs, n_clips, enable_lipsync, custom_prompt),
             daemon=True,
         )
     thread.start()
@@ -318,7 +319,7 @@ def generate():
 
 def _run_pre_generation(job_id, user_id, photo_path, audio_path, style,
                         aspect_ratio, est_cost, tmp_dir, target_secs, ext_audio,
-                        enable_lipsync=False):
+                        enable_lipsync=False, custom_prompt=''):
     import time as _time
     _t0 = _time.time()
     global _global_active
@@ -352,11 +353,15 @@ def _run_pre_generation(job_id, user_id, photo_path, audio_path, style,
         gc.collect()
         _log(f'audio analysis DONE bpm={analysis.get("bpm",0):.0f}')
 
-        # 2 — Scene prompt (Claude Vision — photo_path passato per analisi visiva)
+        # 2 — Scene prompt: custom (user) or auto (Claude Vision)
         update('generating', bpm=analysis['bpm'])
-        _log('claude scene prompt START')
-        prompt = generate_scene_prompt(analysis, style, photo_path=photo_path)
-        _log(f'claude scene prompt DONE len={len(prompt)}')
+        if custom_prompt:
+            prompt = custom_prompt
+            _log(f'using custom prompt len={len(prompt)}')
+        else:
+            _log('claude scene prompt START')
+            prompt = generate_scene_prompt(analysis, style, photo_path=photo_path)
+            _log(f'claude scene prompt DONE len={len(prompt)}')
 
         # 3 — Upload photo to Supabase Storage → get signed URL for fal.ai
         # (Avoids fal_client.upload_file() which has no timeout and hangs on slow networks)
@@ -660,7 +665,8 @@ def _run_post_generation(job_id, user_id, raw_video_url, aspect_ratio, est_cost,
 # the assembly requires all N clips before FFmpeg can run.
 
 def _run_pipeline(job_id, user_id, photo_path, audio_path, style, aspect_ratio,
-                  est_cost, tmp_dir, target_secs=10, n_clips=1, enable_lipsync=False):
+                  est_cost, tmp_dir, target_secs=10, n_clips=1, enable_lipsync=False,
+                  custom_prompt=''):
     """
     Multi-clip pipeline (30s / Full Track). Polling-based — N clips generated in parallel.
 
@@ -691,9 +697,13 @@ def _run_pipeline(job_id, user_id, photo_path, audio_path, style, aspect_ratio,
         analysis = analyze_audio(audio_path)
         gc.collect()
 
-        # 2 — Scene prompt (Claude Vision — photo passed for visual grounding)
+        # 2 — Scene prompt: custom (user) or auto (Claude Vision)
         update('generating', bpm=analysis['bpm'])
-        prompt = generate_scene_prompt(analysis, style, photo_path=photo_path)
+        if custom_prompt:
+            prompt = custom_prompt
+            print(f'[pipeline/{_jid}] using custom prompt len={len(prompt)}', flush=True)
+        else:
+            prompt = generate_scene_prompt(analysis, style, photo_path=photo_path)
 
         # 3 — Upload photo to Supabase Storage → signed URL for fal.ai
         ext_photo = (photo_path.rsplit('.', 1)[-1].lower()) or 'jpg'

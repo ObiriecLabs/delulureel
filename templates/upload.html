@@ -140,6 +140,36 @@
 
     </div>
 
+    <!-- Scene Prompt -->
+    <div class="prompt-section">
+      <label class="option-label">Scene Prompt</label>
+      <div class="prompt-mode-grid" id="prompt-mode-grid">
+        <button type="button" class="prompt-mode-btn active" data-mode="auto">
+          <span class="pm-icon">&#x2728;</span>
+          <span class="pm-title">Auto-generate</span>
+          <span class="pm-sub">Claude AI writes the scene from your audio</span>
+        </button>
+        <button type="button" class="prompt-mode-btn" data-mode="custom">
+          <span class="pm-icon">&#x270D;&#xFE0F;</span>
+          <span class="pm-title">Custom prompt</span>
+          <span class="pm-sub">You describe the exact scene you want</span>
+        </button>
+      </div>
+      <div class="prompt-custom-area" id="prompt-custom-area" style="display:none">
+        <textarea
+          id="custom-prompt-input"
+          class="prompt-textarea"
+          placeholder="Describe the scene: camera movement, lighting, colors, mood, atmosphere...&#10;&#10;Es: Close-up on the subject, slow cinematic push-in. Neon violet lights reflect on rain-soaked pavement, shallow depth of field, deep blue tones, luxury editorial feel."
+          maxlength="900"
+          rows="5"
+        ></textarea>
+        <div class="prompt-footer-row">
+          <span class="prompt-hint">Kling AI animates this scene starting from your photo</span>
+          <span class="prompt-counter"><span id="prompt-char-count">0</span> / 900</span>
+        </div>
+      </div>
+    </div>
+
     <!-- Lipsync toggle -->
     <div class="lipsync-row">
       <div class="lipsync-info">
@@ -426,6 +456,78 @@
   .cost-detail { text-align: left; }
 }
 
+/* ── Scene Prompt section ────────────────────────────────────────────────── */
+.prompt-section {
+  margin: 4px 0 8px;
+}
+.prompt-mode-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+.prompt-mode-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 3px;
+  padding: 14px 16px;
+  border-radius: 14px;
+  border: 1.5px solid rgba(255,255,255,0.08);
+  background: rgba(255,255,255,0.03);
+  cursor: pointer;
+  transition: border-color .2s, background .2s, transform .1s;
+  text-align: left;
+  color: inherit;
+}
+.prompt-mode-btn:hover {
+  border-color: rgba(180,94,255,0.4);
+  background: rgba(180,94,255,0.06);
+  transform: translateY(-1px);
+}
+.prompt-mode-btn.active {
+  border-color: #B45EFF;
+  background: rgba(180,94,255,0.12);
+}
+.pm-icon  { font-size: 18px; line-height: 1; margin-bottom: 2px; }
+.pm-title { font-size: 14px; font-weight: 700; color: #fff; }
+.pm-sub   { font-size: 11px; color: #8a6fc0; line-height: 1.35; }
+
+.prompt-textarea {
+  width: 100%;
+  box-sizing: border-box;
+  background: rgba(255,255,255,0.04);
+  border: 1.5px solid rgba(255,255,255,0.1);
+  border-radius: 12px;
+  color: #e8e0f5;
+  font-size: 13px;
+  line-height: 1.65;
+  padding: 14px 16px;
+  resize: vertical;
+  min-height: 110px;
+  font-family: inherit;
+  transition: border-color .2s, background .2s;
+}
+.prompt-textarea:focus {
+  outline: none;
+  border-color: rgba(180,94,255,0.55);
+  background: rgba(180,94,255,0.05);
+}
+.prompt-textarea::placeholder { color: #4e3e6a; }
+.prompt-footer-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-top: 7px;
+  gap: 12px;
+}
+.prompt-hint    { font-size: 11px; color: #6a5a8a; }
+.prompt-counter { font-size: 11px; color: #6a5a8a; flex-shrink: 0; font-variant-numeric: tabular-nums; }
+
+@media (max-width: 520px) {
+  .prompt-mode-grid { grid-template-columns: 1fr; }
+}
+
 /* ── Lipsync toggle row ──────────────────────────────────────────────────── */
 .lipsync-row {
   display: flex;
@@ -501,6 +603,28 @@
 
 {% block scripts %}
 <script>
+// ── Prompt mode selector ──
+let _promptMode = 'auto';
+
+document.getElementById('prompt-mode-grid').addEventListener('click', e => {
+  const btn = e.target.closest('.prompt-mode-btn');
+  if (!btn) return;
+  _promptMode = btn.dataset.mode;
+  document.querySelectorAll('.prompt-mode-btn').forEach(b => {
+    b.classList.toggle('active', b.dataset.mode === _promptMode);
+  });
+  document.getElementById('prompt-custom-area').style.display =
+    _promptMode === 'custom' ? 'block' : 'none';
+  // Focus textarea when switching to custom
+  if (_promptMode === 'custom') {
+    document.getElementById('custom-prompt-input').focus();
+  }
+});
+
+document.getElementById('custom-prompt-input').addEventListener('input', function () {
+  document.getElementById('prompt-char-count').textContent = this.value.length;
+});
+
 // ── Drop zones ──
 ['photo', 'audio'].forEach(type => {
   const zone  = document.getElementById(`${type}-drop`);
@@ -708,6 +832,11 @@ document.getElementById('upload-form').addEventListener('submit', async e => {
   fd.append('video_duration',    document.getElementById('video-duration-input').value);
   fd.append('audio_duration_sec', document.getElementById('audio-duration-sec-input').value);
   fd.append('enable_lipsync',    _lipsyncOn() ? 'on' : 'off');
+  fd.append('custom_prompt',
+    _promptMode === 'custom'
+      ? (document.getElementById('custom-prompt-input').value.trim())
+      : ''
+  );
 
   try {
     const ctrl  = new AbortController();
