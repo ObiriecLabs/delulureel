@@ -52,5 +52,5 @@ services:
         value: "200"
       - key: MAX_CONCURRENT_GLOBAL
         value: "10"
-      - key: TRIAL_MAX_GENERATIONS
-        value: "3"
+      - key: TRIAL_MAX_CREDITS
+        value: "6"

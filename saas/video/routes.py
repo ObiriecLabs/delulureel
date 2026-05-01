@@ -130,8 +130,9 @@ def _startup_recovery():
         cutoff = (datetime.now(timezone.utc) - timedelta(seconds=60)).isoformat()
 
         result = sb.table('reel_jobs').select(
-            'id,user_id,fal_request_id,fal_endpoint,aspect_ratio,estimated_cost'
-        ).in_('status', ['processing', 'queued', 'analyzing', 'generating']).lt('created_at', cutoff).execute()
+            'id,user_id,fal_request_id,fal_endpoint,aspect_ratio,estimated_cost,'
+            'enable_lipsync,target_secs_requested'
+        ).in_('status', ['processing', 'queued', 'analyzing', 'generating', 'lipsyncing']).lt('created_at', cutoff).execute()
 
         rows = result.data or []
         if not rows:
@@ -161,7 +162,17 @@ def _startup_recovery():
                     failed_ids.append(job_id)
                     continue
 
-                # fal.ai job was already done — restart post-generation
+                # fal.ai job was already done — restart post-generation.
+                # Fetch enable_lipsync, target_secs, is_admin from DB so the
+                # recovered job behaves identically to the original run.
+                enable_lipsync_r = bool(job.get('enable_lipsync', False))
+                target_secs_r    = int(job.get('target_secs_requested') or 10)
+                try:
+                    prof_r       = sb.table('profiles').select('is_admin').eq('user_id', user_id).single().execute().data
+                    is_admin_r   = bool((prof_r or {}).get('is_admin', False))
+                except Exception:
+                    is_admin_r   = False
+
                 with _lock:
                     _active_user_jobs[user_id] = job_id
                     _global_active += 1
@@ -171,6 +182,11 @@ def _startup_recovery():
                     args=(job_id, user_id, video_url,
                           job.get('aspect_ratio', '9:16'),
                           float(job.get('estimated_cost') or 0)),
+                    kwargs={
+                        'enable_lipsync': enable_lipsync_r,
+                        'target_secs':    target_secs_r,
+                        'is_admin':       is_admin_r,
+                    },
                     daemon=True,
                 ).start()
                 recovered += 1

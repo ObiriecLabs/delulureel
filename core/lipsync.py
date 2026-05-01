@@ -21,18 +21,51 @@ POLL_INTERVAL = 8     # seconds between status checks
 MAX_WAIT      = 360   # 6-minute ceiling per clip
 
 
-def _headers():
+def _headers_post() -> dict:
     return {
         'Authorization': f'Key {os.getenv("FAL_KEY", "")}',
         'Content-Type':  'application/json',
     }
 
 
+def _headers_get() -> dict:
+    """GET requests must NOT carry Content-Type — causes 405 on some fal.ai endpoints."""
+    return {'Authorization': f'Key {os.getenv("FAL_KEY", "")}'}
+
+
+def _fal_status_lipsync(request_id: str) -> dict:
+    """
+    Status check with 4-URL cascade — same pattern as video_generator.fal_status().
+    fal.ai returns 405 on some endpoint-scoped /requests/ paths (e.g. newer models).
+    Falls back to the global queue URL which always works.
+    """
+    def _parse(data: dict) -> dict:
+        if data.get('video') or data.get('video_url'):
+            return {'status': 'COMPLETED', '_result': data}
+        return {'status': data.get('status', 'IN_PROGRESS')}
+
+    urls = [
+        (f'{FAL_QUEUE_BASE}/{LIPSYNC_ENDPOINT}/requests/{request_id}/status', 30),
+        (f'{FAL_QUEUE_BASE}/{LIPSYNC_ENDPOINT}/requests/{request_id}',        60),
+        (f'{FAL_QUEUE_BASE}/requests/{request_id}/status',                    30),
+        (f'{FAL_QUEUE_BASE}/requests/{request_id}',                           60),
+    ]
+    last_err = None
+    for url, timeout in urls:
+        resp = _req.get(url, headers=_headers_get(), timeout=timeout)
+        if resp.status_code == 405:
+            last_err = f'405 on {url}'
+            continue
+        resp.raise_for_status()
+        return _parse(resp.json())
+    raise RuntimeError(f'Lipsync status unreachable for {request_id}: {last_err}')
+
+
 def submit_lipsync(video_url: str, audio_url: str) -> str:
     """Submit a lipsync job to fal.ai queue. Returns request_id."""
     url  = f'{FAL_QUEUE_BASE}/{LIPSYNC_ENDPOINT}'
     body = {'video_url': video_url, 'audio_url': audio_url}
-    resp = _req.post(url, json=body, headers=_headers(), timeout=60)
+    resp = _req.post(url, json=body, headers=_headers_post(), timeout=60)
     resp.raise_for_status()
     data   = resp.json()
     req_id = data.get('request_id') or data.get('id') or ''
@@ -43,22 +76,24 @@ def submit_lipsync(video_url: str, audio_url: str) -> str:
 
 def poll_lipsync(request_id: str, max_wait: int = MAX_WAIT) -> str:
     """Block until the lipsync job completes. Returns the lipsync'd video URL."""
-    status_url = f'{FAL_QUEUE_BASE}/{LIPSYNC_ENDPOINT}/requests/{request_id}/status'
-    result_url = f'{FAL_QUEUE_BASE}/{LIPSYNC_ENDPOINT}/requests/{request_id}'
-    deadline   = time.time() + max_wait
+    deadline = time.time() + max_wait
 
     while time.time() < deadline:
-        resp = _req.get(status_url, headers=_headers(), timeout=30)
-        resp.raise_for_status()
-        st = resp.json().get('status', '')
+        st_data = _fal_status_lipsync(request_id)
+        st      = st_data.get('status', '')
 
         if st == 'COMPLETED':
-            res  = _req.get(result_url, headers=_headers(), timeout=60)
-            res.raise_for_status()
-            data = res.json()
-            url  = (data.get('video') or {}).get('url') or data.get('video_url') or ''
+            result = st_data.get('_result') or {}
+            if not result:
+                # Fetch explicitly if _parse didn't embed it
+                res    = _req.get(
+                    f'{FAL_QUEUE_BASE}/{LIPSYNC_ENDPOINT}/requests/{request_id}',
+                    headers=_headers_get(), timeout=60,
+                )
+                result = res.json()
+            url = (result.get('video') or {}).get('url') or result.get('video_url') or ''
             if not url:
-                raise RuntimeError(f'Lipsync: no video URL in result: {data}')
+                raise RuntimeError(f'Lipsync: no video URL in result: {result}')
             return url
 
         if st == 'FAILED':

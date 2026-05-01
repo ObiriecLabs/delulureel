@@ -117,8 +117,8 @@ fetch('/video/history')
       const card = document.createElement('div');
       card.className = 'reel-card';
 
-      const statusClass = { completed: 'status-ok', failed: 'status-fail', queued: 'status-pending', analyzing: 'status-pending', generating: 'status-pending', processing: 'status-pending' }[job.status] || 'status-pending';
-      const statusLabel = { completed: 'Ready', failed: 'Failed', queued: 'Queued', analyzing: 'Analyzing…', generating: 'Generating…', processing: 'Processing…' }[job.status] || job.status;
+      const statusClass = { completed: 'status-ok', failed: 'status-fail', queued: 'status-pending', analyzing: 'status-pending', generating: 'status-pending', processing: 'status-pending', lipsyncing: 'status-pending' }[job.status] || 'status-pending';
+      const statusLabel = { completed: 'Ready', failed: 'Failed', queued: 'Queued', analyzing: 'Analyzing…', generating: 'Generating…', processing: 'Processing…', lipsyncing: 'Lip syncing…' }[job.status] || job.status;
 
       const date = new Date(job.created_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
 

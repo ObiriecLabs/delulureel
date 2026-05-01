@@ -24,7 +24,8 @@
         <div class="pstep" id="rs-1">🎵 Analyzing audio</div>
         <div class="pstep" id="rs-2">✨ Writing scene prompt</div>
         <div class="pstep" id="rs-3">🎬 Generating video (Kling AI)</div>
-        <div class="pstep" id="rs-4">⚡ Assembling final reel</div>
+        <div class="pstep" id="rs-4">👄 Syncing lip movement</div>
+        <div class="pstep" id="rs-5">⚡ Assembling final reel</div>
       </div>
     </div>
   </div>
@@ -90,12 +91,13 @@
 <script>
 const JOB_ID = '{{ job_id }}';
 
-const STATUS_STEP = { analyzing: 1, generating: 2, processing: 3, completed: 4 };
+const STATUS_STEP = { analyzing: 1, generating: 2, processing: 3, lipsyncing: 4, completed: 5 };
 const STATUS_COPY = {
   queued:     ['Queued…',            'Waiting for an available generation slot'],
   analyzing:  ['Analyzing audio…',   'Detecting BPM and energy peaks'],
   generating: ['Writing scene…',     'Claude AI is designing your video'],
   processing: ['Generating video…',  'Kling 3.0 Pro is building your reel (~90s)'],
+  lipsyncing: ['Syncing lips…',      'AI is animating lip movement to match your track'],
 };
 
 function showState(id) {
@@ -106,7 +108,7 @@ function showState(id) {
 
 function setStep(status) {
   const n = STATUS_STEP[status] || 0;
-  [1,2,3,4].forEach(i => {
+  [1,2,3,4,5].forEach(i => {
     const el = document.getElementById(`rs-${i}`);
     if (!el) return;
     el.classList.toggle('pstep-done',   i < n);

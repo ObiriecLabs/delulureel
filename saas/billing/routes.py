@@ -1,4 +1,5 @@
 import os
+import threading
 import traceback
 import stripe
 import requests as _requests
@@ -24,15 +25,22 @@ CREDIT_LIMITS = {'creator': 10, 'pro': 30, 'studio': 80}
 TRIAL_MAX_CREDITS = int(os.getenv('TRIAL_MAX_CREDITS', 6))  # ~1 reel 30s o 3 reel 10s
 
 
+# Per-thread Supabase service client — same pattern as video/routes.py.
+# Creating a new client on every webhook call spawns a new httpx connection
+# pool each time, which is slow and leaks connections under load.
+_sb_svc_local: threading.local = threading.local()
+
 def _sb_service():
-    return create_client(
-        os.getenv('SUPABASE_URL', ''),
-        os.getenv('SUPABASE_SERVICE_KEY', ''),
-        options=ClientOptions(
-            postgrest_client_timeout=10,
-            storage_client_timeout=10,
-        ),
-    )
+    if not getattr(_sb_svc_local, 'svc', None):
+        _sb_svc_local.svc = create_client(
+            os.getenv('SUPABASE_URL', ''),
+            os.getenv('SUPABASE_SERVICE_KEY', ''),
+            options=ClientOptions(
+                postgrest_client_timeout=10,
+                storage_client_timeout=10,
+            ),
+        )
+    return _sb_svc_local.svc
 
 
 # ── Setup Trial ───────────────────────────────────────────────────────────────
@@ -254,7 +262,17 @@ def _on_subscription_updated(sub):
     }
     status = status_map.get(raw_status, raw_status)
 
-    sb.table('profiles').update({'status': status}).eq('stripe_customer_id', customer_id).execute()
+    update_payload = {'status': status}
+
+    # Update plan + credits_limit if metadata carries a plan name.
+    # This covers plan upgrades/downgrades via Stripe billing portal
+    # where a new subscription is created with updated metadata.
+    plan = (sub.get('metadata') or {}).get('plan')
+    if plan and plan in CREDIT_LIMITS:
+        update_payload['plan']          = plan
+        update_payload['credits_limit'] = CREDIT_LIMITS[plan]
+
+    sb.table('profiles').update(update_payload).eq('stripe_customer_id', customer_id).execute()
 
 
 def _on_trial_will_end(sub):
@@ -310,20 +328,23 @@ def _on_trial_will_end(sub):
 </html>
 """
 
-    _requests.post(
-        'https://api.resend.com/emails',
-        headers={
-            'Authorization': f'Bearer {resend_key}',
-            'Content-Type': 'application/json',
-        },
-        json={
-            'from':    'DELULUREEL <hello@delulureel.com>',
-            'to':      [email],
-            'subject': '⏰ Your free trial ends in 2 days',
-            'html':    html,
-        },
-        timeout=10,
-    )
+    try:
+        _requests.post(
+            'https://api.resend.com/emails',
+            headers={
+                'Authorization': f'Bearer {resend_key}',
+                'Content-Type': 'application/json',
+            },
+            json={
+                'from':    'DELULUREEL <hello@delulureel.com>',
+                'to':      [email],
+                'subject': '⏰ Your free trial ends in 2 days',
+                'html':    html,
+            },
+            timeout=10,
+        )
+    except Exception as exc:
+        print(f'[trial_will_end] Resend failed for {email}: {exc}', flush=True)
 
 
 def _on_payment_failed(invoice):
