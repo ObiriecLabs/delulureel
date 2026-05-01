@@ -40,9 +40,15 @@ _ADMIN_EMAILS: set = {
 }
 
 def _is_admin(user) -> bool:
-    """True if user email is in ADMIN_EMAILS env var."""
-    email = (getattr(user, 'email', None) or '').lower()
-    return bool(email and email in _ADMIN_EMAILS)
+    """True if user email is in ADMIN_EMAILS env var.
+    Handles both pydantic/dataclass User objects and plain dicts."""
+    if isinstance(user, dict):
+        email = (user.get('email') or '').lower()
+    else:
+        email = (getattr(user, 'email', None) or '').lower()
+    result = bool(email and email in _ADMIN_EMAILS)
+    print(f'[admin_check] email={email!r} admin_set={_ADMIN_EMAILS} → {result}', flush=True)
+    return result
 
 
 def _credits_for_duration(target_secs: int) -> int:
