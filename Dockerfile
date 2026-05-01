@@ -41,8 +41,8 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
 # gthread worker class: migliore con I/O bound (fal.ai calls, Supabase)
 # max-requests: previene memory leak su processi lunghi
 CMD ["gunicorn", "app_server:app", \
-     "--workers", "2", \
-     "--threads", "4", \
+     "--workers", "1", \
+     "--threads", "8", \
      "--timeout", "300", \
      "--worker-class", "gthread", \
      "--bind", "0.0.0.0:8080", \

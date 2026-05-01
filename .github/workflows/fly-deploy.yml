@@ -1,20 +1,21 @@
-name: Deploy to Fly.io
+# Fly.io deploy workflow — DISABLED
+# DELULUREEL is deployed on Render (render.yaml), not Fly.io.
+# This file is kept for reference only.
+# To re-enable: change the trigger back to push/main and set FLY_API_TOKEN in GitHub secrets.
+
+name: Deploy to Fly.io (DISABLED)
 
 on:
-  push:
-    branches:
-      - main
+  workflow_dispatch:   # manual trigger only — never auto-deploys
 
 jobs:
   deploy:
-    name: Deploy DELULUREEL
+    name: Deploy DELULUREEL to Fly.io
     runs-on: ubuntu-latest
-    concurrency: deploy-group   # Evita deploy simultanei
+    concurrency: deploy-group
     steps:
       - uses: actions/checkout@v4
-
       - uses: superfly/flyctl-actions/setup-flyctl@master
-
       - name: Deploy to Fly.io
         run: flyctl deploy --remote-only --app delulureel
         env:

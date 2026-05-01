@@ -12,7 +12,7 @@ from flask import Blueprint, request, session, jsonify, Response, stream_with_co
 from supabase import create_client, ClientOptions
 
 from core.video_generator import (
-    submit_reel, submit_multi_reel, poll_until_done,
+    submit_reel,
     fal_result, transcribe_audio_fal,
     estimate_cost, endpoint_for_duration, n_clips_for_duration,
     CLIP_LEN_MULTI, MAX_AUDIO_SEC, MAX_WAIT_MULTI,

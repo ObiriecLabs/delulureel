@@ -37,7 +37,7 @@ primary_region = 'ams'
   APP_BASE_URL = 'https://delulureel.com'
   DAILY_BUDGET_CAP_USD = '200'
   MAX_CONCURRENT_GLOBAL = '10'
-  TRIAL_MAX_GENERATIONS = '3'
+  TRIAL_MAX_CREDITS = '6'
   SUPABASE_URL = 'https://iauotqpmxsapjflnlrgn.supabase.co'
 
 [[statics]]
