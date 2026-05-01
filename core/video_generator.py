@@ -23,12 +23,12 @@ from typing import Dict, List, Optional
 
 # Single-clip: stable quality (Kling 2.6 Pro — v3 Pro has schema bug on elements field)
 ENDPOINT_PRO   = 'fal-ai/kling-video/v2.6/pro/image-to-video'
-# Multi-clip: cost-optimised (~38% cheaper, Kling 2.5 Turbo Pro)
-ENDPOINT_TURBO = 'fal-ai/kling-video/v2.5-turbo/pro/image-to-video'
+# Multi-clip: same model as PRO — v2.5-turbo endpoint does not exist on fal.ai (405)
+ENDPOINT_TURBO = 'fal-ai/kling-video/v2.6/pro/image-to-video'
 
 COST_PER_SEC = {
     ENDPOINT_PRO:   0.112,
-    ENDPOINT_TURBO: 0.070,
+    ENDPOINT_TURBO: 0.112,
 }
 
 # ── Pricing ───────────────────────────────────────────────────────────────────
@@ -138,11 +138,11 @@ def submit_multi_reel(
     for _ in range(n_clips):
         url  = f'{FAL_QUEUE_BASE}/{ENDPOINT_TURBO}'
         body = {
-            'prompt':         prompt,
-            'image_url':      image_url,  # Kling 2.5 Turbo: image_url
-            'duration':       clip_len,   # integer: 5 or 10
-            'aspect_ratio':   aspect_ratio,
-            'generate_audio': False,
+            'prompt':          prompt,
+            'start_image_url': image_url,   # v2.6 Pro: start_image_url
+            'duration':        str(clip_len), # v2.6 Pro expects string "5" or "10"
+            'aspect_ratio':    aspect_ratio,
+            'generate_audio':  False,
         }
         resp = _req.post(url, json=body, headers=_headers(), timeout=60)
         resp.raise_for_status()

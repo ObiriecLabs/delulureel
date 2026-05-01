@@ -380,10 +380,15 @@ body {
   text-align: center;
 }
 .progress-anim {
-  width: 60px; height: 60px;
+  width: 100px; height: 100px;
   border-radius: 50%;
   background: var(--grad);
   animation: pulse-scale 1.8s ease-in-out infinite;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  position: relative;
 }
 @keyframes pulse-scale {
   0%,100% { transform: scale(1); opacity: .8; }

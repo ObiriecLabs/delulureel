@@ -240,6 +240,161 @@
 </div>
 
 <style>
+/* ══ Per-step orb graphics ═══════════════════════════════════════════════ */
+
+/* Shared orb inner wrapper */
+.orb-inner {
+  width: 100px; height: 100px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  overflow: hidden;
+}
+
+/* ── Step 1 — Audio Analysis: EQ bars ─────────────────────────────────── */
+.orb-audio {
+  background: radial-gradient(circle, rgba(0,180,255,.14) 0%, rgba(180,94,255,.09) 65%);
+  border: 1.5px solid rgba(0,200,255,.28);
+  align-items: flex-end;
+  padding-bottom: 18px;
+  gap: 5px;
+}
+.orb-audio .ob { display:block; width:8px; border-radius:4px 4px 2px 2px;
+  background: linear-gradient(to top, #00d4ff, #B45EFF);
+  animation: ob-eq .52s ease-in-out infinite alternate;
+  flex-shrink: 0;
+}
+.orb-audio .ob:nth-child(1){height:14px;animation-delay:.00s}
+.orb-audio .ob:nth-child(2){height:36px;animation-delay:.07s}
+.orb-audio .ob:nth-child(3){height:22px;animation-delay:.14s}
+.orb-audio .ob:nth-child(4){height:48px;animation-delay:.04s}
+.orb-audio .ob:nth-child(5){height:26px;animation-delay:.11s}
+.orb-audio .ob:nth-child(6){height:38px;animation-delay:.08s}
+.orb-audio .ob:nth-child(7){height:16px;animation-delay:.02s}
+@keyframes ob-eq {
+  from { transform:scaleY(.15); opacity:.45; }
+  to   { transform:scaleY(1);   opacity:1; }
+}
+
+/* ── Step 2 — Claude AI Writing: pulsing rings + core ─────────────────── */
+.orb-ai {
+  background: radial-gradient(circle, rgba(255,215,50,.1) 0%, rgba(255,140,0,.05) 65%);
+  border: 1.5px solid rgba(255,210,0,.2);
+}
+.orb-ai .ai-ring {
+  position:absolute; border-radius:50%;
+  border:1.5px solid rgba(255,215,50,.55);
+  animation: ob-ripple 2.2s ease-out infinite;
+}
+.orb-ai .ai-r1{width:26px;height:26px;animation-delay:.0s}
+.orb-ai .ai-r2{width:54px;height:54px;animation-delay:.6s}
+.orb-ai .ai-r3{width:82px;height:82px;animation-delay:1.2s}
+.orb-ai .ai-core{font-size:28px;z-index:1;position:relative;
+  animation:ob-core 2.4s ease-in-out infinite}
+@keyframes ob-ripple {
+  0%   { transform:scale(.75); opacity:.85; }
+  100% { transform:scale(1.05); opacity:0; }
+}
+@keyframes ob-core {
+  0%,100%{transform:scale(1)   rotate(0deg);  filter:brightness(1)}
+  30%    {transform:scale(1.35)rotate(18deg); filter:brightness(2.4) drop-shadow(0 0 14px rgba(255,235,80,1))}
+  60%    {transform:scale(.82) rotate(-8deg); filter:brightness(.75)}
+}
+
+/* ── Step 3 — Kling Video Generation: spinning iris ───────────────────── */
+.orb-film {
+  background: radial-gradient(circle, rgba(180,94,255,.13) 0%, rgba(255,60,172,.07) 65%);
+  border: 1.5px solid rgba(180,94,255,.28);
+}
+.orb-film .film-ring {
+  position:absolute;
+  width:82px; height:82px;
+  border-radius:50%;
+  border:2.5px dashed rgba(180,94,255,.65);
+  animation: ob-spin 3s linear infinite;
+}
+.orb-film .film-ring-inner {
+  position:absolute;
+  width:52px; height:52px;
+  border-radius:50%;
+  border:1.5px dashed rgba(255,60,172,.45);
+  animation: ob-spin 2s linear infinite reverse;
+}
+.orb-film .film-icon{font-size:28px;z-index:1;position:relative;
+  animation:ob-film-icon 3s ease-in-out infinite}
+@keyframes ob-spin { from{transform:rotate(0deg)} to{transform:rotate(360deg)} }
+@keyframes ob-film-icon {
+  0%,100%{transform:scale(1)  rotate(0deg); filter:brightness(1)}
+  25%    {transform:scale(1.2)rotate(-6deg);filter:brightness(1.8) drop-shadow(0 0 10px rgba(180,94,255,.9))}
+  50%    {transform:scale(.9) rotate(3deg); filter:brightness(.8)}
+}
+
+/* ── Step 4 — Lipsync: lips + wave bars ───────────────────────────────── */
+.orb-lips {
+  background: radial-gradient(circle, rgba(255,60,172,.13) 0%, rgba(255,107,43,.06) 65%);
+  border: 1.5px solid rgba(255,60,172,.28);
+  flex-direction: column;
+  gap: 6px;
+  overflow: visible;
+}
+.orb-lips .lips-icon{font-size:28px;z-index:1;
+  animation:ob-lips 1.4s ease-in-out infinite}
+.orb-lips .lips-bars{display:flex;gap:4px;align-items:center;justify-content:center}
+.orb-lips .lb{
+  width:7px; border-radius:4px;
+  background:linear-gradient(to top,#FF3CAC,#FF6B2B);
+  animation:ob-lip-bar .65s ease-in-out infinite alternate;
+}
+.orb-lips .lb:nth-child(1){height:4px;animation-delay:.00s}
+.orb-lips .lb:nth-child(2){height:4px;animation-delay:.13s}
+.orb-lips .lb:nth-child(3){height:4px;animation-delay:.06s}
+.orb-lips .lb:nth-child(4){height:4px;animation-delay:.19s}
+.orb-lips .lb:nth-child(5){height:4px;animation-delay:.09s}
+@keyframes ob-lips {
+  0%,100%{transform:scale(1);filter:brightness(1)}
+  50%    {transform:scale(1.2) translateY(-2px);
+          filter:brightness(1.5) drop-shadow(0 0 12px rgba(255,60,172,.8))}
+}
+@keyframes ob-lip-bar {
+  from{height:4px; opacity:.45}
+  to  {height:20px;opacity:1}
+}
+
+/* ── Step 5 — Assembling: lightning sparks ─────────────────────────────── */
+.orb-zap {
+  background: radial-gradient(circle, rgba(255,140,30,.15) 0%, rgba(255,60,0,.06) 65%);
+  border: 1.5px solid rgba(255,120,0,.32);
+}
+.orb-zap .zap-icon{font-size:40px;z-index:1;position:relative;
+  animation:ob-zap 1.1s ease-out infinite}
+.orb-zap .zs{
+  position:absolute; width:6px; height:6px; border-radius:50%;
+  background:#FF6B2B;
+  animation:ob-spark 1.1s ease-out infinite;
+}
+.orb-zap .zs1{top: 8px;left:18px;animation-delay:.00s}
+.orb-zap .zs2{top: 8px;right:18px;animation-delay:.18s}
+.orb-zap .zs3{bottom:8px;left:22px;animation-delay:.35s}
+.orb-zap .zs4{bottom:8px;right:22px;animation-delay:.09s}
+.orb-zap .zs5{top:44px;left:4px;animation-delay:.26s}
+.orb-zap .zs6{top:44px;right:4px;animation-delay:.43s}
+@keyframes ob-zap {
+  0%,100%{transform:scale(1);   filter:brightness(1)}
+  7%     {transform:scale(1.5); filter:brightness(3.5) drop-shadow(0 0 24px rgba(255,160,0,1))}
+  14%    {transform:scale(.8);  filter:brightness(.55)}
+  22%    {transform:scale(1.25);filter:brightness(2.2) drop-shadow(0 0 14px rgba(255,107,43,.9))}
+  30%    {transform:scale(1);   filter:brightness(1)}
+}
+@keyframes ob-spark {
+  0%  {transform:scale(0); opacity:1}
+  60% {transform:scale(2); opacity:.7}
+  100%{transform:scale(0); opacity:0}
+}
+
+/* ══ End per-step orb graphics ════════════════════════════════════════════ */
+
 /* ── Progress step icon animations ──────────────────────────────────────── */
 
 .step-icon {
@@ -706,7 +861,7 @@ function checkReady() {
 
 // ── Cost constants (margin 2.5x · USD→EUR 0.925) ──
 const KLING_PER_SEC_EUR = 0.112 * 2.5 * 0.925;  // ≈ 0.259 €/sec
-const TURBO_PER_SEC_EUR = 0.070 * 2.5 * 0.925;  // ≈ 0.162 €/sec
+const TURBO_PER_SEC_EUR = 0.112 * 2.5 * 0.925;  // ≈ 0.259 €/sec (v2.6/pro — same model as single clip)
 const CLIP_LEN          = 10;                     // secs per Turbo clip
 const MAX_AUDIO_SEC     = 600;
 
@@ -901,31 +1056,67 @@ document.getElementById('lipsync-toggle').addEventListener('change', () => {
 // Initial state
 document.getElementById('pstep-ls').style.display = _lipsyncOn() ? '' : 'none';
 
-// Per-step animation config (step 4 = lipsync when on, step 5 = assemble)
+// Per-step orb HTML — swapped into .progress-anim on each step change
+const ORB_HTML = {
+  0: '',  // queued — default gradient blob
+  1: `<div class="orb-inner orb-audio">
+        <span class="ob"></span><span class="ob"></span><span class="ob"></span>
+        <span class="ob"></span><span class="ob"></span><span class="ob"></span>
+        <span class="ob"></span>
+      </div>`,
+  2: `<div class="orb-inner orb-ai">
+        <div class="ai-ring ai-r1"></div>
+        <div class="ai-ring ai-r2"></div>
+        <div class="ai-ring ai-r3"></div>
+        <span class="ai-core">&#x2728;</span>
+      </div>`,
+  3: `<div class="orb-inner orb-film">
+        <div class="film-ring"></div>
+        <div class="film-ring-inner"></div>
+        <span class="film-icon">&#x1F3AC;</span>
+      </div>`,
+  4: `<div class="orb-inner orb-lips">
+        <div class="lips-bars">
+          <div class="lb"></div><div class="lb"></div><div class="lb"></div>
+          <div class="lb"></div><div class="lb"></div>
+        </div>
+        <span class="lips-icon">&#x1F444;</span>
+      </div>`,
+  5: `<div class="orb-inner orb-zap">
+        <div class="zs zs1"></div><div class="zs zs2"></div>
+        <div class="zs zs3"></div><div class="zs zs4"></div>
+        <div class="zs zs5"></div><div class="zs zs6"></div>
+        <span class="zap-icon">&#x26A1;</span>
+      </div>`,
+};
+
+// Per-step row icon animation config (unchanged)
 const STEP_CONFIG = {
-  1: { iconAnim: null,              orbAnim: 'orb-audio'   },
-  2: { iconAnim: 'si-anim-sparkle', orbAnim: 'orb-scene'   },
-  3: { iconAnim: 'si-anim-film',    orbAnim: 'orb-video'   },
-  4: { iconAnim: 'si-anim-lips',    orbAnim: 'orb-video'   },  // lipsync step
-  5: { iconAnim: 'si-anim-zap',     orbAnim: 'orb-assemble'},
+  1: { iconAnim: null               },
+  2: { iconAnim: 'si-anim-sparkle'  },
+  3: { iconAnim: 'si-anim-film'     },
+  4: { iconAnim: 'si-anim-lips'     },
+  5: { iconAnim: 'si-anim-zap'      },
 };
 const ALL_ICON_ANIMS = ['si-anim-sparkle', 'si-anim-film', 'si-anim-lips', 'si-anim-zap'];
-const ALL_ORB_ANIMS  = ['orb-audio', 'orb-scene', 'orb-video', 'orb-assemble'];
+const ALL_ORB_ANIMS  = [];
 
 function setStep(status) {
   const stepNum = _getStatusStep(status);
   const cfg     = STEP_CONFIG[stepNum];
 
-  // ── Big orb — inline style overrides everything in main.css ──
+  // ── Big orb — swap HTML graphic per step ──
   const orb = document.querySelector('.progress-anim');
   if (orb) {
-    const orbInline = {
-      1: 'orb-audio  .75s ease-in-out infinite',
-      2: 'orb-scene  2.2s ease-in-out infinite',
-      3: 'orb-video  1.6s linear     infinite',
-      4: 'orb-zap    1.3s ease-out   infinite',
-    };
-    orb.style.animation = orbInline[stepNum] || '';
+    if (stepNum > 0) {
+      orb.innerHTML        = ORB_HTML[stepNum] || '';
+      orb.style.background = 'transparent';
+      orb.style.animation  = 'none';
+    } else {
+      orb.innerHTML        = '';
+      orb.style.background = '';
+      orb.style.animation  = '';
+    }
   }
 
   // ── Step rows (filter hidden steps so numbering stays correct) ──
