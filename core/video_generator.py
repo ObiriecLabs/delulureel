@@ -13,10 +13,9 @@ fal.ai Queue API:
 """
 
 import os
-import time
 import math
 import requests as _req
-from typing import Dict, List, Optional
+from typing import Dict, Optional
 
 
 # ── Endpoints ─────────────────────────────────────────────────────────────────
