@@ -235,8 +235,9 @@ def generate():
         print(f'[generate] profile FAILED ({_time.time()-_t0:.1f}s): {e}')
         return jsonify({'error': 'Profile not found. Please contact support.'}), 404
 
-    # Admin bypass — no access/credit checks
-    admin = _is_admin(request.current_user)
+    # Admin bypass — read from profiles.is_admin (reliable, no env var dependency)
+    admin = bool(prof.get('is_admin', False))
+    print(f'[admin_check] user={user_id[:8]} is_admin={admin}', flush=True)
     if not admin:
         # Access checks
         if prof.get('status') == 'suspended':
