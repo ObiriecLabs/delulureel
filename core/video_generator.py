@@ -160,27 +160,37 @@ def fal_status(endpoint: str, request_id: str) -> Dict:
     """
     Return fal.ai queue status dict for request_id.
 
-    Tries /status suffix first (old-style queue API).
-    If that returns 405 (v2.6/pro endpoints), falls back to the request URL
-    directly and synthesises a status dict from whatever fal.ai returns.
-    """
-    status_url = f'{FAL_QUEUE_BASE}/{endpoint}/requests/{request_id}/status'
-    resp = _req.get(status_url, headers=_headers(), timeout=30)
+    fal.ai URL cascade (newest endpoints like v2.6/pro return 405 on
+    endpoint-scoped /requests/ paths — use global queue URL as fallback):
 
-    if resp.status_code == 405:
-        # v2.6/pro: /status suffix not supported — poll the result URL directly
-        result_url = f'{FAL_QUEUE_BASE}/{endpoint}/requests/{request_id}'
-        resp = _req.get(result_url, headers=_headers(), timeout=60)
-        resp.raise_for_status()
-        data = resp.json()
-        # If the response already contains a video, the job completed
+    1. /{endpoint}/requests/{id}/status   ← old-style / most models
+    2. /{endpoint}/requests/{id}          ← old-style without /status
+    3. /requests/{id}/status             ← global queue (v2.6/pro)
+    4. /requests/{id}                    ← global queue without /status
+    """
+    def _parse(data: Dict) -> Dict:
+        """Normalise any fal.ai response into a status dict."""
         if data.get('video') or data.get('video_url'):
             return {'status': 'COMPLETED', '_result': data}
-        # Propagate whatever status fal.ai embedded (or assume IN_PROGRESS)
         return {'status': data.get('status', 'IN_PROGRESS')}
 
-    resp.raise_for_status()
-    return resp.json()
+    urls = [
+        (f'{FAL_QUEUE_BASE}/{endpoint}/requests/{request_id}/status', 30),
+        (f'{FAL_QUEUE_BASE}/{endpoint}/requests/{request_id}',        60),
+        (f'{FAL_QUEUE_BASE}/requests/{request_id}/status',            30),
+        (f'{FAL_QUEUE_BASE}/requests/{request_id}',                   60),
+    ]
+
+    last_err = None
+    for url, timeout in urls:
+        resp = _req.get(url, headers=_headers(), timeout=timeout)
+        if resp.status_code == 405:
+            last_err = f'405 on {url}'
+            continue          # try next URL pattern
+        resp.raise_for_status()
+        return _parse(resp.json())
+
+    raise RuntimeError(f'fal.ai status unreachable for {request_id}: {last_err}')
 
 
 def fal_result(endpoint: str, request_id: str) -> Dict:
