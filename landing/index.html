@@ -1020,12 +1020,12 @@
         <div class="plan-name">Creator</div>
         <div class="plan-price">
           <span class="price-sym">€</span>
-          <span class="price-num" data-m="14.99" data-a="12.49">14.99</span>
+          <span class="price-num" data-m="16.99" data-a="14.16">16.99</span>
           <span class="price-per">/mo</span>
         </div>
         <div class="price-annual-note" id="note-creator">&nbsp;</div>
-        <div class="plan-reels">5 Reels</div>
-        <div class="plan-reels-label">per month included</div>
+        <div class="plan-reels">10 Credits</div>
+        <div class="plan-reels-label">per month · 1 credit = 5 sec</div>
         <div class="plan-divider"></div>
         <ul class="plan-features">
           <li><span class="feat-chk"><svg viewBox="0 0 12 12"><polyline points="1,6 4,9 11,3"/></svg></span>Up to 30-second reels</li>
@@ -1035,7 +1035,7 @@
           <li><span class="feat-chk"><svg viewBox="0 0 12 12"><polyline points="1,6 4,9 11,3"/></svg></span>24h download access</li>
         </ul>
         <a href="/trial?plan=creator" class="btn btn-ghost plan-btn">Start Free Trial</a>
-        <p class="plan-note">7 days free · then €14.99/mo</p>
+        <p class="plan-note">7 days free · then €16.99/mo</p>
       </div>
 
       <!-- PRO — FEATURED -->
@@ -1044,12 +1044,12 @@
         <div class="plan-name">Pro</div>
         <div class="plan-price">
           <span class="price-sym">€</span>
-          <span class="price-num" data-m="34.99" data-a="29.16">34.99</span>
+          <span class="price-num" data-m="39.99" data-a="33.32">39.99</span>
           <span class="price-per">/mo</span>
         </div>
         <div class="price-annual-note" id="note-pro">&nbsp;</div>
-        <div class="plan-reels">15 Reels</div>
-        <div class="plan-reels-label">per month included</div>
+        <div class="plan-reels">30 Credits</div>
+        <div class="plan-reels-label">per month · 1 credit = 5 sec</div>
         <div class="plan-divider"></div>
         <ul class="plan-features">
           <li><span class="feat-chk"><svg viewBox="0 0 12 12"><polyline points="1,6 4,9 11,3"/></svg></span>Up to 60-second reels</li>
@@ -1060,7 +1060,7 @@
           <li><span class="feat-chk"><svg viewBox="0 0 12 12"><polyline points="1,6 4,9 11,3"/></svg></span>Style presets library</li>
         </ul>
         <a href="/trial?plan=pro" class="btn plan-btn grad-btn">Start Free Trial →</a>
-        <p class="plan-note">7 days free · then €34.99/mo</p>
+        <p class="plan-note">7 days free · then €39.99/mo</p>
       </div>
 
       <!-- STUDIO -->
@@ -1068,12 +1068,12 @@
         <div class="plan-name">Studio</div>
         <div class="plan-price">
           <span class="price-sym">€</span>
-          <span class="price-num" data-m="79.99" data-a="66.66">79.99</span>
+          <span class="price-num" data-m="89.99" data-a="74.99">89.99</span>
           <span class="price-per">/mo</span>
         </div>
         <div class="price-annual-note" id="note-studio">&nbsp;</div>
-        <div class="plan-reels">40 Reels</div>
-        <div class="plan-reels-label">per month included</div>
+        <div class="plan-reels">80 Credits</div>
+        <div class="plan-reels-label">per month · 1 credit = 5 sec</div>
         <div class="plan-divider"></div>
         <ul class="plan-features">
           <li><span class="feat-chk"><svg viewBox="0 0 12 12"><polyline points="1,6 4,9 11,3"/></svg></span>Up to 3-minute music videos</li>
@@ -1085,7 +1085,7 @@
           <li><span class="feat-chk"><svg viewBox="0 0 12 12"><polyline points="1,6 4,9 11,3"/></svg></span>API access (coming soon)</li>
         </ul>
         <a href="/trial?plan=studio" class="btn btn-ghost plan-btn">Start Free Trial</a>
-        <p class="plan-note">7 days free · then €79.99/mo</p>
+        <p class="plan-note">7 days free · then €89.99/mo</p>
       </div>
 
     </div>
@@ -1158,9 +1158,9 @@
     studio:  document.getElementById('note-studio')
   };
   const annualBilled = {
-    creator: 'Billed €149.90/year',
-    pro:     'Billed €349.90/year',
-    studio:  'Billed €799.90/year'
+    creator: 'Billed €169.90/year',
+    pro:     'Billed €399.90/year',
+    studio:  'Billed €899.90/year'
   };
   let annual = false;
 
@@ -1178,10 +1178,10 @@
     });
     document.querySelectorAll('.plan-note').forEach(el => {
       const base = el.textContent.split(' · then')[0];
-      const plans = { creator: '14.99', pro: '34.99', studio: '79.99' };
+      const plans = { creator: '16.99', pro: '39.99', studio: '89.99' };
       const card  = el.closest('.plan-card');
       const name  = card.querySelector('.plan-name').textContent.toLowerCase();
-      el.textContent = '7 days free · then €' + (annual ? (name === 'creator' ? '12.49' : name === 'pro' ? '29.16' : '66.66') : plans[name]) + '/mo';
+      el.textContent = '7 days free · then €' + (annual ? (name === 'creator' ? '14.16' : name === 'pro' ? '33.32' : '74.99') : plans[name]) + '/mo';
     });
   });
 

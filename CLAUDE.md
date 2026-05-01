@@ -126,13 +126,22 @@ POST /video/generate
 
 ## PIANI E PRICING
 
-| Piano   | Mensile  | Annuale   | Reel/mese |
-|---------|----------|-----------|-----------|
-| Creator | €14.99   | €149.90   | 5         |
-| Pro     | €34.99   | €349.90   | 15        |
-| Studio  | €79.99   | €799.90   | 40        |
+**Unità: 1 credito = 5 secondi di video generato (lipsync incluso)**
+**Margine minimo garantito: 43% anche su Studio annuale**
 
-Trial 7gg su tutti. Annuale = 2 mesi gratis.
+| Piano   | Mensile  | Annuale   | Crediti/mese | Equivale a…              |
+|---------|----------|-----------|--------------|--------------------------|
+| Creator | €16.99   | €169.90   | 10           | 5 reel 10s · 1 reel 30s  |
+| Pro     | €39.99   | €399.90   | 30           | 15 reel 10s · 5 reel 30s |
+| Studio  | €89.99   | €899.90   | 80           | 40 reel 10s · 13 reel 30s|
+
+Trial 7gg su tutti — 6 crediti trial (≈ 1 reel 30s o 3 reel 10s).
+Annuale = 2 mesi gratis.
+
+**TRIAL_MAX_CREDITS = 6** — env var su Render
+**CREDIT_LIMITS** in `saas/billing/routes.py`
+**_credits_for_duration(secs)** in `saas/video/routes.py` — `ceil(secs/5)`
+**deduct_credits(user_id, credits)** — funzione Supabase (sostituisce increment_reel_count)
 
 ---
 

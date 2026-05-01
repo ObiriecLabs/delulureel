@@ -1,6 +1,7 @@
 import os
 import gc
 import json
+import math
 import uuid
 import shutil
 import tempfile
@@ -27,9 +28,14 @@ from saas.auth.routes import require_auth_api
 video_bp = Blueprint('video', __name__)
 
 MAX_CONCURRENT_PER_USER = 1
-MAX_CONCURRENT_GLOBAL   = int(os.getenv('MAX_CONCURRENT_GLOBAL',   10))
-TRIAL_MAX_GENERATIONS   = int(os.getenv('TRIAL_MAX_GENERATIONS',   3))
-DAILY_BUDGET_CAP_USD    = float(os.getenv('DAILY_BUDGET_CAP_USD',  200))
+MAX_CONCURRENT_GLOBAL   = int(os.getenv('MAX_CONCURRENT_GLOBAL',  10))
+TRIAL_MAX_CREDITS       = int(os.getenv('TRIAL_MAX_CREDITS',       6))   # 6 crediti ≈ 1 reel 30s o 3 reel 10s
+DAILY_BUDGET_CAP_USD    = float(os.getenv('DAILY_BUDGET_CAP_USD', 200))
+
+
+def _credits_for_duration(target_secs: int) -> int:
+    """Calcola i crediti da scalare: 1 credito = 5 secondi di video generato (minimo 1)."""
+    return max(1, math.ceil(target_secs / 5))
 
 # Base URL for webhook (must be externally reachable — set APP_BASE_URL in Render env)
 APP_BASE_URL = os.getenv('APP_BASE_URL', 'https://delulureel.com').rstrip('/')
@@ -215,10 +221,12 @@ def generate():
         return jsonify({'error': 'Account suspended. Please update your payment method.'}), 403
     if prof.get('status') in ('cancelled', 'inactive'):
         return jsonify({'error': 'No active subscription. Please start a trial.'}), 403
-    if prof.get('status') == 'trial' and prof.get('trial_reels_used', 0) >= TRIAL_MAX_GENERATIONS:
-        return jsonify({'error': f'Trial limit reached ({TRIAL_MAX_GENERATIONS} reels). Billing starts on Day 7.'}), 403
-    if prof.get('reels_used_this_month', 0) >= prof.get('reel_limit', 5):
-        return jsonify({'error': 'Monthly reel limit reached. Upgrade your plan for more.'}), 403
+    # Credit checks — computed after we know target_secs (evaluated again below after duration parse)
+    # Pre-check: trial hard stop if no credits at all
+    if prof.get('status') == 'trial' and prof.get('trial_credits_used', 0) >= TRIAL_MAX_CREDITS:
+        return jsonify({'error': f'Trial credits exhausted ({TRIAL_MAX_CREDITS} credits). Billing starts on Day 7.'}), 403
+    if prof.get('credits_used_this_month', 0) >= prof.get('credits_limit', 10):
+        return jsonify({'error': 'Monthly credits exhausted. Upgrade your plan for more.'}), 403
 
     # Files
     photo = request.files.get('photo')
@@ -246,9 +254,18 @@ def generate():
     else:
         target_secs = 10
 
-    endpoint = endpoint_for_duration(target_secs)
-    n_clips  = n_clips_for_duration(target_secs) if target_secs > 10 else 1
-    est_cost = estimate_cost(target_secs, endpoint)
+    endpoint       = endpoint_for_duration(target_secs)
+    n_clips        = n_clips_for_duration(target_secs) if target_secs > 10 else 1
+    est_cost       = estimate_cost(target_secs, endpoint)
+    credits_needed = _credits_for_duration(target_secs)
+
+    # Precise credit check now that we know the actual duration
+    if prof.get('status') == 'trial':
+        if prof.get('trial_credits_used', 0) + credits_needed > TRIAL_MAX_CREDITS:
+            return jsonify({'error': f'This reel requires {credits_needed} credits but your trial only has {TRIAL_MAX_CREDITS - prof.get("trial_credits_used", 0)} left.'}), 403
+    if prof.get('credits_used_this_month', 0) + credits_needed > prof.get('credits_limit', 10):
+        remaining = prof.get('credits_limit', 10) - prof.get('credits_used_this_month', 0)
+        return jsonify({'error': f'This reel requires {credits_needed} credits but you only have {remaining} left this month.'}), 403
 
     if not _budget_ok(est_cost):
         return jsonify({'error': 'Service temporarily unavailable (daily budget reached).'}), 503
@@ -645,7 +662,7 @@ def _run_post_generation(job_id, user_id, raw_video_url, aspect_ratio, est_cost,
         update('completed', output_url=final_url, actual_cost=est_cost)
 
         # 8 — Increment reel counter
-        sb.rpc('increment_reel_count', {'p_user_id': user_id}).execute()
+        sb.rpc('deduct_credits', {'p_user_id': user_id, 'p_credits': _credits_for_duration(target_secs)}).execute()
 
     except Exception as exc:
         update('failed', error_message=str(exc)[:500])
@@ -795,7 +812,7 @@ def _run_pipeline(job_id, user_id, photo_path, audio_path, style, aspect_ratio,
         # 7 — Mark completed
         _record_spend(est_cost)
         update('completed', output_url=final_url, actual_cost=est_cost)
-        sb.rpc('increment_reel_count', {'p_user_id': user_id}).execute()
+        sb.rpc('deduct_credits', {'p_user_id': user_id, 'p_credits': _credits_for_duration(target_secs)}).execute()
 
     except Exception as exc:
         update('failed', error_message=str(exc)[:500])
@@ -882,7 +899,7 @@ def profile():
     sb = _sb_service()
     try:
         prof = sb.table('profiles').select(
-            'plan,status,reel_limit,reels_used_this_month,trial_reels_used'
+            'plan,status,credits_limit,credits_used_this_month,trial_credits_used'
         ).eq('user_id', user_id).single().execute()
         return jsonify(prof.data)
     except Exception:

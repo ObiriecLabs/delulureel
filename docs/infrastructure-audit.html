@@ -1,0 +1,1248 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Audit Infrastrutturale — Obiriec Labs 2026</title>
+<style>
+  :root {
+    --bg: #08060f;
+    --bg2: #110d1e;
+    --bg3: #1a1428;
+    --surface: #1e1830;
+    --surface2: #2a2240;
+    --border: #2e264a;
+    --border-hi: #4a3d7a;
+    --text: #e8e0ff;
+    --text2: #a89dc8;
+    --text3: #6b5f8c;
+    --violet: #8b5cf6;
+    --violet-light: #a78bfa;
+    --pink: #ec4899;
+    --orange: #f97316;
+    --green: #22c55e;
+    --red: #ef4444;
+    --cyan: #06b6d4;
+    --yellow: #eab308;
+    --grad: linear-gradient(135deg, #8b5cf6 0%, #ec4899 50%, #f97316 100%);
+    --font: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    --mono: 'JetBrains Mono', 'Fira Code', monospace;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html { scroll-behavior: smooth; }
+  body { background: var(--bg); color: var(--text); font-family: var(--font); font-size: 15px; line-height: 1.65; display: flex; min-height: 100vh; }
+
+  /* ── Sidebar ── */
+  #sidebar {
+    position: fixed; top: 0; left: 0; width: 260px; height: 100vh;
+    background: var(--bg2); border-right: 1px solid var(--border);
+    overflow-y: auto; z-index: 100; padding: 24px 0;
+    display: flex; flex-direction: column;
+  }
+  .sidebar-logo { padding: 0 20px 20px; border-bottom: 1px solid var(--border); margin-bottom: 12px; }
+  .sidebar-logo .brand { font-size: 13px; font-weight: 800; letter-spacing: 0.15em; text-transform: uppercase; background: var(--grad); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+  .sidebar-logo .subtitle { font-size: 11px; color: var(--text3); margin-top: 3px; }
+  .nav-section { padding: 8px 20px 4px; font-size: 10px; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; color: var(--text3); }
+  .nav-item { display: block; padding: 7px 20px; font-size: 13px; color: var(--text2); text-decoration: none; border-left: 2px solid transparent; transition: all 0.15s; cursor: pointer; }
+  .nav-item:hover { color: var(--violet-light); background: rgba(139,92,246,0.06); border-left-color: var(--violet); }
+  .nav-item.active { color: var(--violet-light); background: rgba(139,92,246,0.1); border-left-color: var(--violet); font-weight: 600; }
+  .nav-item .badge { float: right; background: var(--violet); color: white; font-size: 10px; padding: 1px 6px; border-radius: 10px; font-weight: 700; }
+
+  /* ── Main ── */
+  #main { margin-left: 260px; flex: 1; max-width: calc(100vw - 260px); }
+
+  /* ── Hero ── */
+  .hero { background: var(--bg2); border-bottom: 1px solid var(--border); padding: 48px 56px 40px; position: relative; overflow: hidden; }
+  .hero::before { content: ''; position: absolute; top: -60px; right: -60px; width: 300px; height: 300px; background: radial-gradient(circle, rgba(139,92,246,0.15) 0%, transparent 70%); pointer-events: none; }
+  .hero-tag { display: inline-block; background: rgba(139,92,246,0.15); border: 1px solid rgba(139,92,246,0.3); color: var(--violet-light); font-size: 11px; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; padding: 4px 12px; border-radius: 20px; margin-bottom: 16px; }
+  .hero h1 { font-size: 36px; font-weight: 800; line-height: 1.15; margin-bottom: 12px; }
+  .hero h1 span { background: var(--grad); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+  .hero-meta { font-size: 13px; color: var(--text3); }
+  .hero-meta strong { color: var(--text2); }
+  .hero-stats { display: flex; gap: 32px; margin-top: 28px; padding-top: 28px; border-top: 1px solid var(--border); }
+  .stat-item { }
+  .stat-num { font-size: 28px; font-weight: 800; background: var(--grad); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+  .stat-label { font-size: 12px; color: var(--text3); margin-top: 2px; }
+
+  /* ── Sections ── */
+  .section { padding: 48px 56px; border-bottom: 1px solid var(--border); }
+  .section:last-child { border-bottom: none; }
+  .section-header { display: flex; align-items: center; gap: 12px; margin-bottom: 32px; }
+  .section-num { width: 32px; height: 32px; border-radius: 8px; background: rgba(139,92,246,0.2); border: 1px solid rgba(139,92,246,0.4); display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 800; color: var(--violet-light); flex-shrink: 0; }
+  .section-title { font-size: 24px; font-weight: 700; }
+  .section-subtitle { font-size: 14px; color: var(--text3); margin-top: 4px; }
+
+  /* ── Cards ── */
+  .card-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 16px; margin-bottom: 24px; }
+  .card { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 20px; transition: border-color 0.2s; }
+  .card:hover { border-color: var(--border-hi); }
+  .card-title { font-size: 13px; font-weight: 700; color: var(--violet-light); margin-bottom: 8px; display: flex; align-items: center; gap: 8px; }
+  .card-text { font-size: 13px; color: var(--text2); line-height: 1.6; }
+  .card.highlight { background: rgba(139,92,246,0.08); border-color: rgba(139,92,246,0.3); }
+  .card.winner { background: rgba(34,197,94,0.06); border-color: rgba(34,197,94,0.3); }
+  .card.warning { background: rgba(249,115,22,0.06); border-color: rgba(249,115,22,0.3); }
+
+  /* ── Tables ── */
+  .table-wrap { overflow-x: auto; border-radius: 12px; border: 1px solid var(--border); margin-bottom: 24px; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  thead { background: var(--surface2); }
+  thead th { padding: 12px 16px; text-align: left; font-weight: 700; font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--text3); border-bottom: 1px solid var(--border); white-space: nowrap; }
+  tbody tr { border-bottom: 1px solid var(--border); transition: background 0.1s; }
+  tbody tr:last-child { border-bottom: none; }
+  tbody tr:hover { background: rgba(139,92,246,0.04); }
+  tbody td { padding: 11px 16px; color: var(--text2); vertical-align: middle; }
+  tbody td:first-child { color: var(--text); font-weight: 600; }
+  .badge { display: inline-block; padding: 2px 8px; border-radius: 20px; font-size: 11px; font-weight: 700; }
+  .badge-green { background: rgba(34,197,94,0.15); color: var(--green); }
+  .badge-red { background: rgba(239,68,68,0.15); color: var(--red); }
+  .badge-yellow { background: rgba(234,179,8,0.15); color: var(--yellow); }
+  .badge-violet { background: rgba(139,92,246,0.15); color: var(--violet-light); }
+  .badge-cyan { background: rgba(6,182,212,0.15); color: var(--cyan); }
+  .score { display: inline-block; font-weight: 800; font-size: 13px; }
+  .s10 { color: var(--green); } .s9 { color: #4ade80; } .s8 { color: var(--yellow); }
+  .s7 { color: var(--orange); } .s6 { color: #f87171; } .s5 { color: var(--red); }
+  .winner-row { background: rgba(34,197,94,0.05) !important; }
+  .winner-row td:first-child::before { content: '★ '; color: var(--green); }
+
+  /* ── Cost Calculator ── */
+  .calculator { background: var(--surface); border: 1px solid var(--border); border-radius: 16px; padding: 28px; margin-bottom: 24px; }
+  .calc-title { font-size: 16px; font-weight: 700; margin-bottom: 20px; display: flex; align-items: center; gap: 8px; }
+  .calc-row { display: flex; align-items: center; gap: 16px; margin-bottom: 16px; }
+  .calc-label { width: 180px; font-size: 13px; color: var(--text2); flex-shrink: 0; }
+  .calc-input { background: var(--bg3); border: 1px solid var(--border); border-radius: 8px; padding: 8px 12px; color: var(--text); font-size: 14px; font-family: var(--font); width: 120px; outline: none; }
+  .calc-input:focus { border-color: var(--violet); }
+  .calc-result { background: var(--bg2); border: 1px solid var(--border-hi); border-radius: 12px; padding: 20px; margin-top: 16px; }
+  .calc-result-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
+  .result-item { text-align: center; }
+  .result-val { font-size: 22px; font-weight: 800; background: var(--grad); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+  .result-key { font-size: 11px; color: var(--text3); margin-top: 4px; }
+
+  /* ── Architecture diagram ── */
+  .arch-diagram { background: var(--bg3); border: 1px solid var(--border); border-radius: 12px; padding: 24px; font-family: var(--mono); font-size: 12px; line-height: 1.6; color: var(--text2); overflow-x: auto; white-space: pre; margin-bottom: 24px; }
+  .arch-diagram .hl { color: var(--violet-light); }
+  .arch-diagram .hl2 { color: var(--green); }
+  .arch-diagram .hl3 { color: var(--cyan); }
+  .arch-diagram .hl4 { color: var(--orange); }
+
+  /* ── Stars ── */
+  .stars { color: var(--yellow); letter-spacing: -2px; }
+  .stars .dim { color: var(--surface2); }
+
+  /* ── Tabs ── */
+  .tabs { display: flex; gap: 4px; margin-bottom: 20px; background: var(--bg3); border: 1px solid var(--border); border-radius: 10px; padding: 4px; }
+  .tab { flex: 1; padding: 8px 12px; font-size: 13px; font-weight: 600; color: var(--text3); background: transparent; border: none; border-radius: 7px; cursor: pointer; transition: all 0.15s; text-align: center; }
+  .tab.active { background: var(--surface2); color: var(--text); }
+  .tab-content { display: none; }
+  .tab-content.active { display: block; }
+
+  /* ── Roadmap ── */
+  .roadmap-item { display: flex; gap: 20px; margin-bottom: 24px; }
+  .roadmap-num { width: 36px; height: 36px; border-radius: 50%; background: var(--grad); display: flex; align-items: center; justify-content: center; font-weight: 800; font-size: 14px; color: white; flex-shrink: 0; margin-top: 2px; }
+  .roadmap-content { flex: 1; }
+  .roadmap-title { font-size: 15px; font-weight: 700; margin-bottom: 6px; }
+  .roadmap-meta { font-size: 12px; color: var(--text3); margin-bottom: 8px; display: flex; gap: 12px; }
+  .roadmap-tag { background: rgba(139,92,246,0.15); color: var(--violet-light); border-radius: 4px; padding: 2px 7px; font-size: 11px; font-weight: 700; }
+  .roadmap-text { font-size: 13px; color: var(--text2); }
+
+  /* ── Callout ── */
+  .callout { border-radius: 10px; padding: 16px 20px; margin-bottom: 20px; display: flex; gap: 14px; align-items: flex-start; font-size: 13px; }
+  .callout.info { background: rgba(6,182,212,0.08); border: 1px solid rgba(6,182,212,0.25); color: var(--text2); }
+  .callout.success { background: rgba(34,197,94,0.08); border: 1px solid rgba(34,197,94,0.25); color: var(--text2); }
+  .callout.warning { background: rgba(249,115,22,0.08); border: 1px solid rgba(249,115,22,0.25); color: var(--text2); }
+  .callout-icon { font-size: 16px; flex-shrink: 0; margin-top: 1px; }
+
+  /* ── Print / PDF ── */
+  @media print {
+    #sidebar { display: none; }
+    #main { margin-left: 0; max-width: 100%; }
+    .section { page-break-inside: avoid; }
+    .hero { background: white; color: black; }
+    body { background: white; color: black; }
+  }
+
+  /* ── Scrollbar ── */
+  ::-webkit-scrollbar { width: 6px; height: 6px; }
+  ::-webkit-scrollbar-track { background: var(--bg); }
+  ::-webkit-scrollbar-thumb { background: var(--border-hi); border-radius: 3px; }
+</style>
+</head>
+<body>
+
+<!-- ══════════════ SIDEBAR ══════════════ -->
+<nav id="sidebar">
+  <div class="sidebar-logo">
+    <div class="brand">Obiriec Labs</div>
+    <div class="subtitle">Infrastructure Audit 2026</div>
+  </div>
+
+  <div class="nav-section">Overview</div>
+  <a class="nav-item active" onclick="navTo(this,'exec')">Executive Summary</a>
+  <a class="nav-item" onclick="navTo(this,'context')">Contesto e Obiettivi</a>
+
+  <div class="nav-section">Infrastruttura</div>
+  <a class="nav-item" onclick="navTo(this,'cloud')">☁️ Cloud Hosting <span class="badge">A</span></a>
+  <a class="nav-item" onclick="navTo(this,'jobs')">⚙️ Background Jobs <span class="badge">D</span></a>
+  <a class="nav-item" onclick="navTo(this,'storage')">💾 Storage & CDN <span class="badge">E</span></a>
+
+  <div class="nav-section">AI & API</div>
+  <a class="nav-item" onclick="navTo(this,'falai')">🎬 fal.ai — Catalogo <span class="badge">B</span></a>
+  <a class="nav-item" onclick="navTo(this,'alternatives')">🔀 Alternative AI <span class="badge">C</span></a>
+
+  <div class="nav-section">Architetture</div>
+  <a class="nav-item" onclick="navTo(this,'delulureel-arch')">🎵 DELULUREEL</a>
+  <a class="nav-item" onclick="navTo(this,'avarcast-arch')">👤 AVARCAST</a>
+  <a class="nav-item" onclick="navTo(this,'podcast')">🎙️ Podcast Personale</a>
+
+  <div class="nav-section">Costi & Roadmap</div>
+  <a class="nav-item" onclick="navTo(this,'calculator')">📊 Calcolatore Costi</a>
+  <a class="nav-item" onclick="navTo(this,'roadmap')">🗺️ Roadmap</a>
+  <a class="nav-item" onclick="navTo(this,'decisions')">✅ Decisioni Chiave</a>
+</nav>
+
+<!-- ══════════════ MAIN ══════════════ -->
+<main id="main">
+
+<!-- Hero -->
+<div class="hero" id="exec">
+  <div class="hero-tag">Audit Infrastrutturale Professionale</div>
+  <h1>La Migliore Infrastruttura<br>per <span>Obiriec Labs</span></h1>
+  <div class="hero-meta">
+    <strong>Versione:</strong> Maggio 2026 &nbsp;·&nbsp;
+    <strong>Scope:</strong> DELULUREEL · AVARCAST · Ecosistema fal.ai · Podcast &nbsp;·&nbsp;
+    <strong>Revisione:</strong> Aprile 2027
+  </div>
+  <div class="hero-stats">
+    <div class="stat-item"><div class="stat-num">7</div><div class="stat-label">Provider cloud analizzati</div></div>
+    <div class="stat-item"><div class="stat-num">20+</div><div class="stat-label">Modelli AI catalogati</div></div>
+    <div class="stat-item"><div class="stat-num">74%</div><div class="stat-label">Margine infra a 10K utenti</div></div>
+    <div class="stat-item"><div class="stat-num">€0</div><div class="stat-label">Egress video con R2</div></div>
+  </div>
+</div>
+
+<!-- Executive Summary -->
+<div class="section" id="context">
+  <div class="section-header">
+    <div class="section-num">00</div>
+    <div>
+      <div class="section-title">Executive Summary</div>
+      <div class="section-subtitle">Raccomandazioni immediate e visione strategica</div>
+    </div>
+  </div>
+
+  <div class="callout success">
+    <div class="callout-icon">✅</div>
+    <div><strong>Raccomandazione principale:</strong> migrare da Render Starter a <strong>Fly.io</strong> (rolling deploy nativi, macchine persistenti, 4GB RAM a $24/mese) con <strong>Celery + Upstash Redis</strong> per job queue e <strong>Cloudflare R2</strong> per storage video. fal.ai rimane il provider AI video — nessun concorrente offre qualità/prezzo comparabile nel 2026.</div>
+  </div>
+
+  <div class="callout warning">
+    <div class="callout-icon">⚠️</div>
+    <div><strong>Problema attuale su Render Starter:</strong> 512MB RAM insufficienti per FFmpeg + librosa + Python. Deploy = kill immediato di tutti i thread in-flight. Cold start 1–3 min. Inaccettabile per SaaS con 1.000+ utenti paganti.</div>
+  </div>
+
+  <div class="card-grid">
+    <div class="card winner">
+      <div class="card-title">🏆 Web Server</div>
+      <div class="card-text"><strong>Fly.io shared-cpu-4x</strong><br>4GB RAM · Rolling deploy nativi · 2 repliche · $24/mese · Regione AMS (latenza IT &lt;15ms). Nessun job in-flight killato durante i deploy.</div>
+    </div>
+    <div class="card winner">
+      <div class="card-title">🏆 Worker Video</div>
+      <div class="card-text"><strong>Fly.io performance-2x</strong><br>CPU dedicata per FFmpeg · 4GB RAM · Autoscale 0–3 macchine · $64/mese base. Isolato dal web server, mai interrotto dai deploy.</div>
+    </div>
+    <div class="card winner">
+      <div class="card-title">🏆 Job Queue</div>
+      <div class="card-text"><strong>Celery + Upstash Redis</strong><br>Serverless Redis · 500K cmd/mese gratis · Python nativo · Retry automatico · Monitoring Flower incluso.</div>
+    </div>
+    <div class="card winner">
+      <div class="card-title">🏆 Storage Video</div>
+      <div class="card-text"><strong>Cloudflare R2</strong><br>Egress $0 · S3-compatible · A 10K utenti risparmio $120K+/anno vs AWS S3 · CDN globale via CF Workers.</div>
+    </div>
+    <div class="card highlight">
+      <div class="card-title">🎬 AI Video</div>
+      <div class="card-text"><strong>fal.ai — Kling v3 Pro</strong><br>Migliore qualità/prezzo 2026 · Audio nativo incluso · 4K disponibile · 99.99% SLA · 600+ modelli con singola API key.</div>
+    </div>
+    <div class="card highlight">
+      <div class="card-title">👤 Avatar (AVARCAST)</div>
+      <div class="card-text"><strong>fal.ai + ElevenLabs</strong><br>Omnihuman/SadTalker per animazione · Voice clone ElevenLabs · Lipsync fal.ai Sync · Costo 5–10x inferiore a HeyGen/Synthesia.</div>
+    </div>
+  </div>
+</div>
+
+<!-- Cloud Hosting -->
+<div class="section" id="cloud">
+  <div class="section-header">
+    <div class="section-num">A</div>
+    <div>
+      <div class="section-title">Cloud Hosting per Flask + Job Video</div>
+      <div class="section-subtitle">Confronto 7 provider — criteri: rolling deploy, RAM, FFmpeg, costo EU</div>
+    </div>
+  </div>
+
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Provider</th>
+          <th>Piano</th>
+          <th>RAM</th>
+          <th>€/mese</th>
+          <th>Rolling Deploy</th>
+          <th>Affidabilità</th>
+          <th>DX</th>
+          <th>Costo</th>
+          <th>Scala</th>
+          <th>Latenza EU</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr class="winner-row">
+          <td>Fly.io</td>
+          <td>shared-cpu-4x</td>
+          <td>4 GB</td>
+          <td>$24</td>
+          <td><span class="badge badge-green">Nativo</span></td>
+          <td><span class="score s9">9</span></td>
+          <td><span class="score s9">9</span></td>
+          <td><span class="score s9">9</span></td>
+          <td><span class="score s8">8</span></td>
+          <td>&lt;20ms IT</td>
+        </tr>
+        <tr class="winner-row">
+          <td>Fly.io</td>
+          <td>performance-2x</td>
+          <td>4 GB</td>
+          <td>$64</td>
+          <td><span class="badge badge-green">Nativo</span></td>
+          <td><span class="score s9">9</span></td>
+          <td><span class="score s9">9</span></td>
+          <td><span class="score s7">7</span></td>
+          <td><span class="score s9">9</span></td>
+          <td>&lt;20ms IT</td>
+        </tr>
+        <tr>
+          <td>Railway</td>
+          <td>Pro (usage)</td>
+          <td>8 GB max</td>
+          <td>$5–20+</td>
+          <td><span class="badge badge-green">Sì</span></td>
+          <td><span class="score s8">8</span></td>
+          <td><span class="score s9">9</span></td>
+          <td><span class="score s8">8</span></td>
+          <td><span class="score s7">7</span></td>
+          <td>US primary</td>
+        </tr>
+        <tr>
+          <td>Hetzner CX42</td>
+          <td>VPS Dedicato</td>
+          <td>16 GB</td>
+          <td>€16.40</td>
+          <td><span class="badge badge-red">Manuale</span></td>
+          <td><span class="score s7">7</span></td>
+          <td><span class="score s5">4</span></td>
+          <td><span class="score s10">10</span></td>
+          <td><span class="score s7">7</span></td>
+          <td>&lt;10ms IT</td>
+        </tr>
+        <tr>
+          <td>DigitalOcean</td>
+          <td>Basic 4GB</td>
+          <td>4 GB</td>
+          <td>$24</td>
+          <td><span class="badge badge-yellow">App Platform</span></td>
+          <td><span class="score s8">8</span></td>
+          <td><span class="score s7">7</span></td>
+          <td><span class="score s8">8</span></td>
+          <td><span class="score s7">7</span></td>
+          <td>AMS/FRA</td>
+        </tr>
+        <tr>
+          <td>Modal.com</td>
+          <td>Serverless GPU</td>
+          <td>variabile</td>
+          <td>$0.04/GPU-h</td>
+          <td><span class="badge badge-cyan">Stateless</span></td>
+          <td><span class="score s9">9</span></td>
+          <td><span class="score s8">8</span></td>
+          <td><span class="score s6">6</span></td>
+          <td><span class="score s10">10</span></td>
+          <td>US primary</td>
+        </tr>
+        <tr>
+          <td>Google Cloud Run</td>
+          <td>2vCPU/4GB</td>
+          <td>4 GB</td>
+          <td>$0–60</td>
+          <td><span class="badge badge-green">Sì</span></td>
+          <td><span class="score s9">9</span></td>
+          <td><span class="score s7">7</span></td>
+          <td><span class="score s7">7</span></td>
+          <td><span class="score s9">9</span></td>
+          <td>EU-WEST-1</td>
+        </tr>
+        <tr>
+          <td>Render Standard</td>
+          <td>Standard (attuale)</td>
+          <td>2 GB</td>
+          <td>$25</td>
+          <td><span class="badge badge-red">Kill in-flight</span></td>
+          <td><span class="score s5">5</span></td>
+          <td><span class="score s8">8</span></td>
+          <td><span class="score s7">7</span></td>
+          <td><span class="score s6">6</span></td>
+          <td>US+EU</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="callout info">
+    <div class="callout-icon">💡</div>
+    <div><strong>Nota critica su Render:</strong> i deploy killano i thread in-flight senza graceful shutdown. Nessun piano Render risolve questo a livello architetturale — è un limite del loro sistema di deploy. Fly.io ha rolling deploy nativi con health check per container: il container vecchio rimane attivo finché quello nuovo è pronto e supera tutti i check.</div>
+  </div>
+</div>
+
+<!-- Background Jobs -->
+<div class="section" id="jobs">
+  <div class="section-header">
+    <div class="section-num">D</div>
+    <div>
+      <div class="section-title">Background Job Processing</div>
+      <div class="section-subtitle">Gestione asincrona FFmpeg, librosa, chiamate AI</div>
+    </div>
+  </div>
+
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Sistema</th>
+          <th>Tipo</th>
+          <th>Costo/mese</th>
+          <th>Affidabilità</th>
+          <th>Retry auto</th>
+          <th>Python</th>
+          <th>Monitoring</th>
+          <th>Consigliato</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr class="winner-row">
+          <td>Celery + Upstash Redis</td>
+          <td>Self-managed</td>
+          <td>$0 (free tier)</td>
+          <td><span class="badge badge-green">Alta</span></td>
+          <td>✅ Nativo</td>
+          <td>✅ Nativo</td>
+          <td>Flower</td>
+          <td><span class="badge badge-green">Primario</span></td>
+        </tr>
+        <tr>
+          <td>Inngest</td>
+          <td>Managed</td>
+          <td>$0–usage</td>
+          <td><span class="badge badge-green">Alta</span></td>
+          <td>✅ Built-in</td>
+          <td>✅ SDK</td>
+          <td>Dashboard</td>
+          <td><span class="badge badge-cyan">Alternativa</span></td>
+        </tr>
+        <tr>
+          <td>Modal.com Functions</td>
+          <td>Serverless</td>
+          <td>$30 free/mese</td>
+          <td><span class="badge badge-green">Altissima</span></td>
+          <td>✅ Nativo</td>
+          <td>✅ SDK</td>
+          <td>Dashboard</td>
+          <td><span class="badge badge-cyan">GPU offload</span></td>
+        </tr>
+        <tr>
+          <td>AWS SQS + Lambda</td>
+          <td>Cloud managed</td>
+          <td>~$1–10</td>
+          <td><span class="badge badge-green">Altissima</span></td>
+          <td>✅ DLQ</td>
+          <td>✅ boto3</td>
+          <td>CloudWatch</td>
+          <td><span class="badge badge-yellow">Over-engineering</span></td>
+        </tr>
+        <tr>
+          <td>Render Background Worker</td>
+          <td>PaaS</td>
+          <td>$25/mese</td>
+          <td><span class="badge badge-red">Media</span></td>
+          <td>❌ No</td>
+          <td>✅</td>
+          <td>Limitato</td>
+          <td><span class="badge badge-red">Sconsigliato</span></td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<!-- Storage & CDN -->
+<div class="section" id="storage">
+  <div class="section-header">
+    <div class="section-num">E</div>
+    <div>
+      <div class="section-title">Storage & CDN per Video</div>
+      <div class="section-subtitle">Costi reali su 10.000 video MP4 da 30MB (300GB storage, 1.5TB egress/mese)</div>
+    </div>
+  </div>
+
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Provider</th>
+          <th>Storage /GB/mese</th>
+          <th>Egress /GB</th>
+          <th>CDN</th>
+          <th>Costo 300GB + 1.5TB egress</th>
+          <th>Note</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr class="winner-row">
+          <td>Cloudflare R2</td>
+          <td>$0.015</td>
+          <td><strong style="color:var(--green)">$0.00</strong></td>
+          <td>✅ Workers/r2.dev</td>
+          <td><strong style="color:var(--green)">$4.50</strong></td>
+          <td>Egress zero — rivoluzionario</td>
+        </tr>
+        <tr>
+          <td>Bunny.net Stream</td>
+          <td>$0.01</td>
+          <td>$0.005</td>
+          <td>✅ + Player</td>
+          <td>$10.50</td>
+          <td>Player video gratuito incluso</td>
+        </tr>
+        <tr>
+          <td>Supabase Pro</td>
+          <td>$0.021</td>
+          <td>$0.03 (over 250GB)</td>
+          <td>✅ Smart CDN</td>
+          <td>~$0* (incluso)</td>
+          <td>Gratis dentro soglia Piano Pro</td>
+        </tr>
+        <tr>
+          <td>Backblaze B2 + CF</td>
+          <td>$0.006</td>
+          <td>$0 (via CF)</td>
+          <td>✅ via CF</td>
+          <td>$1.80</td>
+          <td>Più economico di R2 per puro storage</td>
+        </tr>
+        <tr>
+          <td>AWS S3 + CloudFront</td>
+          <td>$0.023</td>
+          <td>$0.085 (EU)</td>
+          <td>✅ CloudFront</td>
+          <td><strong style="color:var(--red)">$134.40</strong></td>
+          <td>Egress killer — evitare per video SaaS</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="callout success">
+    <div class="callout-icon">💰</div>
+    <div><strong>Risparmio Cloudflare R2 vs AWS S3:</strong> a 10.000 utenti attivi e 1.5TB di egress mensile, R2 costa $4.50/mese contro $134.40 di S3+CloudFront. Risparmio annuo: <strong>~$1.560</strong>. A 100.000 utenti: risparmio annuo <strong>~$156.000</strong>.</div>
+  </div>
+</div>
+
+<!-- fal.ai Catalogo -->
+<div class="section" id="falai">
+  <div class="section-header">
+    <div class="section-num">B</div>
+    <div>
+      <div class="section-title">fal.ai — Catalogo Modelli Strategici</div>
+      <div class="section-subtitle">Video · Immagini · Avatar · Audio · TTS — singola API key per 600+ modelli</div>
+    </div>
+  </div>
+
+  <div class="tabs">
+    <button class="tab active" onclick="switchTab(this,'tab-video')">🎬 Video Generation</button>
+    <button class="tab" onclick="switchTab(this,'tab-avatar')">👤 Avatar / Talking Head</button>
+    <button class="tab" onclick="switchTab(this,'tab-audio')">🎵 Audio / Music</button>
+    <button class="tab" onclick="switchTab(this,'tab-image')">🖼️ Image Generation</button>
+  </div>
+
+  <div id="tab-video" class="tab-content active">
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr><th>Modello</th><th>Tipo</th><th>Prezzo</th><th>Durata</th><th>Qualità</th><th>Use case Obiriec</th></tr>
+        </thead>
+        <tbody>
+          <tr class="winner-row">
+            <td>Kling v3 Pro</td>
+            <td>I2V</td>
+            <td>$0.112/sec</td>
+            <td>5s / 10s</td>
+            <td><span class="stars">★★★★★</span></td>
+            <td>DELULUREEL tier Pro — coerenza visiva + audio nativo</td>
+          </tr>
+          <tr class="winner-row">
+            <td>Seedance 2.0</td>
+            <td>I2V / T2V</td>
+            <td>$0.05–0.08/sec</td>
+            <td>5s / 10s</td>
+            <td><span class="stars">★★★★★</span></td>
+            <td>Alternativa cinema-grade con audio nativo incluso</td>
+          </tr>
+          <tr>
+            <td>Kling v2.6 Pro</td>
+            <td>I2V</td>
+            <td>$0.07/sec</td>
+            <td>5s / 10s</td>
+            <td><span class="stars">★★★★<span class="dim">★</span></span></td>
+            <td>Rapporto qualità/prezzo ottimale — tier Standard</td>
+          </tr>
+          <tr>
+            <td>Kling 3.0 4K Native</td>
+            <td>I2V</td>
+            <td>Premium</td>
+            <td>5s</td>
+            <td><span class="stars">★★★★★</span></td>
+            <td>DELULUREEL tier Ultra (futuro)</td>
+          </tr>
+          <tr>
+            <td>Wan 2.5</td>
+            <td>T2V</td>
+            <td>$0.05/sec</td>
+            <td>variabile</td>
+            <td><span class="stars">★★★★<span class="dim">★</span></span></td>
+            <td>Open source — buon prezzo per volumetria alta</td>
+          </tr>
+          <tr>
+            <td>Veo 3 (Google)</td>
+            <td>T2V</td>
+            <td>$0.40/sec</td>
+            <td>variabile</td>
+            <td><span class="stars">★★★★★</span></td>
+            <td>Qualità massima — tier premium AVARCAST broadcast</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <div id="tab-avatar" class="tab-content">
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr><th>Modello</th><th>Tipo</th><th>Prezzo</th><th>Qualità</th><th>Use case</th></tr>
+        </thead>
+        <tbody>
+          <tr class="winner-row">
+            <td>Omnihuman v1.5</td>
+            <td>Character animation</td>
+            <td>TBD</td>
+            <td><span class="stars">★★★★★</span></td>
+            <td>AVARCAST — avatar multi-personaggio</td>
+          </tr>
+          <tr>
+            <td>SadTalker</td>
+            <td>Foto + audio → talking</td>
+            <td>~$0.002/sec</td>
+            <td><span class="stars">★★★★<span class="dim">★</span></span></td>
+            <td>AVARCAST MVP — lipsync veloce</td>
+          </tr>
+          <tr>
+            <td>LivePortrait</td>
+            <td>Expression transfer</td>
+            <td>~$0.003/sec</td>
+            <td><span class="stars">★★★★★</span></td>
+            <td>Qualità superiore a SadTalker</td>
+          </tr>
+          <tr>
+            <td>Sync Lipsync v3</td>
+            <td>Lip sync professionale</td>
+            <td>TBD</td>
+            <td><span class="stars">★★★★★</span></td>
+            <td>Post-produzione video esistenti</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <div id="tab-audio" class="tab-content">
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr><th>Modello</th><th>Tipo</th><th>Prezzo</th><th>Qualità</th><th>Use case</th></tr>
+        </thead>
+        <tbody>
+          <tr class="winner-row">
+            <td>MMAudio V2</td>
+            <td>Video → audio sync</td>
+            <td>~$0.02/sec</td>
+            <td><span class="stars">★★★★★</span></td>
+            <td><strong>DELULUREEL</strong> — aggiunge audio reattivo al video generato</td>
+          </tr>
+          <tr>
+            <td>MiniMax Music 2.6</td>
+            <td>Music generation</td>
+            <td>$0.035/gen</td>
+            <td><span class="stars">★★★★★</span></td>
+            <td>Backing track automatico per reel</td>
+          </tr>
+          <tr>
+            <td>Stable Audio 2.5</td>
+            <td>Long-form music</td>
+            <td>$0.20/output (190s)</td>
+            <td><span class="stars">★★★★<span class="dim">★</span></span></td>
+            <td>Musica strumentale di lunga durata</td>
+          </tr>
+          <tr>
+            <td>MiniMax Speech-02 HD</td>
+            <td>TTS broadcast</td>
+            <td>~$0.008/1000 char</td>
+            <td><span class="stars">★★★★★</span></td>
+            <td>Voiceover AVARCAST</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <div id="tab-image" class="tab-content">
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr><th>Modello</th><th>Prezzo</th><th>Qualità</th><th>Use case</th></tr>
+        </thead>
+        <tbody>
+          <tr class="winner-row">
+            <td>FLUX Kontext Pro</td>
+            <td>$0.04/immagine</td>
+            <td><span class="stars">★★★★★</span></td>
+            <td>Edit/upscale frame foto utente prima di Kling</td>
+          </tr>
+          <tr>
+            <td>Seedream V4</td>
+            <td>$0.03/immagine</td>
+            <td><span class="stars">★★★★<span class="dim">★</span></span></td>
+            <td>Generazione thumbnail reel</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<!-- Alternative AI -->
+<div class="section" id="alternatives">
+  <div class="section-header">
+    <div class="section-num">C</div>
+    <div>
+      <div class="section-title">Alternative & Complementi a fal.ai</div>
+      <div class="section-subtitle">Provider da integrare o monitorare nell'ecosistema Obiriec</div>
+    </div>
+  </div>
+
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr><th>Provider</th><th>Modelli chiave</th><th>API pubblica</th><th>Pricing</th><th>Qualità</th><th>Strategia</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>Runway ML</td>
+          <td>Gen-4 Turbo, Gen-4 Aleph</td>
+          <td><span class="badge badge-green">Sì</span></td>
+          <td>$0.05–0.15/sec</td>
+          <td><span class="stars">★★★★★</span></td>
+          <td>Camera controls avanzati per AVARCAST</td>
+        </tr>
+        <tr>
+          <td>ElevenLabs</td>
+          <td>Voice Clone, TTS, Music</td>
+          <td><span class="badge badge-green">Sì (integrato)</span></td>
+          <td>$0.06–0.12/1000 char</td>
+          <td><span class="stars">★★★★★</span></td>
+          <td>Già nell'ecosistema OL — voiceover + avatar</td>
+        </tr>
+        <tr>
+          <td>Replicate</td>
+          <td>Modelli community + custom</td>
+          <td><span class="badge badge-green">Sì</span></td>
+          <td>$0.000115/sec CPU</td>
+          <td><span class="stars">★★★★<span class="dim">★</span></span></td>
+          <td>Fallback fal.ai; modelli custom Cog</td>
+        </tr>
+        <tr>
+          <td>Stability AI</td>
+          <td>SDXL, Stable Audio</td>
+          <td><span class="badge badge-green">Sì</span></td>
+          <td>~$0.04/immagine</td>
+          <td><span class="stars">★★★★<span class="dim">★</span></span></td>
+          <td>Immagini di sfondo; audio ambientale</td>
+        </tr>
+        <tr>
+          <td>Suno AI</td>
+          <td>Music generation completa</td>
+          <td><span class="badge badge-red">No API pubblica</span></td>
+          <td>N/A</td>
+          <td><span class="stars">★★★★★</span></td>
+          <td>Solo AMPA (UI). <strong>Monitorare</strong> apertura API 2026</td>
+        </tr>
+        <tr>
+          <td>Udio</td>
+          <td>Music generation</td>
+          <td><span class="badge badge-yellow">Beta limitata</span></td>
+          <td>TBD</td>
+          <td><span class="stars">★★★★<span class="dim">★</span></span></td>
+          <td>Da monitorare per integrazione futura</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<!-- DELULUREEL Architecture -->
+<div class="section" id="delulureel-arch">
+  <div class="section-header">
+    <div class="section-num">🎵</div>
+    <div>
+      <div class="section-title">Architettura DELULUREEL — Target</div>
+      <div class="section-subtitle">Stack completo per 1.000–100.000 utenti</div>
+    </div>
+  </div>
+
+  <div class="arch-diagram"><span class="hl">┌───────────────────────────────────────────────────────────────────┐
+│                        UTENTE FINALE                              │
+└──────────────────────────────┬────────────────────────────────────┘
+                               │ HTTPS
+                               ▼</span>
+<span class="hl2">┌──────────────────────────────────────────────────────────────────┐
+│                   CLOUDFLARE                                     │
+│  DNS · DDoS Protection · R2 Storage · CDN Video · Rate Limit    │
+└────────────┬─────────────────────────────────┬───────────────────┘</span>
+             │ API                             │ Video CDN (R2, $0 egress)
+             ▼                                 │
+<span class="hl">┌───────────────────────────────┐             │
+│   FLY.IO — APP SERVER         │             │
+│  Flask + Gunicorn gthread     │             │
+│  shared-cpu-4x · 4GB RAM      │             │
+│  2 repliche · Rolling deploy  │             │
+│  Regione: AMS · &lt;15ms IT      │             │
+└──────────────┬────────────────┘             │</span>
+              │ Enqueue job                   │
+              ▼                               │
+<span class="hl3">┌───────────────────────────────┐             │
+│   UPSTASH REDIS               │             │
+│  Celery Queue · Serverless EU │             │
+│  500K cmd/mese gratis         │             │
+└──────────────┬────────────────┘             │</span>
+              │ Worker consume                │
+              ▼                               │
+<span class="hl">┌───────────────────────────────┐             │
+│  FLY.IO — WORKER VM           │             │
+│  Celery Worker                │             │
+│  performance-2x · 4GB CPU ded.│─────────────►
+│  Autoscale 0→3 macchine       │  Upload MP4  │
+│  FFmpeg + librosa             │             │
+└──────────────┬────────────────┘             │</span>
+              │ AI API                       ▼
+              ▼                   <span class="hl4">┌────────────────────┐
+┌───────────────────────────────┐│  CLOUDFLARE R2     │
+│  FAL.AI API                   ││  Video generati    │
+│  Kling v3 Pro · Seedance 2.0  ││  CDN serve $0/GB   │
+│  MMAudio V2 (audio sync)      │└────────────────────┘</span>
+│  FLUX Kontext (foto enhance)  │
+└───────────────────────────────┘
+              │ metadata
+              ▼
+<span class="hl3">┌───────────────────────────────┐
+│  SUPABASE                     │
+│  PostgreSQL · Auth · RLS      │
+│  Asset piccoli (thumb, profili│
+└───────────────────────────────┘</span>
+              │
+              ▼
+<span class="hl2">┌───────────────────────────────┐
+│  STRIPE                       │
+│  Subscriptions · Crediti      │
+└───────────────────────────────┘</span></div>
+
+  <div class="card-grid">
+    <div class="card">
+      <div class="card-title">📦 Componenti stack</div>
+      <div class="card-text">
+        <strong>DNS/CDN:</strong> Cloudflare (già attivo)<br>
+        <strong>App:</strong> Fly.io shared-cpu-4x · $24/mese<br>
+        <strong>Worker:</strong> Fly.io performance-2x · $64/mese<br>
+        <strong>Queue:</strong> Celery + Upstash Redis · $0<br>
+        <strong>Storage:</strong> Cloudflare R2 · $0.015/GB<br>
+        <strong>DB/Auth:</strong> Supabase Pro · $25/mese<br>
+        <strong>AI:</strong> fal.ai Kling v3 + MMAudio V2<br>
+        <strong>Pagamenti:</strong> Stripe (già attivo)
+      </div>
+    </div>
+    <div class="card highlight">
+      <div class="card-title">🚀 Vantaggi vs Render attuale</div>
+      <div class="card-text">
+        ✅ Rolling deploy — nessun job killato<br>
+        ✅ 4GB RAM — FFmpeg senza OOM<br>
+        ✅ Worker isolato — deploy web ≠ kill job<br>
+        ✅ Celery retry — job resistenti ai crash<br>
+        ✅ R2 egress $0 — costi video scalano<br>
+        ✅ Autoscale worker — 0 costo in idle
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- AVARCAST Architecture -->
+<div class="section" id="avarcast-arch">
+  <div class="section-header">
+    <div class="section-num">👤</div>
+    <div>
+      <div class="section-title">Architettura AVARCAST</div>
+      <div class="section-subtitle">"Your avatar. Your broadcast." — Layer aggiuntivo su base DELULUREEL</div>
+    </div>
+  </div>
+
+  <div class="card-grid">
+    <div class="card">
+      <div class="card-title">🎭 Avatar Layer</div>
+      <div class="card-text">
+        <strong>fal.ai Omnihuman v1.5</strong> — animazione avatar da foto<br>
+        <strong>ElevenLabs</strong> — voice clone 30sec campione → TTS<br>
+        <strong>fal.ai Sync Lipsync v3</strong> — lip sync avatar + voce<br>
+        <strong>Runway ML Gen-4</strong> — camera controls broadcast
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-title">📡 Broadcast Layer</div>
+      <div class="card-text">
+        <strong>Bunny.net Stream</strong> — video hosting HLS + player<br>
+        $0.005/GB delivery · Player gratuito incluso<br>
+        <strong>Cloudflare Stream</strong> (alt.) — $5/1.000 min<br>
+        Embed iframe su qualsiasi piattaforma
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-title">💰 Costo stimato (100 utenti)</div>
+      <div class="card-text">
+        Base DELULUREEL: $160/mese<br>
+        ElevenLabs Creator: $22/mese<br>
+        Avatar gen (setup): $5–15/utente one-time<br>
+        Bunny Stream CDN: ~$20/mese<br>
+        <strong>Totale: ~$300–400/mese</strong><br>
+        <em>Modello pricing: abbonamento mensile</em>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Podcast -->
+<div class="section" id="podcast">
+  <div class="section-header">
+    <div class="section-num">🎙️</div>
+    <div>
+      <div class="section-title">Setup Personale — Podcast & Content</div>
+      <div class="section-subtitle">Pipeline broadcast-grade senza studio fisico · $70/mese totale</div>
+    </div>
+  </div>
+
+  <div class="card-grid">
+    <div class="card winner">
+      <div class="card-title">🎙️ Audio Enhancement</div>
+      <div class="card-text"><strong>Adobe Podcast Premium</strong> — €9.99/mese. Riduzione rumore broadcast-grade. Trasforma qualsiasi registrazione (anche AirPods) in audio studio. Nessun hardware aggiuntivo necessario.</div>
+    </div>
+    <div class="card winner">
+      <div class="card-title">✂️ Editing & Clip Social</div>
+      <div class="card-text"><strong>Descript Creator</strong> — $24/mese. Edit testo-based (cancelli le parole, sparisce il silenzio). Genera automaticamente 3–5 clip social da ogni episodio. Trascrizione automatica.</div>
+    </div>
+    <div class="card">
+      <div class="card-title">🤖 AI Voiceover</div>
+      <div class="card-text"><strong>ElevenLabs</strong> (già attivo) — Clone voce personale · TTS per episodi senza mic. Creator plan $22/mese include 100K char → 3–4 episodi da 30 min.</div>
+    </div>
+    <div class="card">
+      <div class="card-title">🎬 Video Montaggio</div>
+      <div class="card-text"><strong>DaVinci Resolve</strong> — €0 (già installato). Color grade · Audio mix finale · Export ottimizzato per Spotify Video + YouTube.</div>
+    </div>
+  </div>
+
+  <div class="callout info">
+    <div class="callout-icon">📋</div>
+    <div><strong>Pipeline completa:</strong> Registrazione → Adobe Podcast Enhance → Logic Pro (mix) → Descript (edit + clip) → DaVinci Resolve (color) → Buffer ($15/mese) per scheduling multi-piattaforma. Costo totale: <strong>$70/mese</strong>.</div>
+  </div>
+</div>
+
+<!-- Cost Calculator -->
+<div class="section" id="calculator">
+  <div class="section-header">
+    <div class="section-num">📊</div>
+    <div>
+      <div class="section-title">Calcolatore Costi Infrastruttura</div>
+      <div class="section-subtitle">Stima in tempo reale basata su utenti e video mensili</div>
+    </div>
+  </div>
+
+  <div class="calculator">
+    <div class="calc-title">⚙️ Parametri</div>
+    <div class="calc-row">
+      <div class="calc-label">Utenti attivi/mese</div>
+      <input class="calc-input" type="number" id="users" value="1000" min="10" oninput="calcCosts()">
+    </div>
+    <div class="calc-row">
+      <div class="calc-label">Video generati/mese</div>
+      <input class="calc-input" type="number" id="videos" value="2000" min="10" oninput="calcCosts()">
+    </div>
+    <div class="calc-row">
+      <div class="calc-label">Durata media clip (sec)</div>
+      <input class="calc-input" type="number" id="duration" value="8" min="5" max="60" oninput="calcCosts()">
+    </div>
+    <div class="calc-row">
+      <div class="calc-label">Revenue per video (€)</div>
+      <input class="calc-input" type="number" id="revenue_per" value="2.50" step="0.10" oninput="calcCosts()">
+    </div>
+
+    <div class="calc-result">
+      <div class="calc-result-grid">
+        <div class="result-item">
+          <div class="result-val" id="res-infra">$2.100</div>
+          <div class="result-key">Costo infra/mese</div>
+        </div>
+        <div class="result-item">
+          <div class="result-val" id="res-revenue">€5.000</div>
+          <div class="result-key">Revenue target/mese</div>
+        </div>
+        <div class="result-item">
+          <div class="result-val" id="res-margin">58%</div>
+          <div class="result-key">Margine netto infra</div>
+        </div>
+      </div>
+      <div style="margin-top:16px; font-size:12px; color:var(--text3); text-align:center;" id="res-breakdown">
+        Fly.io: $112 · Upstash: $4 · R2: $9 · Supabase: $25 · fal.ai: $1.792 · Altro: $25
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Roadmap -->
+<div class="section" id="roadmap">
+  <div class="section-header">
+    <div class="section-num">🗺️</div>
+    <div>
+      <div class="section-title">Roadmap Implementazione</div>
+      <div class="section-subtitle">Priorità, timeline e effort per ogni fase</div>
+    </div>
+  </div>
+
+  <div class="roadmap-item">
+    <div class="roadmap-num">1</div>
+    <div class="roadmap-content">
+      <div class="roadmap-title">Migrazione Fly.io + Celery <span class="roadmap-tag">URGENTE</span></div>
+      <div class="roadmap-meta">
+        <span>⏱️ 5 giorni</span>
+        <span>💰 $0 costo setup</span>
+        <span>🎯 Elimina crash al 99%</span>
+      </div>
+      <div class="roadmap-text">Fly.io launch dal repo esistente · macchina worker separata · Celery + Upstash Redis · Cloudflare R2 per video · Rolling deploy verificato con test. Nessuna modifica alla logica applicativa.</div>
+    </div>
+  </div>
+
+  <div class="roadmap-item">
+    <div class="roadmap-num">2</div>
+    <div class="roadmap-content">
+      <div class="roadmap-title">Prompt con Claude Vision + Polling fal.ai <span class="roadmap-tag">ALTA</span></div>
+      <div class="roadmap-meta">
+        <span>⏱️ 3 giorni</span>
+        <span>💰 +$0.02/video</span>
+        <span>🎯 Qualità video da ⭐⭐ a ⭐⭐⭐⭐⭐</span>
+      </div>
+      <div class="roadmap-text">Analisi foto con Claude Vision prima di generare il prompt Kling → prompt contestuale alla scena reale. Polling ogni 5 secondi invece di webhook → zero dipendenza da uptime server. Questi due fix cambiano radicalmente la qualità e affidabilità percepita.</div>
+    </div>
+  </div>
+
+  <div class="roadmap-item">
+    <div class="roadmap-num">3</div>
+    <div class="roadmap-content">
+      <div class="roadmap-title">fal.ai MMAudio V2 — Audio Sync Automatico <span class="roadmap-tag">ALTA</span></div>
+      <div class="roadmap-meta">
+        <span>⏱️ 2 giorni</span>
+        <span>💰 +$0.05/video</span>
+        <span>🎯 Differenziatore competitivo chiave</span>
+      </div>
+      <div class="roadmap-text">MMAudio V2 genera audio ambientale sincronizzato al video generato da Kling. Il reel finale ha: musica utente (sync) + audio ambiente AI (sottofondo). Nessun competitor standard offre questa pipeline automatica.</div>
+    </div>
+  </div>
+
+  <div class="roadmap-item">
+    <div class="roadmap-num">4</div>
+    <div class="roadmap-content">
+      <div class="roadmap-title">AVARCAST MVP <span class="roadmap-tag">MEDIA</span></div>
+      <div class="roadmap-meta">
+        <span>⏱️ 3–4 settimane</span>
+        <span>💰 ~$200 test API</span>
+        <span>🎯 Nuovo verticale prodotto</span>
+      </div>
+      <div class="roadmap-text">Avatar parlante da foto + ElevenLabs voice clone + Sync Lipsync. Distribuzione via Bunny Stream. Modello abbonamento mensile con crediti broadcast inclusi.</div>
+    </div>
+  </div>
+
+  <div class="roadmap-item">
+    <div class="roadmap-num">5</div>
+    <div class="roadmap-content">
+      <div class="roadmap-title">Setup Podcast Personale <span class="roadmap-tag">BASSA</span></div>
+      <div class="roadmap-meta">
+        <span>⏱️ 1 giorno</span>
+        <span>💰 $70/mese ongoing</span>
+        <span>🎯 Presenza personale broadcast-grade</span>
+      </div>
+      <div class="roadmap-text">Adobe Podcast Premium + Descript Creator + Buffer. Workflow completo: registra → enhance → clip → schedula su 5 piattaforme in 30 minuti.</div>
+    </div>
+  </div>
+</div>
+
+<!-- Decisioni Chiave -->
+<div class="section" id="decisions">
+  <div class="section-header">
+    <div class="section-num">✅</div>
+    <div>
+      <div class="section-title">Sintesi Decisioni Chiave</div>
+      <div class="section-subtitle">Ogni scelta con motivazione e alternativa scartata</div>
+    </div>
+  </div>
+
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr><th>Decisione</th><th>Scelta</th><th>Alternativa scartata</th><th>Motivazione</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>Cloud host</td>
+          <td><span class="badge badge-green">Fly.io</span></td>
+          <td>Render / Railway</td>
+          <td>Rolling deploy nativi. Nessun kill job. EU &lt;20ms.</td>
+        </tr>
+        <tr>
+          <td>Storage video</td>
+          <td><span class="badge badge-green">Cloudflare R2</span></td>
+          <td>AWS S3</td>
+          <td>Egress $0. A 10K utenti: -$1.560/anno vs S3.</td>
+        </tr>
+        <tr>
+          <td>Job queue</td>
+          <td><span class="badge badge-green">Celery + Upstash Redis</span></td>
+          <td>Render Background Worker</td>
+          <td>Python nativo. Serverless Redis gratis. Retry automatico.</td>
+        </tr>
+        <tr>
+          <td>AI video (primario)</td>
+          <td><span class="badge badge-green">fal.ai Kling v3 Pro</span></td>
+          <td>Veo 3 / Runway diretto</td>
+          <td>Qualità/prezzo imbattibile. Audio nativo. 4K disponibile.</td>
+        </tr>
+        <tr>
+          <td>AI audio sync</td>
+          <td><span class="badge badge-green">fal.ai MMAudio V2</span></td>
+          <td>FFmpeg puro</td>
+          <td>Audio AI contestuale al video — differenziatore prodotto.</td>
+        </tr>
+        <tr>
+          <td>Avatar AVARCAST</td>
+          <td><span class="badge badge-green">fal.ai + ElevenLabs</span></td>
+          <td>HeyGen / Synthesia</td>
+          <td>Controllo API totale. Costo 5–10x inferiore. Ecosistema già integrato.</td>
+        </tr>
+        <tr>
+          <td>Podcast</td>
+          <td><span class="badge badge-green">Adobe Podcast + Descript</span></td>
+          <td>Riverside.fm</td>
+          <td>Adobe gratis per base. Descript superiore per clip social automatici.</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="callout warning">
+    <div class="callout-icon">📌</div>
+    <div><strong>Risk da monitorare:</strong> fal.ai ha modificato i prezzi 3–4 volte negli ultimi 12 mesi. Implementare un <em>model router</em> che permetta di cambiare modello senza toccare il codice applicativo. Tenere Replicate come fallback per i modelli critici. A $15K/mese di spend su fal.ai, aprire trattative per contratto enterprise con sconto 20–30%.</div>
+  </div>
+
+  <div style="text-align:center; padding:40px 0 20px; color:var(--text3); font-size:12px;">
+    <div style="background:var(--grad);-webkit-background-clip:text;-webkit-text-fill-color:transparent;font-size:20px;font-weight:800;margin-bottom:8px;">OBIRIEC LABS</div>
+    Audit Infrastrutturale Professionale · Maggio 2026<br>
+    Preparato da Claude Sonnet · Revisione annuale: Aprile 2027<br><br>
+    <button onclick="window.print()" style="background:var(--violet);color:white;border:none;padding:10px 24px;border-radius:8px;font-size:13px;font-weight:700;cursor:pointer;margin-top:8px;">🖨️ Stampa / Salva PDF</button>
+  </div>
+</div>
+
+</main>
+
+<script>
+// ── Navigation ──
+function navTo(el, id) {
+  const target = document.getElementById(id);
+  if (!target) return;
+  target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+  el.classList.add('active');
+}
+
+// Intersection observer — auto-highlight nav on scroll
+const _sectionIds = ['exec','context','cloud','jobs','storage','falai','alternatives','delulureel-arch','avarcast-arch','podcast','calculator','roadmap','decisions'];
+const _observer = new IntersectionObserver((entries) => {
+  entries.forEach(entry => {
+    if (entry.isIntersecting) {
+      const id = entry.target.id;
+      document.querySelectorAll('.nav-item').forEach(n => {
+        n.classList.toggle('active', n.getAttribute('onclick') && n.getAttribute('onclick').includes("'" + id + "'"));
+      });
+    }
+  });
+}, { rootMargin: '-20% 0px -60% 0px', threshold: 0 });
+_sectionIds.forEach(id => {
+  const el = document.getElementById(id);
+  if (el) _observer.observe(el);
+});
+
+// ── Tabs ──
+function switchTab(btn, tabId) {
+  const parent = btn.closest('.section') || document.body;
+  parent.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  parent.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
+  btn.classList.add('active');
+  document.getElementById(tabId).classList.add('active');
+}
+
+// ── Cost Calculator ──
+function calcCosts() {
+  const users = parseInt(document.getElementById('users').value) || 100;
+  const videos = parseInt(document.getElementById('videos').value) || 200;
+  const duration = parseInt(document.getElementById('duration').value) || 8;
+  const revenuePerVideo = parseFloat(document.getElementById('revenue_per').value) || 2.50;
+
+  // Fixed costs
+  const flyApp = users < 500 ? 48 : users < 5000 ? 96 : 192;
+  const flyWorker = videos < 500 ? 64 : videos < 5000 ? 128 : 384;
+  const redis = videos < 2000 ? 0 : videos < 10000 ? 4 : 40;
+  const r2 = Math.max(0.90, videos * 0.030 * 0.015 + 0); // storage + $0 egress
+  const supabase = users < 10000 ? 25 : 100;
+  const falai = videos * duration * 0.112; // Kling v3 Pro
+  const stripe = 0; // variable
+  const total = flyApp + flyWorker + redis + r2 + supabase + falai;
+
+  const revenue = videos * revenuePerVideo;
+  const margin = revenue > 0 ? Math.round((1 - total / revenue) * 100) : 0;
+
+  document.getElementById('res-infra').textContent = '$' + Math.round(total).toLocaleString();
+  document.getElementById('res-revenue').textContent = '€' + Math.round(revenue).toLocaleString();
+  document.getElementById('res-margin').textContent = margin + '%';
+  document.getElementById('res-breakdown').textContent =
+    `Fly.io App: $${flyApp} · Worker: $${flyWorker} · Redis: $${redis} · R2: $${r2.toFixed(0)} · Supabase: $${supabase} · fal.ai: $${Math.round(falai).toLocaleString()}`;
+}
+calcCosts();
+</script>
+</body>
+</html>

@@ -859,11 +859,10 @@ function checkReady() {
   document.getElementById('generate-btn').disabled = !(_files.photo && _files.audio);
 }
 
-// ── Cost constants (margin 2.5x · USD→EUR 0.925) ──
-const KLING_PER_SEC_EUR = 0.112 * 2.5 * 0.925;  // ≈ 0.259 €/sec
-const TURBO_PER_SEC_EUR = 0.112 * 2.5 * 0.925;  // ≈ 0.259 €/sec (v2.6/pro — same model as single clip)
-const CLIP_LEN          = 10;                     // secs per Turbo clip
-const MAX_AUDIO_SEC     = 600;
+// ── Credit constants (1 credit = 5 seconds of generated video) ──
+const SEC_PER_CREDIT = 5;
+const CLIP_LEN       = 10;   // secs per Kling clip in multi-clip mode
+const MAX_AUDIO_SEC  = 600;
 
 function fmtDur(s) {
   const m = Math.floor(s / 60);
@@ -871,24 +870,25 @@ function fmtDur(s) {
   return m > 0 ? `${m}:${String(r).padStart(2,'0')}` : `${r}s`;
 }
 
+function secsToCredits(secs) {
+  return Math.max(1, Math.ceil(secs / SEC_PER_CREDIT));
+}
+
 function calcCost(dur) {
-  if (dur === '5')  return { eur: (5  * KLING_PER_SEC_EUR).toFixed(2), clips: 1,  detail: '1 clip · included in your plan' };
-  if (dur === '10') return { eur: (10 * KLING_PER_SEC_EUR).toFixed(2), clips: 1,  detail: '1 clip · included in your plan' };
+  if (dur === '5')  return { credits: 1,                         clips: 1, detail: '1 clip · 1 credit' };
+  if (dur === '10') return { credits: 2,                         clips: 1, detail: '1 clip · 2 credits' };
   if (dur === '30') {
-    const n   = Math.ceil(30 / CLIP_LEN);
-    return { eur: (30 * TURBO_PER_SEC_EUR).toFixed(2), clips: n, detail: `${n} clips stitched · included in your plan` };
+    const n = Math.ceil(30 / CLIP_LEN);
+    return { credits: 6, clips: n, detail: `${n} clips stitched · 6 credits` };
   }
   if (dur === 'full') {
-    if (!_audioDurSec) return { eur: '—', clips: 0, detail: 'Load audio to calculate' };
+    if (!_audioDurSec) return { credits: null, clips: 0, detail: 'Load audio to calculate' };
     const secs = Math.min(_audioDurSec, MAX_AUDIO_SEC);
     const n    = Math.ceil(secs / CLIP_LEN);
-    return {
-      eur:    (secs * TURBO_PER_SEC_EUR).toFixed(2),
-      clips:  n,
-      detail: `${n} clips · ${fmtDur(secs)} · included in your plan`,
-    };
+    const cr   = secsToCredits(secs);
+    return { credits: cr, clips: n, detail: `${n} clips · ${fmtDur(secs)} · ${cr} credits` };
   }
-  return { eur: '—', clips: 0, detail: '' };
+  return { credits: null, clips: 0, detail: '' };
 }
 
 function updateFullTrackBtn() {
@@ -898,8 +898,9 @@ function updateFullTrackBtn() {
   if (_audioDurSec > 0) {
     const secs = Math.min(_audioDurSec, MAX_AUDIO_SEC);
     const n    = Math.ceil(secs / CLIP_LEN);
+    const cr   = secsToCredits(secs);
     name.textContent = `${fmtDur(secs)} · ${n} clips`;
-    cost.textContent = `€${(secs * TURBO_PER_SEC_EUR).toFixed(2)}`;
+    cost.textContent = `${cr} crediti`;
     fb.disabled = false;
     fb.classList.add('enabled');
   }
@@ -907,8 +908,8 @@ function updateFullTrackBtn() {
 
 function updateCostBanner() {
   const dur   = document.getElementById('video-duration-input').value;
-  const { eur, detail } = calcCost(dur);
-  document.getElementById('cost-display').textContent = eur !== '—' ? `€${eur}` : '—';
+  const { credits, detail } = calcCost(dur);
+  document.getElementById('cost-display').textContent = credits !== null ? `${credits} crediti` : '—';
   document.getElementById('cost-detail').textContent  = detail;
   // Update time estimate note
   const dur10 = dur === '5' ? '~90s' : dur === '10' ? '~2 min' : dur === '30' ? '~6 min' : 'may take 20–40+ min';

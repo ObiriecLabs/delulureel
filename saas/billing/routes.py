@@ -19,7 +19,9 @@ PRICE_IDS = {
     'studio_annual':   os.getenv('STRIPE_PRICE_STUDIO_ANNUAL',   ''),
 }
 
-REEL_LIMITS = {'creator': 5, 'pro': 15, 'studio': 40}
+# Credits per month per plan (1 credit = 5 seconds of generated video)
+CREDIT_LIMITS = {'creator': 10, 'pro': 30, 'studio': 80}
+TRIAL_MAX_CREDITS = int(os.getenv('TRIAL_MAX_CREDITS', 6))  # ~1 reel 30s o 3 reel 10s
 
 
 def _sb_service():
@@ -155,9 +157,9 @@ def _on_subscription_created(sub):
         'status':                 'trial',
         'stripe_subscription_id': sub['id'],
         'stripe_customer_id':     sub['customer'],
-        'reel_limit':             REEL_LIMITS.get(plan, 5),
-        'reels_used_this_month':  0,
-        'trial_reels_used':       0,
+        'credits_limit':          CREDIT_LIMITS.get(plan, 10),
+        'credits_used_this_month': 0,
+        'trial_credits_used':     0,
     }).execute()
 
     _send_welcome_email(sub['customer'], plan)
@@ -175,9 +177,9 @@ def _send_welcome_email(customer_id: str, plan: str):
     if not email:
         return
 
-    plan_label  = plan.capitalize()
-    reel_limit  = REEL_LIMITS.get(plan, 5)
-    trial_limit = int(os.getenv('TRIAL_MAX_GENERATIONS', 3))
+    plan_label     = plan.capitalize()
+    credits_limit  = CREDIT_LIMITS.get(plan, 10)
+    trial_credits  = TRIAL_MAX_CREDITS
 
     html = f"""
 <!DOCTYPE html>
@@ -203,8 +205,9 @@ def _send_welcome_email(customer_id: str, plan: str):
     <h1>Welcome to DELULUREEL 🎬</h1>
     <p>Your free trial just started. Here's what you have:</p>
     <ul class="features">
-      <li>{trial_limit} reels during the trial</li>
-      <li>{reel_limit} reels/month after Day 7 ({plan_label} plan)</li>
+      <li>{trial_credits} credits to use during the trial</li>
+      <li>{credits_limit} credits/month after Day 7 ({plan_label} plan)</li>
+      <li>1 credit = 5 seconds of AI video (reel 10s = 2 credits)</li>
       <li>AI scene direction synced to your BPM</li>
       <li>9:16 · 16:9 · 1:1 export formats</li>
       <li>Character consistency via Kling 3.0 Pro</li>

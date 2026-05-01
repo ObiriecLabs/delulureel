@@ -9,9 +9,9 @@ CREATE TABLE IF NOT EXISTS profiles (
     status                  VARCHAR(20) DEFAULT 'inactive',  -- inactive | trial | active | suspended | cancelled
     stripe_customer_id      VARCHAR(120),
     stripe_subscription_id  VARCHAR(120),
-    reel_limit              INT DEFAULT 5,          -- max reels/month for current plan
-    reels_used_this_month   INT DEFAULT 0,
-    trial_reels_used        INT DEFAULT 0,          -- max TRIAL_MAX_GENERATIONS (3)
+    credits_limit           INT DEFAULT 10,         -- credits/month for current plan (1 credit = 5s video)
+    credits_used_this_month INT DEFAULT 0,          -- credits consumed this billing cycle
+    trial_credits_used      INT DEFAULT 0,          -- credits consumed during trial (cap: TRIAL_MAX_CREDITS)
     month_reset_date        DATE DEFAULT CURRENT_DATE,
     created_at              TIMESTAMPTZ DEFAULT NOW(),
     updated_at              TIMESTAMPTZ DEFAULT NOW()
@@ -21,7 +21,7 @@ CREATE TABLE IF NOT EXISTS profiles (
 CREATE TABLE IF NOT EXISTS reel_jobs (
     id               UUID PRIMARY KEY,
     user_id          UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
-    status           VARCHAR(20) DEFAULT 'queued',  -- queued | analyzing | generating | processing | completed | failed
+    status           VARCHAR(20) DEFAULT 'queued',  -- queued | analyzing | generating | processing | lipsyncing | completed | failed
     style            VARCHAR(50)  DEFAULT 'cinematic',
     aspect_ratio     VARCHAR(10)  DEFAULT '9:16',
     fal_request_id   VARCHAR(200),
@@ -32,6 +32,7 @@ CREATE TABLE IF NOT EXISTS reel_jobs (
     error_message    TEXT,
     estimated_cost   FLOAT DEFAULT 0,
     actual_cost      FLOAT,
+    credits_used     INT DEFAULT 0,                 -- credits deducted for this job
     created_at       TIMESTAMPTZ DEFAULT NOW(),
     updated_at       TIMESTAMPTZ DEFAULT NOW()
 );
@@ -45,8 +46,8 @@ CREATE TABLE IF NOT EXISTS daily_budget (
 
 -- ── FUNCTIONS ─────────────────────────────────────────────────────────────────
 
--- Increment reel counts after successful generation
-CREATE OR REPLACE FUNCTION increment_reel_count(p_user_id UUID)
+-- Deduct credits after successful generation
+CREATE OR REPLACE FUNCTION deduct_credits(p_user_id UUID, p_credits INT)
 RETURNS void
 LANGUAGE plpgsql
 SECURITY DEFINER
@@ -54,17 +55,17 @@ AS $$
 BEGIN
     UPDATE profiles
     SET
-        reels_used_this_month = reels_used_this_month + 1,
-        trial_reels_used      = CASE WHEN status = 'trial'
-                                     THEN trial_reels_used + 1
-                                     ELSE trial_reels_used END,
-        updated_at            = NOW()
+        credits_used_this_month = credits_used_this_month + p_credits,
+        trial_credits_used      = CASE WHEN status = 'trial'
+                                       THEN trial_credits_used + p_credits
+                                       ELSE trial_credits_used END,
+        updated_at              = NOW()
     WHERE user_id = p_user_id;
 END;
 $$;
 
--- Reset monthly reel counts (call via Supabase cron or pg_cron)
-CREATE OR REPLACE FUNCTION reset_monthly_reels()
+-- Reset monthly credit usage (call via Supabase cron or pg_cron on 1st of month)
+CREATE OR REPLACE FUNCTION reset_monthly_credits()
 RETURNS void
 LANGUAGE plpgsql
 SECURITY DEFINER
@@ -72,9 +73,9 @@ AS $$
 BEGIN
     UPDATE profiles
     SET
-        reels_used_this_month = 0,
-        month_reset_date      = CURRENT_DATE,
-        updated_at            = NOW()
+        credits_used_this_month = 0,
+        month_reset_date        = CURRENT_DATE,
+        updated_at              = NOW()
     WHERE month_reset_date < DATE_TRUNC('month', CURRENT_DATE);
 END;
 $$;
@@ -122,3 +123,32 @@ CREATE INDEX IF NOT EXISTS idx_profiles_stripe ON profiles(stripe_customer_id);
 -- ── STORAGE BUCKETS (run separately in Supabase Dashboard) ───────────────────
 -- INSERT INTO storage.buckets (id, name, public) VALUES ('reel-uploads', 'reel-uploads', true)  ON CONFLICT DO NOTHING;
 -- INSERT INTO storage.buckets (id, name, public) VALUES ('reel-outputs', 'reel-outputs', true)  ON CONFLICT DO NOTHING;
+
+
+-- ═══════════════════════════════════════════════════════════════════════════════
+-- MIGRATION — run once on existing DB to rename reel columns → credit columns
+-- Skip if running on a fresh DB (the CREATE TABLE above already uses new names)
+-- ═══════════════════════════════════════════════════════════════════════════════
+/*
+-- Step 1: rename columns
+ALTER TABLE profiles RENAME COLUMN reel_limit             TO credits_limit;
+ALTER TABLE profiles RENAME COLUMN reels_used_this_month  TO credits_used_this_month;
+ALTER TABLE profiles RENAME COLUMN trial_reels_used       TO trial_credits_used;
+
+-- Step 2: rescale values  (old reel counts × 2 = credits, since 1 reel ≈ 10s = 2 credits)
+UPDATE profiles SET
+    credits_limit           = CASE plan
+                                  WHEN 'creator' THEN 10
+                                  WHEN 'pro'     THEN 30
+                                  WHEN 'studio'  THEN 80
+                                  ELSE 10 END,
+    credits_used_this_month = credits_used_this_month * 2,
+    trial_credits_used      = trial_credits_used * 2;
+
+-- Step 3: add credits_used to reel_jobs (if not already present)
+ALTER TABLE reel_jobs ADD COLUMN IF NOT EXISTS credits_used INT DEFAULT 0;
+
+-- Step 4: drop old function, create new ones
+DROP FUNCTION IF EXISTS increment_reel_count(UUID);
+-- (new functions deduct_credits and reset_monthly_credits are created above)
+*/
