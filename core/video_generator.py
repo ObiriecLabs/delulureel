@@ -157,9 +157,28 @@ def submit_multi_reel(
 # ── Status / result ───────────────────────────────────────────────────────────
 
 def fal_status(endpoint: str, request_id: str) -> Dict:
-    """Return fal.ai queue status dict for request_id."""
-    url  = f'{FAL_QUEUE_BASE}/{endpoint}/requests/{request_id}/status'
-    resp = _req.get(url, headers=_headers(), timeout=30)
+    """
+    Return fal.ai queue status dict for request_id.
+
+    Tries /status suffix first (old-style queue API).
+    If that returns 405 (v2.6/pro endpoints), falls back to the request URL
+    directly and synthesises a status dict from whatever fal.ai returns.
+    """
+    status_url = f'{FAL_QUEUE_BASE}/{endpoint}/requests/{request_id}/status'
+    resp = _req.get(status_url, headers=_headers(), timeout=30)
+
+    if resp.status_code == 405:
+        # v2.6/pro: /status suffix not supported — poll the result URL directly
+        result_url = f'{FAL_QUEUE_BASE}/{endpoint}/requests/{request_id}'
+        resp = _req.get(result_url, headers=_headers(), timeout=60)
+        resp.raise_for_status()
+        data = resp.json()
+        # If the response already contains a video, the job completed
+        if data.get('video') or data.get('video_url'):
+            return {'status': 'COMPLETED', '_result': data}
+        # Propagate whatever status fal.ai embedded (or assume IN_PROGRESS)
+        return {'status': data.get('status', 'IN_PROGRESS')}
+
     resp.raise_for_status()
     return resp.json()
 
@@ -190,7 +209,8 @@ def poll_until_done(
         status_str  = status_data.get('status', '')
 
         if status_str == 'COMPLETED':
-            result = fal_result(endpoint, request_id)
+            # fal_status may have already fetched the result (fallback path)
+            result = status_data.get('_result') or fal_result(endpoint, request_id)
             video  = result.get('video') or {}
             url    = video.get('url') or result.get('video_url') or ''
             if not url:
