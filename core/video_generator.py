@@ -52,9 +52,24 @@ FAL_QUEUE_BASE = 'https://queue.fal.run'
 
 # ── Internal helpers ──────────────────────────────────────────────────────────
 
-def _headers() -> Dict:
+FAL_RUN_BASE = 'https://fal.run'   # sync endpoint (no queue)
+
+
+def _headers_post() -> Dict:
+    """Headers for POST requests (with Content-Type)."""
     key = os.getenv('FAL_KEY', '')
     return {'Authorization': f'Key {key}', 'Content-Type': 'application/json'}
+
+
+def _headers_get() -> Dict:
+    """Headers for GET requests — NO Content-Type (causes 405 on some endpoints)."""
+    key = os.getenv('FAL_KEY', '')
+    return {'Authorization': f'Key {key}'}
+
+
+# Keep _headers() as alias for POST (backwards compat)
+def _headers() -> Dict:
+    return _headers_post()
 
 
 # ── Cost helpers ──────────────────────────────────────────────────────────────
@@ -183,7 +198,7 @@ def fal_status(endpoint: str, request_id: str) -> Dict:
 
     last_err = None
     for url, timeout in urls:
-        resp = _req.get(url, headers=_headers(), timeout=timeout)
+        resp = _req.get(url, headers=_headers_get(), timeout=timeout)
         if resp.status_code == 405:
             last_err = f'405 on {url}'
             continue          # try next URL pattern
@@ -196,7 +211,7 @@ def fal_status(endpoint: str, request_id: str) -> Dict:
 def fal_result(endpoint: str, request_id: str) -> Dict:
     """Fetch completed result dict from fal.ai queue."""
     url  = f'{FAL_QUEUE_BASE}/{endpoint}/requests/{request_id}'
-    resp = _req.get(url, headers=_headers(), timeout=60)
+    resp = _req.get(url, headers=_headers_get(), timeout=60)
     resp.raise_for_status()
     return resp.json()
 
@@ -235,3 +250,47 @@ def poll_until_done(
         time.sleep(POLL_INTERVAL)
 
     raise TimeoutError(f'fal.ai job {request_id} did not complete within {max_wait}s')
+
+
+# ── Lyrics transcription ──────────────────────────────────────────────────────
+
+def transcribe_audio_fal(audio_url: str, language: str = 'it') -> Optional[str]:
+    """
+    Transcribe audio using fal-ai/whisper (sync endpoint — no queue needed).
+
+    Returns the full transcript text, or None on failure.
+    The result is used to drive lyrics-aware scene prompt generation.
+
+    fal.ai Whisper API:
+      POST https://fal.run/fal-ai/whisper
+      Body: { "audio_url": "...", "language": "it", "task": "transcribe" }
+      Response: { "text": "...", "chunks": [...] }
+    """
+    url  = f'{FAL_RUN_BASE}/fal-ai/whisper'
+    body = {
+        'audio_url': audio_url,
+        'language':  language,
+        'task':      'transcribe',
+    }
+
+    try:
+        resp = _req.post(url, json=body, headers=_headers_post(), timeout=120)
+        resp.raise_for_status()
+        data = resp.json()
+
+        # Accept both 'text' (flat) and 'chunks' (segmented) formats
+        text = data.get('text', '').strip()
+        if not text and data.get('chunks'):
+            text = ' '.join(c.get('text', '') for c in data['chunks']).strip()
+
+        if not text:
+            print('[transcribe] fal-ai/whisper returned empty transcript')
+            return None
+
+        print(f'[transcribe] OK — {len(text)} chars')
+        return text
+
+    except Exception as exc:
+        # Never crash the pipeline over a failed transcription
+        print(f'[transcribe] fal-ai/whisper failed ({exc}), continuing without lyrics')
+        return None

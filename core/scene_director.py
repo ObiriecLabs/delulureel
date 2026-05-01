@@ -39,6 +39,9 @@ Rules:
 - Be specific: camera angle, motion, lighting, color grade, mood
 - Match energy to BPM: fast BPM = kinetic movement; slow BPM = smooth, cinematic drift
 - The visual description must match what is ACTUALLY in the photo, not generic stock imagery
+- When song lyrics are provided, let the lyrical theme, imagery and narrative DRIVE the visual concept.
+  Translate the emotional meaning of the lyrics into specific camera movements, color grades, and scene atmosphere.
+  Do NOT quote or paraphrase the lyrics literally — express their essence visually.
 - Output ONLY the prompt text — no preamble, no labels, no quotes"""
 
 _SYSTEM_BLIND = """You are a professional AI music video director who writes Kling AI image-to-video prompts.
@@ -48,6 +51,9 @@ Rules:
 - Keep the prompt under 180 words
 - Be specific: camera angle, motion, lighting, color grade, mood
 - Match energy to BPM: fast BPM = kinetic movement; slow BPM = smooth, cinematic drift
+- When song lyrics are provided, let the lyrical theme, imagery and narrative DRIVE the visual concept.
+  Translate the emotional meaning of the lyrics into specific camera movements, color grades, and scene atmosphere.
+  Do NOT quote or paraphrase the lyrics literally — express their essence visually.
 - Output ONLY the prompt text — no preamble, no labels, no quotes"""
 
 _STYLE_HINTS = {
@@ -63,6 +69,7 @@ def generate_scene_prompt(
     audio_analysis: Dict,
     style: str = 'cinematic',
     photo_path: Optional[str] = None,
+    lyrics: Optional[str] = None,
 ) -> str:
     bpm           = audio_analysis.get('bpm', 120)
     duration      = audio_analysis.get('duration', 30)
@@ -80,15 +87,36 @@ def generate_scene_prompt(
     brightness_desc = 'bright vivid colors' if is_bright else 'rich dark tones'
     style_hint      = _STYLE_HINTS.get(style, _STYLE_HINTS['cinematic'])
 
+    # Build lyrics block — truncate to ~600 chars to keep prompt concise
+    lyrics_block = ''
+    if lyrics and lyrics.strip():
+        snippet = lyrics.strip()[:600]
+        if len(lyrics.strip()) > 600:
+            snippet += '…'
+        lyrics_block = (
+            f"\n\n— SONG LYRICS (use as the primary narrative driver) —\n"
+            f"{snippet}\n"
+            f"— END LYRICS —\n"
+            f"Let the lyrical themes and imagery shape every visual choice in your prompt.\n"
+        )
+
+    closing = (
+        "Write a Kling AI image-to-video prompt that animates the subject visible in the photo above. "
+        "The camera and motion must feel like a music video clip matching the audio energy described."
+        if photo_path and os.path.exists(photo_path)
+        else
+        "Write a Kling AI image-to-video prompt for a music video clip matching the audio energy described above."
+    )
+
     text_prompt = (
         f"BPM: {bpm:.0f} ({tempo_desc})\n"
         f"Duration: {duration:.0f}s\n"
         f"Energy: {energy_desc}\n"
         f"Color palette: {brightness_desc}\n"
         f"Style: {style} — {style_hint}\n"
-        f"Format: vertical 9:16 for TikTok/Reels\n\n"
-        f"Write a Kling AI image-to-video prompt that animates the subject visible in the photo above. "
-        f"The camera and motion must feel like a music video clip matching the audio energy described."
+        f"Format: vertical 9:16 for TikTok/Reels"
+        f"{lyrics_block}\n\n"
+        f"{closing}"
     )
 
     # ── Vision path: Claude sees the actual photo ─────────────────────────────

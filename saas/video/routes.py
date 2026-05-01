@@ -13,7 +13,7 @@ from supabase import create_client, ClientOptions
 
 from core.video_generator import (
     submit_reel, submit_multi_reel, poll_until_done,
-    fal_result,
+    fal_result, transcribe_audio_fal,
     estimate_cost, endpoint_for_duration, n_clips_for_duration,
     CLIP_LEN_MULTI, MAX_AUDIO_SEC, MAX_WAIT_MULTI,
     ENDPOINT_PRO, ENDPOINT_TURBO,
@@ -395,17 +395,43 @@ def _run_pre_generation(job_id, user_id, photo_path, audio_path, style,
         gc.collect()
         _log(f'audio analysis DONE bpm={analysis.get("bpm",0):.0f}')
 
-        # 2 — Scene prompt: custom (user) or auto (Claude Vision)
+        # 2 — Upload audio to Supabase Storage early (needed for transcription URL)
+        audio_key = f'jobs/{job_id}/audio.{ext_audio}'
+        _log(f'supabase audio upload START key={audio_key}')
+        try:
+            with open(audio_path, 'rb') as fh:
+                sb.storage.from_('reel-uploads').upload(
+                    audio_key, fh,
+                    file_options={'content-type': f'audio/{ext_audio}'},
+                )
+            signed_audio = sb.storage.from_('reel-uploads').create_signed_url(audio_key, 3600)
+            audio_signed_url = signed_audio.get('signedURL') or signed_audio.get('signedUrl') or ''
+            _log('supabase audio upload DONE')
+        except Exception as exc:
+            raise RuntimeError(f'Audio upload to Supabase failed: {exc}') from exc
+
+        # 3 — Transcribe audio → extract lyrics (fal-ai/whisper, graceful degradation)
+        lyrics: str | None = None
+        if not custom_prompt and audio_signed_url:
+            _log('whisper transcription START')
+            lyrics = transcribe_audio_fal(audio_signed_url)
+            if lyrics:
+                _log(f'whisper transcription DONE ({len(lyrics)} chars)')
+            else:
+                _log('whisper: no lyrics detected (instrumental) — melody-based prompt')
+
+        # 4 — Scene prompt: custom (user) or auto (Claude Vision + lyrics)
         update('generating', bpm=analysis['bpm'])
         if custom_prompt:
             prompt = custom_prompt
             _log(f'using custom prompt len={len(prompt)}')
         else:
             _log('claude scene prompt START')
-            prompt = generate_scene_prompt(analysis, style, photo_path=photo_path)
+            prompt = generate_scene_prompt(analysis, style, photo_path=photo_path,
+                                           lyrics=lyrics)
             _log(f'claude scene prompt DONE len={len(prompt)}')
 
-        # 3 — Upload photo to Supabase Storage → get signed URL for fal.ai
+        # 5 — Upload photo to Supabase Storage → get signed URL for fal.ai
         # (Avoids fal_client.upload_file() which has no timeout and hangs on slow networks)
         ext_photo = (photo_path.rsplit('.', 1)[-1].lower()) or 'jpg'
         photo_key = f'jobs/{job_id}/source.{ext_photo}'
@@ -424,20 +450,7 @@ def _run_pre_generation(job_id, user_id, photo_path, audio_path, style,
         except Exception as exc:
             raise RuntimeError(f'Photo upload to Supabase failed: {exc}') from exc
 
-        # 4 — Upload audio to Supabase Storage
-        audio_key = f'jobs/{job_id}/audio.{ext_audio}'
-        _log(f'supabase audio upload START key={audio_key}')
-        try:
-            with open(audio_path, 'rb') as fh:
-                sb.storage.from_('reel-uploads').upload(
-                    audio_key, fh,
-                    file_options={'content-type': f'audio/{ext_audio}'},
-                )
-            _log('supabase audio upload DONE')
-        except Exception as exc:
-            raise RuntimeError(f'Audio upload to Supabase failed: {exc}') from exc
-
-        # 5 — Submit to fal.ai WITH webhook URL
+        # 6 — Submit to fal.ai WITH webhook URL
         clip_len    = min(target_secs, 10)
         webhook_url = f'{APP_BASE_URL}/video/webhook/fal'
         _log(f'fal submit START dur={clip_len} webhook={webhook_url}')
@@ -759,15 +772,45 @@ def _run_pipeline(job_id, user_id, photo_path, audio_path, style, aspect_ratio,
         )
         print(f'[pipeline/{_jid}] beat cuts BPM={analysis["bpm"]} → {clip_durations}', flush=True)
 
-        # 2 — Scene prompt: custom (user) or auto (Claude Vision)
+        # 2 — Upload audio to Supabase (always — needed for transcription + optional lipsync)
+        ext_audio = (audio_path.rsplit('.', 1)[-1].lower()) or 'mp3'
+        audio_key = f'jobs/{job_id}/audio.{ext_audio}'
+        audio_signed_url = ''
+        try:
+            with open(audio_path, 'rb') as fh:
+                sb.storage.from_('reel-uploads').upload(
+                    audio_key, fh,
+                    file_options={'content-type': f'audio/{ext_audio}'},
+                )
+            signed_audio = sb.storage.from_('reel-uploads').create_signed_url(audio_key, 7200)
+            audio_signed_url = signed_audio.get('signedURL') or signed_audio.get('signedUrl') or ''
+            if not audio_signed_url:
+                raise RuntimeError(f'No signed URL for audio: {signed_audio}')
+            print(f'[pipeline/{_jid}] audio uploaded url={audio_signed_url[:60]}', flush=True)
+        except Exception as exc:
+            print(f'[pipeline/{_jid}] audio upload failed: {exc} — lipsync disabled', flush=True)
+            enable_lipsync = False
+
+        # 3 — Transcribe audio → extract lyrics (fal-ai/whisper, graceful degradation)
+        lyrics: str | None = None
+        if not custom_prompt and audio_signed_url:
+            print(f'[pipeline/{_jid}] whisper transcription START', flush=True)
+            lyrics = transcribe_audio_fal(audio_signed_url)
+            if lyrics:
+                print(f'[pipeline/{_jid}] whisper DONE ({len(lyrics)} chars)', flush=True)
+            else:
+                print(f'[pipeline/{_jid}] whisper: instrumental — melody-based prompt', flush=True)
+
+        # 4 — Scene prompt: custom (user) or auto (Claude Vision + lyrics)
         update('generating', bpm=analysis['bpm'])
         if custom_prompt:
             prompt = custom_prompt
             print(f'[pipeline/{_jid}] using custom prompt len={len(prompt)}', flush=True)
         else:
-            prompt = generate_scene_prompt(analysis, style, photo_path=photo_path)
+            prompt = generate_scene_prompt(analysis, style, photo_path=photo_path,
+                                           lyrics=lyrics)
 
-        # 3 — Upload photo to Supabase Storage → signed URL for fal.ai
+        # 5 — Upload photo to Supabase Storage → signed URL for fal.ai
         ext_photo = (photo_path.rsplit('.', 1)[-1].lower()) or 'jpg'
         photo_key = f'jobs/{job_id}/source.{ext_photo}'
         try:
@@ -782,26 +825,6 @@ def _run_pipeline(job_id, user_id, photo_path, audio_path, style, aspect_ratio,
                 raise RuntimeError(f'Could not get signed URL for photo: {signed_photo}')
         except Exception as exc:
             raise RuntimeError(f'Photo upload to Supabase failed: {exc}') from exc
-
-        # 3b — Upload audio to Supabase Storage (needed as public URL for lipsync API)
-        audio_signed_url = ''
-        if enable_lipsync:
-            ext_audio = (audio_path.rsplit('.', 1)[-1].lower()) or 'mp3'
-            audio_key = f'jobs/{job_id}/audio.{ext_audio}'
-            try:
-                with open(audio_path, 'rb') as fh:
-                    sb.storage.from_('reel-uploads').upload(
-                        audio_key, fh,
-                        file_options={'content-type': f'audio/{ext_audio}'},
-                    )
-                signed_audio = sb.storage.from_('reel-uploads').create_signed_url(audio_key, 7200)
-                audio_signed_url = signed_audio.get('signedURL') or signed_audio.get('signedUrl') or ''
-                if not audio_signed_url:
-                    raise RuntimeError(f'No signed URL for audio: {signed_audio}')
-                print(f'[pipeline/{_jid}] audio uploaded for lipsync', flush=True)
-            except Exception as exc:
-                print(f'[pipeline/{_jid}] audio upload for lipsync failed: {exc} — lipsync disabled', flush=True)
-                enable_lipsync = False
 
         # 4 — Submit multi-clip to fal.ai (all enqueued before polling begins)
         ar_slug    = aspect_ratio.replace(':', 'x')
