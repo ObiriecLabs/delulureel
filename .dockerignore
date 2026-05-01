@@ -1,0 +1,58 @@
+# ── DELULUREEL .dockerignore ─────────────────────────────────────────────────
+# Esclude file non necessari dall'immagine Docker
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+venv/
+.venv/
+env/
+*.egg-info/
+dist/
+build/
+.eggs/
+
+# Environment
+.env
+.env.*
+!.env.example
+
+# Git
+.git/
+.gitignore
+
+# Dev / test
+tests/
+test_assets/
+*.test.*
+pytest.ini
+.pytest_cache/
+
+# Docs / audit
+docs/
+
+# Render config (non serve su Fly.io)
+render.yaml
+runtime.txt
+start.command
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.swp
+
+# Log
+*.log
+logs/
+
+# Temp files
+tmp/
+temp/
+*.tmp

@@ -1,0 +1,45 @@
+# ── DELULUREEL — Fly.io Configuration ────────────────────────────────────────
+# fly deploy (auto-triggered da GitHub Actions su push a main)
+# Regione: ams (Amsterdam) — latenza IT <15ms
+
+app = 'delulureel'
+primary_region = 'ams'
+
+[build]
+  dockerfile = 'Dockerfile'
+
+[deploy]
+  strategy = 'rolling'          # Zero-downtime: nuovo container pronto prima di killare il vecchio
+  release_command = ''
+
+[http_service]
+  internal_port = 8080
+  force_https = true
+  auto_stop_machines = 'stop'
+  auto_start_machines = true
+  min_machines_running = 1      # Sempre almeno 1 macchina attiva (no cold start per utenti)
+  processes = ['app']
+
+  [http_service.concurrency]
+    type = 'requests'
+    hard_limit = 50
+    soft_limit = 40
+
+[[vm]]
+  memory = '2gb'
+  cpu_kind = 'shared'
+  cpus = 2
+
+[env]
+  PORT = '8080'
+  FLASK_ENV = 'production'
+  FFMPEG_PATH = '/usr/bin/ffmpeg'
+  APP_BASE_URL = 'https://delulureel.com'
+  DAILY_BUDGET_CAP_USD = '200'
+  MAX_CONCURRENT_GLOBAL = '10'
+  TRIAL_MAX_GENERATIONS = '3'
+  SUPABASE_URL = 'https://iauotqpmxsapjflnlrgn.supabase.co'
+
+[[statics]]
+  guest_path = '/app/static'
+  url_prefix = '/static'
