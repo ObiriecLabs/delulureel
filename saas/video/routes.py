@@ -32,6 +32,18 @@ MAX_CONCURRENT_GLOBAL   = int(os.getenv('MAX_CONCURRENT_GLOBAL',  10))
 TRIAL_MAX_CREDITS       = int(os.getenv('TRIAL_MAX_CREDITS',       6))   # 6 crediti ≈ 1 reel 30s o 3 reel 10s
 DAILY_BUDGET_CAP_USD    = float(os.getenv('DAILY_BUDGET_CAP_USD', 200))
 
+# Admin users — comma-separated emails — bypass all access/credit checks
+_ADMIN_EMAILS: set = {
+    e.strip().lower()
+    for e in os.getenv('ADMIN_EMAILS', '').split(',')
+    if e.strip()
+}
+
+def _is_admin(user) -> bool:
+    """True if user email is in ADMIN_EMAILS env var."""
+    email = (getattr(user, 'email', None) or '').lower()
+    return bool(email and email in _ADMIN_EMAILS)
+
 
 def _credits_for_duration(target_secs: int) -> int:
     """Calcola i crediti da scalare: 1 credito = 5 secondi di video generato (minimo 1)."""
@@ -48,7 +60,9 @@ _lock             = threading.Lock()
 
 # Webhook tracking: fal request_id → job_id (for single-clip webhook lookup)
 _fal_req_to_job: dict[str, str] = {}
-_fal_req_to_lipsync: dict[str, bool] = {}   # request_id → enable_lipsync flag
+_fal_req_to_lipsync: dict[str, bool] = {}      # request_id → enable_lipsync flag
+_fal_req_to_admin: dict[str, bool] = {}         # request_id → is_admin flag
+_fal_req_to_target_secs: dict[str, int] = {}    # request_id → target_secs
 _webhook_lock = threading.Lock()
 
 
@@ -216,17 +230,19 @@ def generate():
         print(f'[generate] profile FAILED ({_time.time()-_t0:.1f}s): {e}')
         return jsonify({'error': 'Profile not found. Please contact support.'}), 404
 
-    # Access checks
-    if prof.get('status') == 'suspended':
-        return jsonify({'error': 'Account suspended. Please update your payment method.'}), 403
-    if prof.get('status') in ('cancelled', 'inactive'):
-        return jsonify({'error': 'No active subscription. Please start a trial.'}), 403
-    # Credit checks — computed after we know target_secs (evaluated again below after duration parse)
-    # Pre-check: trial hard stop if no credits at all
-    if prof.get('status') == 'trial' and prof.get('trial_credits_used', 0) >= TRIAL_MAX_CREDITS:
-        return jsonify({'error': f'Trial credits exhausted ({TRIAL_MAX_CREDITS} credits). Billing starts on Day 7.'}), 403
-    if prof.get('credits_used_this_month', 0) >= prof.get('credits_limit', 10):
-        return jsonify({'error': 'Monthly credits exhausted. Upgrade your plan for more.'}), 403
+    # Admin bypass — no access/credit checks
+    admin = _is_admin(request.current_user)
+    if not admin:
+        # Access checks
+        if prof.get('status') == 'suspended':
+            return jsonify({'error': 'Account suspended. Please update your payment method.'}), 403
+        if prof.get('status') in ('cancelled', 'inactive'):
+            return jsonify({'error': 'No active subscription. Please start a trial.'}), 403
+        # Credit pre-check (precise check happens again after duration is known)
+        if prof.get('status') == 'trial' and prof.get('trial_credits_used', 0) >= TRIAL_MAX_CREDITS:
+            return jsonify({'error': f'Trial credits exhausted ({TRIAL_MAX_CREDITS} credits). Billing starts on Day 7.'}), 403
+        if prof.get('credits_used_this_month', 0) >= prof.get('credits_limit', 10):
+            return jsonify({'error': 'Monthly credits exhausted. Upgrade your plan for more.'}), 403
 
     # Files
     photo = request.files.get('photo')
@@ -259,13 +275,14 @@ def generate():
     est_cost       = estimate_cost(target_secs, endpoint)
     credits_needed = _credits_for_duration(target_secs)
 
-    # Precise credit check now that we know the actual duration
-    if prof.get('status') == 'trial':
-        if prof.get('trial_credits_used', 0) + credits_needed > TRIAL_MAX_CREDITS:
-            return jsonify({'error': f'This reel requires {credits_needed} credits but your trial only has {TRIAL_MAX_CREDITS - prof.get("trial_credits_used", 0)} left.'}), 403
-    if prof.get('credits_used_this_month', 0) + credits_needed > prof.get('credits_limit', 10):
-        remaining = prof.get('credits_limit', 10) - prof.get('credits_used_this_month', 0)
-        return jsonify({'error': f'This reel requires {credits_needed} credits but you only have {remaining} left this month.'}), 403
+    # Precise credit check now that we know the actual duration (admin bypasses)
+    if not admin:
+        if prof.get('status') == 'trial':
+            if prof.get('trial_credits_used', 0) + credits_needed > TRIAL_MAX_CREDITS:
+                return jsonify({'error': f'This reel requires {credits_needed} credits but your trial only has {TRIAL_MAX_CREDITS - prof.get("trial_credits_used", 0)} left.'}), 403
+        if prof.get('credits_used_this_month', 0) + credits_needed > prof.get('credits_limit', 10):
+            remaining = prof.get('credits_limit', 10) - prof.get('credits_used_this_month', 0)
+            return jsonify({'error': f'This reel requires {credits_needed} credits but you only have {remaining} left this month.'}), 403
 
     if not _budget_ok(est_cost):
         return jsonify({'error': 'Service temporarily unavailable (daily budget reached).'}), 503
@@ -309,6 +326,7 @@ def generate():
             target=_run_pre_generation,
             args=(job_id, user_id, photo_path, audio_path, style, aspect_ratio,
                   est_cost, tmp_dir, target_secs, ext_audio, enable_lipsync, custom_prompt),
+            kwargs={'is_admin': admin},
             daemon=True,
         )
     else:
@@ -316,6 +334,7 @@ def generate():
             target=_run_pipeline,
             args=(job_id, user_id, photo_path, audio_path, style, aspect_ratio,
                   est_cost, tmp_dir, target_secs, n_clips, enable_lipsync, custom_prompt),
+            kwargs={'is_admin': admin},
             daemon=True,
         )
     thread.start()
@@ -336,7 +355,7 @@ def generate():
 
 def _run_pre_generation(job_id, user_id, photo_path, audio_path, style,
                         aspect_ratio, est_cost, tmp_dir, target_secs, ext_audio,
-                        enable_lipsync=False, custom_prompt=''):
+                        enable_lipsync=False, custom_prompt='', is_admin=False):
     import time as _time
     _t0 = _time.time()
     global _global_active
@@ -441,8 +460,10 @@ def _run_pre_generation(job_id, user_id, photo_path, audio_path, style,
         # Register in-memory AFTER DB write — only used by the webhook handler
         # on the same server instance (new instances use the DB lookup fallback).
         with _webhook_lock:
-            _fal_req_to_job[fal['request_id']] = job_id
-            _fal_req_to_lipsync[fal['request_id']] = enable_lipsync
+            _fal_req_to_job[fal['request_id']]         = job_id
+            _fal_req_to_lipsync[fal['request_id']]     = enable_lipsync
+            _fal_req_to_admin[fal['request_id']]       = is_admin
+            _fal_req_to_target_secs[fal['request_id']] = int(target_secs)
 
         # Thread ends here. fal.ai is generating the video on their servers.
         # Execution resumes in _run_post_generation when the webhook fires.
@@ -491,6 +512,8 @@ def fal_webhook():
     with _webhook_lock:
         job_id         = _fal_req_to_job.pop(req_id, None)
         enable_lipsync = _fal_req_to_lipsync.pop(req_id, False)
+        is_admin       = _fal_req_to_admin.pop(req_id, False)
+        target_secs    = _fal_req_to_target_secs.pop(req_id, 10)
 
     if not job_id:
         # Could be a late webhook after server restart — try DB lookup by fal_request_id
@@ -552,7 +575,10 @@ def fal_webhook():
         # Spawn post-generation thread (download + lipsync + FFmpeg + Supabase upload)
         thread = threading.Thread(
             target=_run_post_generation,
-            args=(job_id, user_id, video_url, ar, est_cost, enable_lipsync),
+            args=(job_id, user_id, video_url, ar, est_cost),
+            kwargs={'enable_lipsync': enable_lipsync,
+                    'target_secs': target_secs,
+                    'is_admin': is_admin},
             daemon=True,
         )
         thread.start()
@@ -566,7 +592,7 @@ def fal_webhook():
 # Short-lived thread (~60s): download raw video + FFmpeg + upload to Supabase
 
 def _run_post_generation(job_id, user_id, raw_video_url, aspect_ratio, est_cost,
-                         enable_lipsync=False):
+                         enable_lipsync=False, target_secs=10, is_admin=False):
     """
     Phase 2 post-generation (single clip, webhook-triggered).
 
@@ -661,8 +687,12 @@ def _run_post_generation(job_id, user_id, raw_video_url, aspect_ratio, est_cost,
         _record_spend(est_cost)
         update('completed', output_url=final_url, actual_cost=est_cost)
 
-        # 8 — Increment reel counter
-        sb.rpc('deduct_credits', {'p_user_id': user_id, 'p_credits': _credits_for_duration(target_secs)}).execute()
+        # 8 — Deduct credits (skipped for admin accounts)
+        if not is_admin:
+            sb.rpc('deduct_credits', {
+                'p_user_id': user_id,
+                'p_credits': _credits_for_duration(target_secs),
+            }).execute()
 
     except Exception as exc:
         update('failed', error_message=str(exc)[:500])
@@ -683,7 +713,7 @@ def _run_post_generation(job_id, user_id, raw_video_url, aspect_ratio, est_cost,
 
 def _run_pipeline(job_id, user_id, photo_path, audio_path, style, aspect_ratio,
                   est_cost, tmp_dir, target_secs=10, n_clips=1, enable_lipsync=False,
-                  custom_prompt=''):
+                  custom_prompt='', is_admin=False):
     """
     Multi-clip pipeline (30s / Full Track). Polling-based — N clips generated in parallel.
 
@@ -822,7 +852,12 @@ def _run_pipeline(job_id, user_id, photo_path, audio_path, style, aspect_ratio,
         # 7 — Mark completed
         _record_spend(est_cost)
         update('completed', output_url=final_url, actual_cost=est_cost)
-        sb.rpc('deduct_credits', {'p_user_id': user_id, 'p_credits': _credits_for_duration(target_secs)}).execute()
+        # Deduct credits (skipped for admin accounts)
+        if not is_admin:
+            sb.rpc('deduct_credits', {
+                'p_user_id': user_id,
+                'p_credits': _credits_for_duration(target_secs),
+            }).execute()
 
     except Exception as exc:
         update('failed', error_message=str(exc)[:500])
