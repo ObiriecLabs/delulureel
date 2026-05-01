@@ -35,7 +35,7 @@ def _headers_get() -> dict:
 
 def _fal_status_lipsync(request_id: str) -> dict:
     """
-    Status check with 4-URL cascade — same pattern as video_generator.fal_status().
+    Status check with 4-URL cascade — same pattern as video_generator.fal_result().
     fal.ai returns 405 on some endpoint-scoped /requests/ paths (e.g. newer models).
     Falls back to the global queue URL which always works.
     """

@@ -40,12 +40,7 @@ USD_TO_EUR        = 0.925   # update as needed
 
 CLIP_LEN_MULTI = 10    # seconds per Kling Turbo clip in multi-clip mode
 MAX_AUDIO_SEC  = 600   # cap full-track at 10 min
-
-# ── Polling ───────────────────────────────────────────────────────────────────
-
-POLL_INTERVAL   = 8      # seconds between status checks
-MAX_WAIT_SINGLE = 600    # 10 min for a single clip
-MAX_WAIT_MULTI  = 2700   # 45 min for multi-clip (full track)
+MAX_WAIT_MULTI = 2700  # 45 min ceiling — architectural reference for multi-clip jobs
 
 FAL_QUEUE_BASE = 'https://queue.fal.run'
 
@@ -140,49 +135,12 @@ def submit_reel(
 
 # ── Status / result ───────────────────────────────────────────────────────────
 
-def fal_status(endpoint: str, request_id: str) -> Dict:
-    """
-    Return fal.ai queue status dict for request_id.
-
-    fal.ai URL cascade (newest endpoints like v2.6/pro return 405 on
-    endpoint-scoped /requests/ paths — use global queue URL as fallback):
-
-    1. /{endpoint}/requests/{id}/status   ← old-style / most models
-    2. /{endpoint}/requests/{id}          ← old-style without /status
-    3. /requests/{id}/status             ← global queue (v2.6/pro)
-    4. /requests/{id}                    ← global queue without /status
-    """
-    def _parse(data: Dict) -> Dict:
-        """Normalise any fal.ai response into a status dict."""
-        if data.get('video') or data.get('video_url'):
-            return {'status': 'COMPLETED', '_result': data}
-        return {'status': data.get('status', 'IN_PROGRESS')}
-
-    urls = [
-        (f'{FAL_QUEUE_BASE}/{endpoint}/requests/{request_id}/status', 30),
-        (f'{FAL_QUEUE_BASE}/{endpoint}/requests/{request_id}',        60),
-        (f'{FAL_QUEUE_BASE}/requests/{request_id}/status',            30),
-        (f'{FAL_QUEUE_BASE}/requests/{request_id}',                   60),
-    ]
-
-    last_err = None
-    for url, timeout in urls:
-        resp = _req.get(url, headers=_headers_get(), timeout=timeout)
-        if resp.status_code == 405:
-            last_err = f'405 on {url}'
-            continue          # try next URL pattern
-        resp.raise_for_status()
-        return _parse(resp.json())
-
-    raise RuntimeError(f'fal.ai status unreachable for {request_id}: {last_err}')
-
-
 def fal_result(endpoint: str, request_id: str) -> Dict:
     """
     Fetch completed result dict from fal.ai queue.
 
-    Uses the same 4-URL cascade as fal_status() because newer endpoints
-    (e.g. v2.6/pro) return 405 on the endpoint-scoped /requests/ path.
+    Uses a 2-URL cascade because newer endpoints (e.g. v2.6/pro) return 405
+    on the endpoint-scoped /requests/ path.
     Falls back to the global queue URL which always works.
     """
     urls = [

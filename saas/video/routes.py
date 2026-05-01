@@ -15,7 +15,7 @@ from core.video_generator import (
     submit_reel,
     fal_result, transcribe_audio_fal,
     estimate_cost, endpoint_for_duration, n_clips_for_duration,
-    CLIP_LEN_MULTI, MAX_AUDIO_SEC, MAX_WAIT_MULTI,
+    CLIP_LEN_MULTI, MAX_AUDIO_SEC,
     ENDPOINT_PRO, ENDPOINT_TURBO,
 )
 from core.audio_analyzer import analyze_audio, beat_cut_durations
