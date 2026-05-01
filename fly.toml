@@ -1,5 +1,6 @@
 # ── DELULUREEL — Fly.io Configuration ────────────────────────────────────────
-# fly deploy (auto-triggered da GitHub Actions su push a main)
+# NOTA: DELULUREEL è deployato su Render (render.yaml), non su Fly.io.
+# Fly deploy è MANUALE via GitHub Actions (workflow_dispatch) — mai automatico.
 # Regione: ams (Amsterdam) — latenza IT <15ms
 
 app = 'delulureel'

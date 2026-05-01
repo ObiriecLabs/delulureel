@@ -138,37 +138,6 @@ def submit_reel(
     }
 
 
-def submit_multi_reel(
-    image_url: str,
-    prompt: str,
-    n_clips: int,
-    clip_len: int = CLIP_LEN_MULTI,
-    aspect_ratio: str = '9:16',
-) -> List[Dict]:
-    """
-    Submit N Kling Turbo clips in parallel (all enqueued before polling begins).
-    Returns list of {'request_id', 'endpoint'}.
-    """
-    handles = []
-    for _ in range(n_clips):
-        url  = f'{FAL_QUEUE_BASE}/{ENDPOINT_TURBO}'
-        body = {
-            'prompt':          prompt,
-            'start_image_url': image_url,   # v2.6 Pro: start_image_url
-            'duration':        str(clip_len), # v2.6 Pro expects string "5" or "10"
-            'aspect_ratio':    aspect_ratio,
-            'generate_audio':  False,
-        }
-        resp = _req.post(url, json=body, headers=_headers(), timeout=60)
-        resp.raise_for_status()
-        data = resp.json()
-        req_id = data.get('request_id') or data.get('id') or ''
-        if not req_id:
-            raise RuntimeError(f'fal.ai did not return request_id: {data}')
-        handles.append({'request_id': req_id, 'endpoint': ENDPOINT_TURBO})
-    return handles
-
-
 # ── Status / result ───────────────────────────────────────────────────────────
 
 def fal_status(endpoint: str, request_id: str) -> Dict:
@@ -209,47 +178,28 @@ def fal_status(endpoint: str, request_id: str) -> Dict:
 
 
 def fal_result(endpoint: str, request_id: str) -> Dict:
-    """Fetch completed result dict from fal.ai queue."""
-    url  = f'{FAL_QUEUE_BASE}/{endpoint}/requests/{request_id}'
-    resp = _req.get(url, headers=_headers_get(), timeout=60)
-    resp.raise_for_status()
-    return resp.json()
-
-
-# ── Polling ───────────────────────────────────────────────────────────────────
-
-def poll_until_done(
-    request_id: str,
-    endpoint: str = ENDPOINT_PRO,
-    max_wait: int = MAX_WAIT_SINGLE,
-) -> str:
     """
-    Blocks until the fal.ai job is COMPLETED or raises on FAILED / timeout.
-    Returns the video URL.
+    Fetch completed result dict from fal.ai queue.
+
+    Uses the same 4-URL cascade as fal_status() because newer endpoints
+    (e.g. v2.6/pro) return 405 on the endpoint-scoped /requests/ path.
+    Falls back to the global queue URL which always works.
     """
-    deadline = time.time() + max_wait
+    urls = [
+        (f'{FAL_QUEUE_BASE}/{endpoint}/requests/{request_id}', 60),
+        (f'{FAL_QUEUE_BASE}/requests/{request_id}',            60),
+    ]
 
-    while time.time() < deadline:
-        status_data = fal_status(endpoint, request_id)
-        status_str  = status_data.get('status', '')
+    last_err = None
+    for url, timeout in urls:
+        resp = _req.get(url, headers=_headers_get(), timeout=timeout)
+        if resp.status_code == 405:
+            last_err = f'405 on {url}'
+            continue
+        resp.raise_for_status()
+        return resp.json()
 
-        if status_str == 'COMPLETED':
-            # fal_status may have already fetched the result (fallback path)
-            result = status_data.get('_result') or fal_result(endpoint, request_id)
-            video  = result.get('video') or {}
-            url    = video.get('url') or result.get('video_url') or ''
-            if not url:
-                raise RuntimeError(f'fal.ai returned no video URL: {result}')
-            return url
-
-        if status_str == 'FAILED':
-            err = status_data.get('error') or status_data.get('logs') or 'unknown'
-            raise RuntimeError(f'fal.ai generation failed: {err}')
-
-        # IN_QUEUE or IN_PROGRESS — keep waiting
-        time.sleep(POLL_INTERVAL)
-
-    raise TimeoutError(f'fal.ai job {request_id} did not complete within {max_wait}s')
+    raise RuntimeError(f'fal.ai result unreachable for {request_id}: {last_err}')
 
 
 # ── Lyrics transcription ──────────────────────────────────────────────────────
