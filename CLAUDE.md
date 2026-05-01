@@ -145,37 +145,74 @@ Annuale = 2 mesi gratis.
 
 ---
 
-## STATO CORRENTE (2026-04-29)
+## STATO CORRENTE (2026-05-02)
 
-**Completato sessione precedente:**
+**Completato sessioni precedenti:**
 - MVP completo: landing, auth, billing, video pipeline, templates, CSS, JS
+- Deploy Render + custom domain delulureel.com + Cloudflare + Resend + Stripe webhook produzione
 
-**Completato questa sessione (deploy + infrastruttura):**
-- Render service live: `https://delulureel.onrender.com` (srv-d7p2rj9o3t8c738q8cj0, Starter, Frankfurt)
-- GitHub repo: `ObiriecLabs/delulureel` → auto-deploy da main
-- Stripe webhook produzione: `we_1TRapTLXmB9msHgIKQHEyC4X` → `https://delulureel.onrender.com/billing/webhook`
-  - Secret: `whsec_zUarW7GfBY1r1hxDVlRr5BZZmhvT6b4D`
-- Supabase URL Configuration aggiornata: Site URL + Redirect URLs → produzione
-- Cloudflare: delulureel.com aggiunto (piano Free), CNAME @ e www → delulureel.onrender.com
-- Porkbun nameservers → Cloudflare (cheryl.ns + vin.ns.cloudflare.com)
-- Resend: dominio delulureel.com aggiunto (Ireland eu-west-1), DNS auto-configurati su Cloudflare
-- Bug risolto: PORT=5002 → PORT=10000 in Render env (causa deploy infiniti)
-- Auth callback flow: `/auth/callback` + `/auth/callback/complete` implementati
-- Welcome email: `_send_welcome_email()` in billing/routes.py
-- Storage signed URL: `create_signed_url(3600)` per bucket privati
+**Completato questa sessione (pipeline fixes + lyrics + cross-instance webhooks):**
 
-**Completato questa sessione (custom domain + DNS fix):**
-- Render workspace migrato da Hobby (Legacy) a Hobby (new) → custom domain illimitati a $0.25/extra
-- Custom domain `delulureel.com` + `www.delulureel.com` aggiunti su Render → Verified + Certificate Issued
-- Root cause Error 1000: URL forwarding Porkbun attivo → disabilitato → sito live
-- `delulureel.com` → live e accessibile ✅
-- Resend domain: verificato ✅
+### Bug fix: fal.ai 405 su tutti i polling endpoint (v2.6/pro)
+- Root cause: fal.ai v2.6/pro non supporta NESSUN endpoint di polling
+- Fix: split headers `_headers_get()` / `_headers_post()` (GET non deve avere Content-Type)
+- Fix definitivo: architettura webhook — polling eliminato per tutti i clip
+- Commits: `1691f81`, `9e74b64`, `eb12f77`
+
+### Feature: lyrics-aware scene prompts
+- `transcribe_audio_fal(audio_url)` → fal-ai/whisper → testo canzone
+- Lyrics (max 600 char) iniettati nel prompt Claude come "primary narrative driver"
+- Fallback graceful: se strumentale → basta analisi melodica/BPM
+- `generate_scene_prompt()` aggiornato: firma `lyrics: Optional[str] = None`
+- Commit: `eb12f77`
+
+### Bug fix: multi-clip cross-instance (Render ha 2+ istanze)
+- Root cause: `_multi_pending` dict in-memory non condiviso tra istanze Render
+  - Istanza A riceveva clip 2 (trovato), istanza B riceveva clip 0 e 1 ("unknown job_id")
+- Fix: tracking atomico su Supabase via RPC `add_clip_result`
+- Schema migration `multi_clip_tracking` applicata su Supabase:
+  - `reel_jobs`: aggiunti `clip_results JSONB`, `n_clips_expected INT`, `target_secs_requested INT`
+  - `add_clip_result(p_job_id, p_clip_idx, p_clip_url) RETURNS JSONB` (UPSERT atomico)
+- `_run_pipeline`: salva stato in DB, rilascia slot/tmp in finally
+- `fal_webhook_multi`: usa RPC add_clip_result, fetcha job data da DB, spawna `_run_assembly`
+- `_run_assembly`: istanza-agnostica — scarica audio da Supabase Storage (non dipende da tmp locale)
+- Commit: `f1a2f6e` (webhook base), `2c9fa2b` (DB-based cross-instance)
+
+### Admin bypass
+- `is_admin` letto da `profiles.is_admin BOOLEAN` (non da env var)
+- Skip: credit limits, trial limits, deduct_credits RPC
+- Confermato funzionante nei log
+
+**Architettura pipeline multi-clip (definitiva):**
+```
+_run_pipeline (thread breve ~60s):
+  → analyze_audio → upload audio → whisper transcription
+  → claude scene prompt → upload photo
+  → DB: n_clips_expected=N, clip_results='{}'
+  → submit N clips con webhook /video/webhook/fal/multi/{job_id}/{i}/{n_clips}
+  → finally: rilascia slot + pulisce tmp_dir
+
+fal_webhook_multi (qualsiasi istanza Render):
+  → add_clip_result RPC (atomico JSONB merge)
+  → se n_done == n_clips: spawna _run_assembly
+
+_run_assembly (thread breve ~120s, su istanza che ha ricevuto l'ultimo webhook):
+  → scarica audio da Supabase Storage (non tmp locale)
+  → scarica N clip da fal.ai
+  → FFmpeg beat-sync assemble
+  → upload reel-outputs → mark completed → deduct_credits
+```
+
+**Costo fal.ai accumulato in test (non recuperabili):** ~$17.51
+- Causa: video generati correttamente ma mai recuperati (polling 405 + no webhook)
+- Soluzione implementata: webhook elimina questo problema
 
 **Prossimi step:**
-1. Test end-to-end: signup → email confirm → trial → pagamento → generazione video
-2. Eseguire Storage RLS policies su Supabase (bucket reel-uploads, reel-outputs)
-3. Implementare email reminder Day 5 via Resend (`_on_trial_will_end`)
-4. Monitorare primo ciclo di fatturazione Stripe in produzione
+1. **TEST end-to-end 30s** su produzione — verificare che tutti 3 clip arrivino e assembly completi
+2. Monitorare log Render per `assembly/{jid} COMPLETED` dopo il nuovo deploy (2c9fa2b)
+3. Eseguire Storage RLS policies su Supabase (bucket reel-uploads, reel-outputs)
+4. Implementare email reminder Day 5 via Resend (`_on_trial_will_end`)
+5. Test signup → email confirm → trial → pagamento → generazione completa
 
 ---
 
