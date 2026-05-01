@@ -70,6 +70,10 @@ _fal_req_to_admin: dict[str, bool] = {}         # request_id → is_admin flag
 _fal_req_to_target_secs: dict[str, int] = {}    # request_id → target_secs
 _webhook_lock = threading.Lock()
 
+# Multi-clip aggregation: job_id → state dict (populated by _run_pipeline Phase 1)
+_multi_pending: dict[str, dict] = {}
+_multi_lock = threading.Lock()
+
 
 # Per-thread Supabase service client — same thread-safety rationale as auth/routes.py.
 # supabase>=2.0.0 / httpx.Client is NOT safe to share across gunicorn gthread workers.
@@ -726,20 +730,21 @@ def _run_post_generation(job_id, user_id, raw_video_url, aspect_ratio, est_cost,
             pass
 
 
-# ── Multi-clip pipeline (polling, unchanged) ──────────────────────────────────
-# Used for 30s / Full Track (n_clips > 1). Polling is acceptable here because
-# the assembly requires all N clips before FFmpeg can run.
+# ── Multi-clip pipeline (webhook-based, no polling) ───────────────────────────
+# fal-ai/kling-video/v2.6/pro returns 405 on ALL polling endpoints.
+# Instead: submit each clip with a unique per-clip webhook URL.
+# When all N webhooks fire, _run_assembly assembles and uploads the final reel.
 
 def _run_pipeline(job_id, user_id, photo_path, audio_path, style, aspect_ratio,
                   est_cost, tmp_dir, target_secs=10, n_clips=1, enable_lipsync=False,
                   custom_prompt='', is_admin=False):
     """
-    Multi-clip pipeline (30s / Full Track). Polling-based — N clips generated in parallel.
+    Multi-clip Phase 1 (short thread ~60s):
+    analysis + transcription + scene prompt + upload + submit N clips with per-clip webhooks.
 
-    Lipsync is applied clip-by-clip after each poll_until_done(), using the fal.ai CDN URL
-    directly (no intermediate local upload needed for the video).
-    Audio is uploaded to Supabase once and the signed URL reused across all clips.
-    Graceful degradation: lipsync failures fall through to raw clip, never abort the job.
+    Does NOT poll — each clip fires POST /video/webhook/fal/multi/<job_id>/<i>/<n>.
+    When all N webhooks arrive, _run_assembly is spawned automatically.
+    tmp_dir is intentionally NOT cleaned up on success — _run_assembly needs audio_path.
     """
     global _global_active
     _jid = job_id[:8]
@@ -748,33 +753,25 @@ def _run_pipeline(job_id, user_id, photo_path, audio_path, style, aspect_ratio,
     def update(status, **kw):
         sb.table('reel_jobs').update({'status': status, **kw}).eq('id', job_id).execute()
 
-    def download_video(url: str, filename: str) -> str:
-        path = os.path.join(tmp_dir, filename)
-        resp = _requests.get(url, stream=True, timeout=180)
-        resp.raise_for_status()
-        with open(path, 'wb') as fh:
-            for chunk in resp.iter_content(chunk_size=65536):
-                fh.write(chunk)
-        return path
+    _submitted_ok = False  # flag: True if we stored state in _multi_pending
 
     try:
         # 1 — Audio analysis
         update('analyzing')
         analysis = analyze_audio(audio_path)
         gc.collect()
-
-        # Phase 2 — Beat-synced cut durations (derived from BPM, zero extra RAM)
         clip_durations = beat_cut_durations(
             bpm=analysis['bpm'],
             target_secs=float(target_secs),
             n_clips=n_clips,
             max_clip_sec=float(CLIP_LEN_MULTI),
         )
-        print(f'[pipeline/{_jid}] beat cuts BPM={analysis["bpm"]} → {clip_durations}', flush=True)
+        clip_len = min(max((int(max(clip_durations)) if clip_durations else CLIP_LEN_MULTI), 5), 10)
+        print(f'[pipeline/{_jid}] BPM={analysis["bpm"]:.0f} beat cuts={clip_durations} clip_len={clip_len}s', flush=True)
 
-        # 2 — Upload audio to Supabase (always — needed for transcription + optional lipsync)
-        ext_audio = (audio_path.rsplit('.', 1)[-1].lower()) or 'mp3'
-        audio_key = f'jobs/{job_id}/audio.{ext_audio}'
+        # 2 — Upload audio → signed URL → transcribe
+        ext_audio        = (audio_path.rsplit('.', 1)[-1].lower()) or 'mp3'
+        audio_key        = f'jobs/{job_id}/audio.{ext_audio}'
         audio_signed_url = ''
         try:
             with open(audio_path, 'rb') as fh:
@@ -782,16 +779,12 @@ def _run_pipeline(job_id, user_id, photo_path, audio_path, style, aspect_ratio,
                     audio_key, fh,
                     file_options={'content-type': f'audio/{ext_audio}'},
                 )
-            signed_audio = sb.storage.from_('reel-uploads').create_signed_url(audio_key, 7200)
-            audio_signed_url = signed_audio.get('signedURL') or signed_audio.get('signedUrl') or ''
-            if not audio_signed_url:
-                raise RuntimeError(f'No signed URL for audio: {signed_audio}')
-            print(f'[pipeline/{_jid}] audio uploaded url={audio_signed_url[:60]}', flush=True)
+            sig = sb.storage.from_('reel-uploads').create_signed_url(audio_key, 7200)
+            audio_signed_url = sig.get('signedURL') or sig.get('signedUrl') or ''
+            print(f'[pipeline/{_jid}] audio uploaded', flush=True)
         except Exception as exc:
-            print(f'[pipeline/{_jid}] audio upload failed: {exc} — lipsync disabled', flush=True)
-            enable_lipsync = False
+            print(f'[pipeline/{_jid}] audio upload FAILED: {exc}', flush=True)
 
-        # 3 — Transcribe audio → extract lyrics (fal-ai/whisper, graceful degradation)
         lyrics: str | None = None
         if not custom_prompt and audio_signed_url:
             print(f'[pipeline/{_jid}] whisper transcription START', flush=True)
@@ -799,18 +792,17 @@ def _run_pipeline(job_id, user_id, photo_path, audio_path, style, aspect_ratio,
             if lyrics:
                 print(f'[pipeline/{_jid}] whisper DONE ({len(lyrics)} chars)', flush=True)
             else:
-                print(f'[pipeline/{_jid}] whisper: instrumental — melody-based prompt', flush=True)
+                print(f'[pipeline/{_jid}] whisper: instrumental', flush=True)
 
-        # 4 — Scene prompt: custom (user) or auto (Claude Vision + lyrics)
+        # 3 — Scene prompt
         update('generating', bpm=analysis['bpm'])
         if custom_prompt:
             prompt = custom_prompt
-            print(f'[pipeline/{_jid}] using custom prompt len={len(prompt)}', flush=True)
         else:
-            prompt = generate_scene_prompt(analysis, style, photo_path=photo_path,
-                                           lyrics=lyrics)
+            prompt = generate_scene_prompt(analysis, style, photo_path=photo_path, lyrics=lyrics)
+        print(f'[pipeline/{_jid}] prompt len={len(prompt)}', flush=True)
 
-        # 5 — Upload photo to Supabase Storage → signed URL for fal.ai
+        # 4 — Upload photo → signed URL for fal.ai
         ext_photo = (photo_path.rsplit('.', 1)[-1].lower()) or 'jpg'
         photo_key = f'jobs/{job_id}/source.{ext_photo}'
         try:
@@ -819,57 +811,181 @@ def _run_pipeline(job_id, user_id, photo_path, audio_path, style, aspect_ratio,
                     photo_key, fh.read(),
                     file_options={'content-type': f'image/{ext_photo}'},
                 )
-            signed_photo = sb.storage.from_('reel-uploads').create_signed_url(photo_key, 3600)
-            photo_url = signed_photo.get('signedURL') or signed_photo.get('signedUrl') or ''
+            sig_photo = sb.storage.from_('reel-uploads').create_signed_url(photo_key, 3600)
+            photo_url = sig_photo.get('signedURL') or sig_photo.get('signedUrl') or ''
             if not photo_url:
-                raise RuntimeError(f'Could not get signed URL for photo: {signed_photo}')
+                raise RuntimeError(f'No signed URL for photo: {sig_photo}')
         except Exception as exc:
-            raise RuntimeError(f'Photo upload to Supabase failed: {exc}') from exc
+            raise RuntimeError(f'Photo upload failed: {exc}') from exc
 
-        # 4 — Submit multi-clip to fal.ai (all enqueued before polling begins)
-        ar_slug    = aspect_ratio.replace(':', 'x')
-        final_path = os.path.join(tmp_dir, f'reel_{ar_slug}.mp4')
-
+        # 5 — Submit N clips, each with its own webhook URL
         update('processing',
                fal_request_id=f'multi:{n_clips}',
                fal_endpoint=ENDPOINT_TURBO,
                prompt=prompt)
-        try:
-            handles = submit_multi_reel(photo_url, prompt, n_clips, aspect_ratio=aspect_ratio)
-        except Exception as exc:
-            raise RuntimeError(
-                f'fal multi-submit failed [n={n_clips}, ar={aspect_ratio}]: {exc}'
-            ) from exc
 
-        video_clips = []
-        for i, h in enumerate(handles):
+        for i in range(n_clips):
+            wh = f'{APP_BASE_URL}/video/webhook/fal/multi/{job_id}/{i}/{n_clips}'
             try:
-                clip_url = poll_until_done(h['request_id'], h['endpoint'], MAX_WAIT_MULTI)
+                h = submit_reel(
+                    photo_url, prompt,
+                    duration=clip_len, aspect_ratio=aspect_ratio,
+                    endpoint=ENDPOINT_TURBO, webhook_url=wh,
+                )
+                print(f'[pipeline/{_jid}] clip {i}/{n_clips} submitted req={h["request_id"]}', flush=True)
             except Exception as exc:
-                raise RuntimeError(
-                    f'poll_until_done failed [clip={i}, req={h["request_id"]}]: {exc}'
-                ) from exc
+                raise RuntimeError(f'fal submit clip {i} failed: {exc}') from exc
 
-            # Apply lipsync per clip (optional — graceful degradation on failure)
-            if enable_lipsync and audio_signed_url:
-                try:
-                    print(f'[pipeline/{_jid}] lipsync clip {i} START', flush=True)
-                    update('lipsyncing')
-                    clip_url = apply_lipsync(clip_url, audio_signed_url)
-                    print(f'[pipeline/{_jid}] lipsync clip {i} DONE', flush=True)
-                except Exception as exc:
-                    print(f'[pipeline/{_jid}] lipsync clip {i} FAILED ({exc}) — using raw', flush=True)
+        # 6 — Store state for webhook aggregation; thread exits here
+        with _multi_lock:
+            _multi_pending[job_id] = {
+                'user_id':         user_id,
+                'n_clips':         n_clips,
+                'clips':           [None] * n_clips,  # filled by fal_webhook_multi
+                'done':            0,
+                'audio_path':      audio_path,
+                'audio_signed_url': audio_signed_url,
+                'aspect_ratio':    aspect_ratio,
+                'est_cost':        est_cost,
+                'target_secs':     int(target_secs),
+                'clip_durations':  clip_durations,
+                'is_admin':        is_admin,
+                'enable_lipsync':  enable_lipsync,
+                'tmp_dir':         tmp_dir,
+            }
 
-            video_clips.append(download_video(clip_url, f'clip_{i}.mp4'))
+        _submitted_ok = True
+        print(f'[pipeline/{_jid}] all clips submitted — waiting for {n_clips} webhooks', flush=True)
+        # Locks and tmp_dir NOT released here — _run_assembly will do it.
 
-        # 5 — Assemble all clips + original audio (beat-synced trim applied inside)
+    except Exception as exc:
+        try:
+            update('failed', error_message=str(exc)[:500])
+        except Exception:
+            pass
+        print(f'[pipeline/{_jid}] FAILED: {exc}', flush=True)
+
+    finally:
+        if not _submitted_ok:
+            # Error path: release slots and clean up immediately
+            with _lock:
+                _active_user_jobs.pop(user_id, None)
+                _global_active = max(0, _global_active - 1)
+            try:
+                shutil.rmtree(tmp_dir, ignore_errors=True)
+            except Exception:
+                pass
+
+
+# ── Multi-clip webhook: aggregates per-clip results ────────────────────────────
+
+@video_bp.route('/webhook/fal/multi/<job_id>/<int:clip_idx>/<int:n_clips>', methods=['POST'])
+def fal_webhook_multi(job_id, clip_idx, n_clips):
+    """
+    fal.ai fires this for each clip in a multi-clip job.
+    When all n_clips are collected, _run_assembly is spawned.
+    Always returns 200 — fal.ai retries on non-200.
+    """
+    data      = request.get_json(silent=True) or {}
+    status    = data.get('status', '')
+    payload   = data.get('payload') or {}
+    video_obj = payload.get('video') or {}
+    video_url = video_obj.get('url') or payload.get('video_url') or ''
+
+    with _multi_lock:
+        state = _multi_pending.get(job_id)
+        if state is None:
+            return jsonify({'ok': True, 'note': 'unknown job_id'}), 200
+
+        # Bounds check (should never fail, but be safe)
+        if clip_idx < 0 or clip_idx >= len(state['clips']):
+            return jsonify({'ok': True, 'note': 'invalid clip_idx'}), 200
+
+        if status == 'ERROR' or not video_url:
+            err = str(data.get('error', 'fal.ai clip error'))[:300]
+            print(f'[webhook_multi/{job_id[:8]}] clip {clip_idx} ERROR: {err}', flush=True)
+            _multi_pending.pop(job_id, None)
+            user_id = state['user_id']
+            try:
+                _sb_service().table('reel_jobs').update({
+                    'status':        'failed',
+                    'error_message': f'Clip {clip_idx + 1}/{n_clips} failed: {err}',
+                }).eq('id', job_id).execute()
+            except Exception:
+                pass
+            with _lock:
+                _active_user_jobs.pop(user_id, None)
+                _global_active = max(0, _global_active - 1)
+            try:
+                shutil.rmtree(state.get('tmp_dir', ''), ignore_errors=True)
+            except Exception:
+                pass
+            return jsonify({'ok': True}), 200
+
+        state['clips'][clip_idx] = video_url
+        state['done'] += 1
+        print(f'[webhook_multi/{job_id[:8]}] clip {clip_idx} ok — {state["done"]}/{n_clips} done', flush=True)
+
+        if state['done'] < n_clips:
+            return jsonify({'ok': True}), 200
+
+        # All clips in — pop state and spawn assembly
+        state = _multi_pending.pop(job_id)
+
+    threading.Thread(target=_run_assembly, args=(job_id, state), daemon=True).start()
+    return jsonify({'ok': True}), 200
+
+
+# ── Assembly (multi-clip Phase 2) ─────────────────────────────────────────────
+
+def _run_assembly(job_id, state):
+    """
+    Download all N clips, FFmpeg-assemble with beat-sync, upload to Supabase.
+    Triggered by fal_webhook_multi once all clips have arrived.
+    Releases _active_user_jobs slot and cleans up tmp_dir when done.
+    """
+    global _global_active
+    _jid         = job_id[:8]
+    sb           = _sb_service()
+    user_id      = state['user_id']
+    aspect_ratio = state['aspect_ratio']
+    est_cost     = state['est_cost']
+    target_secs  = state['target_secs']
+    is_admin     = state['is_admin']
+    clip_durations = state['clip_durations']
+    clip_urls    = state['clips']
+    audio_path   = state['audio_path']
+    n_clips      = state['n_clips']
+    tmp          = state['tmp_dir']
+
+    def update(status, **kw):
+        sb.table('reel_jobs').update({'status': status, **kw}).eq('id', job_id).execute()
+
+    try:
+        ar_slug    = aspect_ratio.replace(':', 'x')
+        final_path = os.path.join(tmp, f'reel_{ar_slug}.mp4')
+
+        # Download all clips
+        video_clips = []
+        for i, url in enumerate(clip_urls):
+            clip_path = os.path.join(tmp, f'clip_{i}.mp4')
+            resp = _requests.get(url, stream=True, timeout=180)
+            resp.raise_for_status()
+            with open(clip_path, 'wb') as fh:
+                for chunk in resp.iter_content(chunk_size=65536):
+                    fh.write(chunk)
+            video_clips.append(clip_path)
+            print(f'[assembly/{_jid}] clip {i} downloaded', flush=True)
+
+        # FFmpeg assemble with beat-sync
         gc.collect()
         assemble_reel(video_clips, audio_path, final_path, aspect_ratio,
                       max_duration=float(target_secs),
                       clip_durations=clip_durations if n_clips > 1 else None)
         gc.collect()
+        print(f'[assembly/{_jid}] FFmpeg done', flush=True)
 
-        # 6 — Upload final reel
+        # Upload final reel to Supabase
         output_key = f'jobs/{job_id}/reel_{ar_slug}.mp4'
         with open(final_path, 'rb') as fh:
             sb.storage.from_('reel-outputs').upload(
@@ -878,10 +994,11 @@ def _run_pipeline(job_id, user_id, photo_path, audio_path, style, aspect_ratio,
             )
         final_url = sb.storage.from_('reel-outputs').get_public_url(output_key)
 
-        # 7 — Mark completed
+        # Mark completed + record spend
         _record_spend(est_cost)
         update('completed', output_url=final_url, actual_cost=est_cost)
-        # Deduct credits (skipped for admin accounts)
+        print(f'[assembly/{_jid}] COMPLETED url={final_url[:60]}', flush=True)
+
         if not is_admin:
             sb.rpc('deduct_credits', {
                 'p_user_id': user_id,
@@ -890,13 +1007,14 @@ def _run_pipeline(job_id, user_id, photo_path, audio_path, style, aspect_ratio,
 
     except Exception as exc:
         update('failed', error_message=str(exc)[:500])
+        print(f'[assembly/{_jid}] FAILED: {exc}', flush=True)
 
     finally:
         with _lock:
             _active_user_jobs.pop(user_id, None)
             _global_active = max(0, _global_active - 1)
         try:
-            shutil.rmtree(tmp_dir, ignore_errors=True)
+            shutil.rmtree(tmp, ignore_errors=True)
         except Exception:
             pass
 
