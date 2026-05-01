@@ -348,10 +348,10 @@ def _run_pre_generation(job_id, user_id, photo_path, audio_path, style,
         gc.collect()
         _log(f'audio analysis DONE bpm={analysis.get("bpm",0):.0f}')
 
-        # 2 — Scene prompt (Claude)
+        # 2 — Scene prompt (Claude Vision — photo_path passato per analisi visiva)
         update('generating', bpm=analysis['bpm'])
         _log('claude scene prompt START')
-        prompt = generate_scene_prompt(analysis, style)
+        prompt = generate_scene_prompt(analysis, style, photo_path=photo_path)
         _log(f'claude scene prompt DONE len={len(prompt)}')
 
         # 3 — Upload photo to Supabase Storage → get signed URL for fal.ai
