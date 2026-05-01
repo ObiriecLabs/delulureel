@@ -19,6 +19,7 @@ from core.video_generator import (
 )
 from core.audio_analyzer import analyze_audio
 from core.scene_director import generate_scene_prompt
+from core.lipsync import apply_lipsync
 from core.assembler import assemble_reel
 
 from saas.auth.routes import require_auth_api
@@ -41,6 +42,7 @@ _lock             = threading.Lock()
 
 # Webhook tracking: fal request_id → job_id (for single-clip webhook lookup)
 _fal_req_to_job: dict[str, str] = {}
+_fal_req_to_lipsync: dict[str, bool] = {}   # request_id → enable_lipsync flag
 _webhook_lock = threading.Lock()
 
 
@@ -226,6 +228,7 @@ def generate():
 
     style        = (request.form.get('style', 'cinematic') or 'cinematic').lower()
     aspect_ratio = request.form.get('aspect_ratio', '9:16') or '9:16'
+    enable_lipsync = request.form.get('enable_lipsync', 'off').lower() in ('on', '1', 'true', 'yes')
 
     # ── Duration / clip count ────────────────────────────────────────────────
     video_duration = (request.form.get('video_duration', '10') or '10').strip()
@@ -287,14 +290,14 @@ def generate():
         thread = threading.Thread(
             target=_run_pre_generation,
             args=(job_id, user_id, photo_path, audio_path, style, aspect_ratio,
-                  est_cost, tmp_dir, target_secs, ext_audio),
+                  est_cost, tmp_dir, target_secs, ext_audio, enable_lipsync),
             daemon=True,
         )
     else:
         thread = threading.Thread(
             target=_run_pipeline,
             args=(job_id, user_id, photo_path, audio_path, style, aspect_ratio,
-                  est_cost, tmp_dir, target_secs, n_clips),
+                  est_cost, tmp_dir, target_secs, n_clips, enable_lipsync),
             daemon=True,
         )
     thread.start()
@@ -314,7 +317,8 @@ def generate():
 # fal.ai servers — our server is idle until the webhook fires.
 
 def _run_pre_generation(job_id, user_id, photo_path, audio_path, style,
-                        aspect_ratio, est_cost, tmp_dir, target_secs, ext_audio):
+                        aspect_ratio, est_cost, tmp_dir, target_secs, ext_audio,
+                        enable_lipsync=False):
     import time as _time
     _t0 = _time.time()
     global _global_active
@@ -416,6 +420,7 @@ def _run_pre_generation(job_id, user_id, photo_path, audio_path, style,
         # on the same server instance (new instances use the DB lookup fallback).
         with _webhook_lock:
             _fal_req_to_job[fal['request_id']] = job_id
+            _fal_req_to_lipsync[fal['request_id']] = enable_lipsync
 
         # Thread ends here. fal.ai is generating the video on their servers.
         # Execution resumes in _run_post_generation when the webhook fires.
@@ -460,9 +465,10 @@ def fal_webhook():
     if not req_id:
         return jsonify({'ok': False, 'reason': 'missing request_id'}), 400
 
-    # Look up job_id from in-memory map
+    # Look up job_id and lipsync flag from in-memory maps
     with _webhook_lock:
-        job_id = _fal_req_to_job.pop(req_id, None)
+        job_id         = _fal_req_to_job.pop(req_id, None)
+        enable_lipsync = _fal_req_to_lipsync.pop(req_id, False)
 
     if not job_id:
         # Could be a late webhook after server restart — try DB lookup by fal_request_id
@@ -521,10 +527,10 @@ def fal_webhook():
                 _global_active = max(0, _global_active - 1)
             return jsonify({'ok': True}), 200
 
-        # Spawn post-generation thread (download + FFmpeg + Supabase upload)
+        # Spawn post-generation thread (download + lipsync + FFmpeg + Supabase upload)
         thread = threading.Thread(
             target=_run_post_generation,
-            args=(job_id, user_id, video_url, ar, est_cost),
+            args=(job_id, user_id, video_url, ar, est_cost, enable_lipsync),
             daemon=True,
         )
         thread.start()
@@ -537,10 +543,25 @@ def fal_webhook():
 # ── Phase 2: Post-generation (single clip, after webhook) ─────────────────────
 # Short-lived thread (~60s): download raw video + FFmpeg + upload to Supabase
 
-def _run_post_generation(job_id, user_id, raw_video_url, aspect_ratio, est_cost):
+def _run_post_generation(job_id, user_id, raw_video_url, aspect_ratio, est_cost,
+                         enable_lipsync=False):
+    """
+    Phase 2 post-generation (single clip, webhook-triggered).
+
+    Flow:
+      1. Get audio signed URL from Supabase (needed for lipsync API and local download)
+      2. If lipsync: apply_lipsync(raw_video_url, audio_signed_url) → lipsync'd URL
+         Falls back to raw_video_url on lipsync failure (never crashes the pipeline).
+      3. Download video (lipsync'd or raw)
+      4. Download audio to local temp file
+      5. FFmpeg assembly — replaces lipsync audio with the original high-quality track
+      6. Upload final reel to Supabase reel-outputs
+      7. Mark completed
+    """
     global _global_active
     sb   = _sb_service()
     tmp  = tempfile.mkdtemp(prefix='dlr_post_')
+    _jid = job_id[:8]
 
     def update(status, **kw):
         sb.table('reel_jobs').update({'status': status, **kw}).eq('id', job_id).execute()
@@ -548,18 +569,11 @@ def _run_post_generation(job_id, user_id, raw_video_url, aspect_ratio, est_cost)
     try:
         ar_slug    = aspect_ratio.replace(':', 'x')
         raw_path   = os.path.join(tmp, 'raw.mp4')
-        audio_path = os.path.join(tmp, 'audio')
         final_path = os.path.join(tmp, f'reel_{ar_slug}.mp4')
 
-        # 1 — Download raw video from fal.ai CDN
-        resp = _requests.get(raw_video_url, stream=True, timeout=180)
-        resp.raise_for_status()
-        with open(raw_path, 'wb') as fh:
-            for chunk in resp.iter_content(chunk_size=65536):
-                fh.write(chunk)
-
-        # 2 — Download audio from Supabase Storage
-        # List the jobs/{job_id}/ folder to find the audio file
+        # 1 — Locate audio in Supabase Storage and get signed URL
+        # (Audio was uploaded during _run_pre_generation; we need the URL for lipsync
+        #  and we need to download it locally for FFmpeg assembly.)
         try:
             files = sb.storage.from_('reel-uploads').list(f'jobs/{job_id}')
             audio_file = next(
@@ -567,29 +581,52 @@ def _run_post_generation(job_id, user_id, raw_video_url, aspect_ratio, est_cost)
             )
             if not audio_file:
                 raise RuntimeError('Audio file not found in Supabase Storage')
-            audio_key = f'jobs/{job_id}/{audio_file["name"]}'
-            ext_audio = audio_file['name'].rsplit('.', 1)[-1]
+            audio_key  = f'jobs/{job_id}/{audio_file["name"]}'
+            ext_audio  = audio_file['name'].rsplit('.', 1)[-1]
             audio_path = os.path.join(tmp, f'audio.{ext_audio}')
 
             signed = sb.storage.from_('reel-uploads').create_signed_url(audio_key, 3600)
             audio_signed_url = signed.get('signedURL') or signed.get('signedUrl') or ''
             if not audio_signed_url:
                 raise RuntimeError(f'Could not get signed URL for audio: {signed}')
-
-            resp_audio = _requests.get(audio_signed_url, stream=True, timeout=120)
-            resp_audio.raise_for_status()
-            with open(audio_path, 'wb') as fh:
-                for chunk in resp_audio.iter_content(chunk_size=65536):
-                    fh.write(chunk)
         except Exception as exc:
             raise RuntimeError(f'Audio retrieval failed: {exc}') from exc
 
-        # 3 — FFmpeg assembly (raw video + original audio)
+        # 2 — Lipsync (optional): submit raw video + audio → animated-lip video URL
+        # fal-ai/kling-video/lipsync/audio-to-video  ~$0.0028/s, ~90s latency per clip
+        # Graceful degradation: any failure falls back to raw_video_url silently.
+        video_download_url = raw_video_url
+        if enable_lipsync:
+            try:
+                print(f'[postgen/{_jid}] lipsync START', flush=True)
+                update('lipsyncing')
+                video_download_url = apply_lipsync(raw_video_url, audio_signed_url)
+                print(f'[postgen/{_jid}] lipsync DONE url={video_download_url[:60]}', flush=True)
+            except Exception as exc:
+                print(f'[postgen/{_jid}] lipsync FAILED ({exc}) — using raw video', flush=True)
+                video_download_url = raw_video_url
+
+        # 3 — Download video (lipsync'd or raw)
+        resp = _requests.get(video_download_url, stream=True, timeout=180)
+        resp.raise_for_status()
+        with open(raw_path, 'wb') as fh:
+            for chunk in resp.iter_content(chunk_size=65536):
+                fh.write(chunk)
+
+        # 4 — Download audio to local temp file (for FFmpeg)
+        resp_audio = _requests.get(audio_signed_url, stream=True, timeout=120)
+        resp_audio.raise_for_status()
+        with open(audio_path, 'wb') as fh:
+            for chunk in resp_audio.iter_content(chunk_size=65536):
+                fh.write(chunk)
+
+        # 5 — FFmpeg assembly: overlay original high-quality audio on the video
+        # (Replaces whatever audio the lipsync model embedded with the source track.)
         gc.collect()
         assemble_reel([raw_path], audio_path, final_path, aspect_ratio)
         gc.collect()
 
-        # 4 — Upload final reel to Supabase (streaming — no fh.read() in RAM)
+        # 6 — Upload final reel to Supabase (streaming — no fh.read() in RAM)
         output_key = f'jobs/{job_id}/reel_{ar_slug}.mp4'
         with open(final_path, 'rb') as fh:
             sb.storage.from_('reel-outputs').upload(
@@ -598,11 +635,11 @@ def _run_post_generation(job_id, user_id, raw_video_url, aspect_ratio, est_cost)
             )
         final_url = sb.storage.from_('reel-outputs').get_public_url(output_key)
 
-        # 5 — Mark completed
+        # 7 — Mark completed
         _record_spend(est_cost)
         update('completed', output_url=final_url, actual_cost=est_cost)
 
-        # 6 — Increment reel counter
+        # 8 — Increment reel counter
         sb.rpc('increment_reel_count', {'p_user_id': user_id}).execute()
 
     except Exception as exc:
@@ -623,8 +660,17 @@ def _run_post_generation(job_id, user_id, raw_video_url, aspect_ratio, est_cost)
 # the assembly requires all N clips before FFmpeg can run.
 
 def _run_pipeline(job_id, user_id, photo_path, audio_path, style, aspect_ratio,
-                  est_cost, tmp_dir, target_secs=10, n_clips=1):
+                  est_cost, tmp_dir, target_secs=10, n_clips=1, enable_lipsync=False):
+    """
+    Multi-clip pipeline (30s / Full Track). Polling-based — N clips generated in parallel.
+
+    Lipsync is applied clip-by-clip after each poll_until_done(), using the fal.ai CDN URL
+    directly (no intermediate local upload needed for the video).
+    Audio is uploaded to Supabase once and the signed URL reused across all clips.
+    Graceful degradation: lipsync failures fall through to raw clip, never abort the job.
+    """
     global _global_active
+    _jid = job_id[:8]
     sb = _sb_service()
 
     def update(status, **kw):
@@ -645,9 +691,9 @@ def _run_pipeline(job_id, user_id, photo_path, audio_path, style, aspect_ratio,
         analysis = analyze_audio(audio_path)
         gc.collect()
 
-        # 2 — Scene prompt (Claude)
+        # 2 — Scene prompt (Claude Vision — photo passed for visual grounding)
         update('generating', bpm=analysis['bpm'])
-        prompt = generate_scene_prompt(analysis, style)
+        prompt = generate_scene_prompt(analysis, style, photo_path=photo_path)
 
         # 3 — Upload photo to Supabase Storage → signed URL for fal.ai
         ext_photo = (photo_path.rsplit('.', 1)[-1].lower()) or 'jpg'
@@ -665,7 +711,27 @@ def _run_pipeline(job_id, user_id, photo_path, audio_path, style, aspect_ratio,
         except Exception as exc:
             raise RuntimeError(f'Photo upload to Supabase failed: {exc}') from exc
 
-        # 4 — Submit multi-clip to fal.ai (parallel, polling)
+        # 3b — Upload audio to Supabase Storage (needed as public URL for lipsync API)
+        audio_signed_url = ''
+        if enable_lipsync:
+            ext_audio = (audio_path.rsplit('.', 1)[-1].lower()) or 'mp3'
+            audio_key = f'jobs/{job_id}/audio.{ext_audio}'
+            try:
+                with open(audio_path, 'rb') as fh:
+                    sb.storage.from_('reel-uploads').upload(
+                        audio_key, fh,
+                        file_options={'content-type': f'audio/{ext_audio}'},
+                    )
+                signed_audio = sb.storage.from_('reel-uploads').create_signed_url(audio_key, 7200)
+                audio_signed_url = signed_audio.get('signedURL') or signed_audio.get('signedUrl') or ''
+                if not audio_signed_url:
+                    raise RuntimeError(f'No signed URL for audio: {signed_audio}')
+                print(f'[pipeline/{_jid}] audio uploaded for lipsync', flush=True)
+            except Exception as exc:
+                print(f'[pipeline/{_jid}] audio upload for lipsync failed: {exc} — lipsync disabled', flush=True)
+                enable_lipsync = False
+
+        # 4 — Submit multi-clip to fal.ai (all enqueued before polling begins)
         ar_slug    = aspect_ratio.replace(':', 'x')
         final_path = os.path.join(tmp_dir, f'reel_{ar_slug}.mp4')
 
@@ -683,14 +749,25 @@ def _run_pipeline(job_id, user_id, photo_path, audio_path, style, aspect_ratio,
         video_clips = []
         for i, h in enumerate(handles):
             try:
-                url = poll_until_done(h['request_id'], h['endpoint'], MAX_WAIT_MULTI)
+                clip_url = poll_until_done(h['request_id'], h['endpoint'], MAX_WAIT_MULTI)
             except Exception as exc:
                 raise RuntimeError(
                     f'poll_until_done failed [clip={i}, req={h["request_id"]}]: {exc}'
                 ) from exc
-            video_clips.append(download_video(url, f'clip_{i}.mp4'))
 
-        # 5 — Assemble
+            # Apply lipsync per clip (optional — graceful degradation on failure)
+            if enable_lipsync and audio_signed_url:
+                try:
+                    print(f'[pipeline/{_jid}] lipsync clip {i} START', flush=True)
+                    update('lipsyncing')
+                    clip_url = apply_lipsync(clip_url, audio_signed_url)
+                    print(f'[pipeline/{_jid}] lipsync clip {i} DONE', flush=True)
+                except Exception as exc:
+                    print(f'[pipeline/{_jid}] lipsync clip {i} FAILED ({exc}) — using raw', flush=True)
+
+            video_clips.append(download_video(clip_url, f'clip_{i}.mp4'))
+
+        # 5 — Assemble all clips + original audio
         gc.collect()
         assemble_reel(video_clips, audio_path, final_path, aspect_ratio,
                       max_duration=float(target_secs))

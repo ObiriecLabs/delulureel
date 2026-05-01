@@ -140,6 +140,18 @@
 
     </div>
 
+    <!-- Lipsync toggle -->
+    <div class="lipsync-row">
+      <div class="lipsync-info">
+        <span class="lipsync-title">&#x1F444; Lip Sync</span>
+        <span class="lipsync-sub">AI animates lip movement to match every beat of the track</span>
+      </div>
+      <label class="toggle-switch-label" title="Enable AI lip sync">
+        <input type="checkbox" name="enable_lipsync" id="lipsync-toggle" value="on" checked>
+        <span class="toggle-track"><span class="toggle-thumb"></span></span>
+      </label>
+    </div>
+
     <!-- Error message -->
     <div class="upload-error" id="upload-error" style="display:none"></div>
 
@@ -181,7 +193,12 @@
           <span id="pstep-video-label">Generating video</span>
         </div>
 
-        <div class="pstep" id="pstep-4" data-step="4" data-status="completed">
+        <div class="pstep" id="pstep-ls" data-step="4" data-status="lipsyncing">
+          <span class="step-icon si-lips">&#x1F444;</span>
+          Syncing lip movement
+        </div>
+
+        <div class="pstep" id="pstep-4" data-step="5" data-status="completed">
           <span class="step-icon si-zap">&#x26A1;</span>
           Assembling final reel
         </div>
@@ -250,9 +267,18 @@
   21%     { transform: scale(1.3);  filter: brightness(2.1) drop-shadow(0 0 7px rgba(180,94,255,.9)); }
   28%     { transform: scale(1);    filter: brightness(1); }
 }
+/* Lips icon animation — soft scale pulse */
+@keyframes icon-lips {
+  0%,100% { transform: scale(1);    filter: brightness(1); }
+  20%     { transform: scale(1.35); filter: brightness(1.8) drop-shadow(0 0 6px rgba(255,60,172,.7)); }
+  40%     { transform: scale(.92);  filter: brightness(.85); }
+  60%     { transform: scale(1.18); filter: brightness(1.4) drop-shadow(0 0 4px rgba(180,94,255,.6)); }
+  80%     { transform: scale(1);    filter: brightness(1); }
+}
 /* Step icon animation classes — applied by JS */
 .si-anim-sparkle { animation: icon-sparkle 1.6s ease-in-out infinite !important; }
 .si-anim-film    { animation: icon-film    2.4s ease-in-out infinite !important; }
+.si-anim-lips    { animation: icon-lips    1.8s ease-in-out infinite !important; }
 .si-anim-zap     { animation: icon-zap     1.2s ease-out   infinite !important; }
 
 /* ── Big orb per-step animations ─────────────────────────────────────────── */
@@ -398,6 +424,77 @@
   .dur-grid { grid-template-columns: repeat(2, 1fr); }
   .cost-banner { flex-direction: column; align-items: flex-start; gap: 4px; }
   .cost-detail { text-align: left; }
+}
+
+/* ── Lipsync toggle row ──────────────────────────────────────────────────── */
+.lipsync-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  padding: 16px 20px;
+  border-radius: 14px;
+  border: 1.5px solid rgba(180,94,255,0.18);
+  background: rgba(180,94,255,0.06);
+  margin: 4px 0 16px;
+}
+.lipsync-info {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.lipsync-title {
+  font-size: 15px;
+  font-weight: 700;
+  color: #fff;
+  letter-spacing: -.2px;
+}
+.lipsync-sub {
+  font-size: 12px;
+  color: #8a6fc0;
+  line-height: 1.4;
+}
+/* Toggle switch */
+.toggle-switch-label {
+  position: relative;
+  display: inline-block;
+  cursor: pointer;
+  flex-shrink: 0;
+  line-height: 0;
+}
+.toggle-switch-label input {
+  opacity: 0;
+  width: 0;
+  height: 0;
+  position: absolute;
+}
+.toggle-track {
+  display: block;
+  width: 50px;
+  height: 28px;
+  border-radius: 14px;
+  background: rgba(255,255,255,0.1);
+  border: 1.5px solid rgba(255,255,255,0.12);
+  transition: background .25s, border-color .25s;
+  position: relative;
+}
+.toggle-thumb {
+  position: absolute;
+  top: 4px;
+  left: 4px;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: #fff;
+  transition: transform .25s cubic-bezier(.34,1.56,.64,1);
+  box-shadow: 0 1px 6px rgba(0,0,0,.35);
+}
+.toggle-switch-label input:checked + .toggle-track {
+  background: linear-gradient(135deg, #B45EFF, #FF3CAC);
+  border-color: transparent;
+}
+.toggle-switch-label input:checked + .toggle-track .toggle-thumb {
+  transform: translateX(22px);
 }
 </style>
 {% endblock %}
@@ -610,6 +707,7 @@ document.getElementById('upload-form').addEventListener('submit', async e => {
   fd.append('aspect_ratio',      document.querySelector('[name="aspect_ratio"]:checked').value);
   fd.append('video_duration',    document.getElementById('video-duration-input').value);
   fd.append('audio_duration_sec', document.getElementById('audio-duration-sec-input').value);
+  fd.append('enable_lipsync',    _lipsyncOn() ? 'on' : 'off');
 
   try {
     const ctrl  = new AbortController();
@@ -646,28 +744,47 @@ document.getElementById('upload-form').addEventListener('submit', async e => {
 
 // ── Status polling ──
 const STATUS_COPY = {
-  queued:     ['Queued…',           'Waiting for a generation slot'],
-  analyzing:  ['Analyzing audio…',  'Detecting BPM, energy peaks, and structure'],
-  generating: ['Writing scene…',    'Claude AI is designing your video prompt'],
-  processing: ['Generating video…', 'AI is building your reel'],
-  completed:  ['Done! 🎉',          'Your reel is ready'],
-  failed:     ['Generation failed', 'Something went wrong'],
+  queued:     ['Queued…',            'Waiting for a generation slot'],
+  analyzing:  ['Analyzing audio…',   'Detecting BPM, energy peaks, and structure'],
+  generating: ['Writing scene…',     'Claude AI is designing your video prompt'],
+  processing: ['Generating video…',  'AI is building your reel frame by frame'],
+  lipsyncing: ['Syncing lips…',      'AI is animating lip movement to match your track'],
+  completed:  ['Done! 🎉',           'Your reel is ready'],
+  failed:     ['Generation failed',  'Something went wrong'],
 };
 
-const STATUS_STEP = { analyzing: 1, generating: 2, processing: 3, completed: 4 };
+// Step numbers change based on lipsync toggle:
+//   lipsync ON  → 5 steps (lipsyncing = step 4, completed = step 5)
+//   lipsync OFF → 4 steps (completed = step 4, lipsync step hidden)
+const _lipsyncOn = () => document.getElementById('lipsync-toggle').checked;
 
-// Per-step animation config
+function _getStatusStep(status) {
+  if (_lipsyncOn()) {
+    return { analyzing: 1, generating: 2, processing: 3, lipsyncing: 4, completed: 5 }[status] || 0;
+  }
+  return { analyzing: 1, generating: 2, processing: 3, completed: 4 }[status] || 0;
+}
+
+// Toggle lipsync step visibility when user flips the switch
+document.getElementById('lipsync-toggle').addEventListener('change', () => {
+  document.getElementById('pstep-ls').style.display = _lipsyncOn() ? '' : 'none';
+});
+// Initial state
+document.getElementById('pstep-ls').style.display = _lipsyncOn() ? '' : 'none';
+
+// Per-step animation config (step 4 = lipsync when on, step 5 = assemble)
 const STEP_CONFIG = {
-  1: { iconAnim: null,             orbAnim: 'orb-audio' },
-  2: { iconAnim: 'si-anim-sparkle', orbAnim: 'orb-scene' },
-  3: { iconAnim: 'si-anim-film',    orbAnim: 'orb-video' },
-  4: { iconAnim: 'si-anim-zap',     orbAnim: 'orb-assemble' },
+  1: { iconAnim: null,              orbAnim: 'orb-audio'   },
+  2: { iconAnim: 'si-anim-sparkle', orbAnim: 'orb-scene'   },
+  3: { iconAnim: 'si-anim-film',    orbAnim: 'orb-video'   },
+  4: { iconAnim: 'si-anim-lips',    orbAnim: 'orb-video'   },  // lipsync step
+  5: { iconAnim: 'si-anim-zap',     orbAnim: 'orb-assemble'},
 };
-const ALL_ICON_ANIMS = ['si-anim-sparkle', 'si-anim-film', 'si-anim-zap'];
+const ALL_ICON_ANIMS = ['si-anim-sparkle', 'si-anim-film', 'si-anim-lips', 'si-anim-zap'];
 const ALL_ORB_ANIMS  = ['orb-audio', 'orb-scene', 'orb-video', 'orb-assemble'];
 
 function setStep(status) {
-  const stepNum = STATUS_STEP[status] || 0;
+  const stepNum = _getStatusStep(status);
   const cfg     = STEP_CONFIG[stepNum];
 
   // ── Big orb — inline style overrides everything in main.css ──
