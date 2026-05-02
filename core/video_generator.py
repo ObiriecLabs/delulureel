@@ -158,6 +158,36 @@ def fal_result(endpoint: str, request_id: str) -> Dict:
     raise RuntimeError(f'fal.ai result unreachable for {request_id}: {last_err}')
 
 
+# ── Non-blocking status check ────────────────────────────────────────────────
+
+def fal_status_check(endpoint: str, request_id: str) -> Dict:
+    """
+    Single non-blocking status check for a queued fal.ai job.
+    Returns {'status': 'IN_QUEUE'|'IN_PROGRESS'|'COMPLETED'|'FAILED', 'url': str|None}.
+    On COMPLETED, fetches the result URL via fal_result().
+    Never raises — returns IN_QUEUE on any error.
+    """
+    status_urls = [
+        (f'{FAL_QUEUE_BASE}/{endpoint}/requests/{request_id}/status', 30),
+        (f'{FAL_QUEUE_BASE}/requests/{request_id}/status',            30),
+    ]
+    for url, timeout in status_urls:
+        try:
+            resp = _req.get(url, headers=_headers_get(), timeout=timeout)
+            if resp.status_code == 405:
+                continue
+            resp.raise_for_status()
+            st = resp.json().get('status', 'IN_QUEUE')
+            if st == 'COMPLETED':
+                result  = fal_result(endpoint, request_id)
+                vid_url = (result.get('video') or {}).get('url') or result.get('video_url', '')
+                return {'status': 'COMPLETED', 'url': vid_url}
+            return {'status': st, 'url': None}
+        except Exception:
+            continue
+    return {'status': 'IN_QUEUE', 'url': None}
+
+
 # ── Lyrics transcription ──────────────────────────────────────────────────────
 
 def transcribe_audio_fal(audio_url: str) -> Optional[str]:

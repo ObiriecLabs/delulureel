@@ -239,6 +239,37 @@
 
 </div>
 
+<!-- ── Interactive flow modals ──────────────────────────────────────────── -->
+<div class="ipr-overlay" id="ipr-modal" style="display:none">
+  <div class="ipr-box">
+    <div class="ipr-header">
+      <h2 class="ipr-title">✨ Revisiona i prompt</h2>
+      <p class="ipr-sub">Claude ha generato questi prompt per le tue clip. Modificali prima di avviare la generazione video.</p>
+    </div>
+    <div class="ipr-prompt-list" id="ipr-prompt-list"></div>
+    <div class="ipr-actions">
+      <button class="btn btn-primary" id="ipr-confirm-btn">Genera video →</button>
+      <button class="btn-ghost-sm" id="ipr-cancel-btn">Annulla</button>
+    </div>
+  </div>
+</div>
+<div class="ipr-overlay" id="icm-modal" style="display:none">
+  <div class="ipr-box icm-box">
+    <div class="ipr-header">
+      <h2 class="ipr-title" id="icm-title">Anteprima clip</h2>
+      <p class="ipr-sub" id="icm-sub"></p>
+    </div>
+    <div class="icm-video-wrap">
+      <video id="icm-video" controls playsinline loop></video>
+    </div>
+    <div class="ipr-actions icm-actions">
+      <button class="btn btn-primary" id="icm-continue-btn" data-idx="0">Continua →</button>
+      <button class="btn-ghost-sm btn-amber" id="icm-regen-btn" data-idx="0">↺ Rigenera</button>
+      <button class="btn-ghost-sm" id="icm-abort-btn">Annulla tutto</button>
+    </div>
+  </div>
+</div>
+
 <style>
 /* ══ Per-step orb graphics ═══════════════════════════════════════════════ */
 
@@ -753,6 +784,73 @@
 .toggle-switch-label input:checked + .toggle-track .toggle-thumb {
   transform: translateX(22px);
 }
+
+/* ── Interactive flow modals ──────────────────────────────────────────────── */
+.ipr-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 9000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(4,2,14,.88);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  padding: 16px;
+}
+.ipr-box {
+  background: linear-gradient(145deg,rgba(20,12,40,.98) 0%,rgba(10,6,28,.98) 100%);
+  border: 1.5px solid rgba(180,94,255,.28);
+  border-radius: 22px;
+  padding: 28px 28px 24px;
+  width: 100%;
+  max-width: 600px;
+  max-height: 90vh;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  box-shadow: 0 24px 80px rgba(0,0,0,.7),0 0 0 1px rgba(180,94,255,.08);
+}
+.icm-box { max-width: 480px; }
+.ipr-header { display:flex; flex-direction:column; gap:6px; }
+.ipr-title  { font-size:20px; font-weight:800; color:#fff; letter-spacing:-.4px; margin:0; }
+.ipr-sub    { font-size:13px; color:#8a6fc0; line-height:1.55; margin:0; }
+.ipr-prompt-list { display:flex; flex-direction:column; gap:14px; }
+.ipr-prompt-item { display:flex; flex-direction:column; gap:6px; }
+.ipr-clip-label  { font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.5px; color:#B45EFF; }
+.ipr-ta {
+  width:100%; box-sizing:border-box;
+  background:rgba(255,255,255,.04);
+  border:1.5px solid rgba(255,255,255,.1);
+  border-radius:12px; color:#e8e0f5;
+  font-size:13px; line-height:1.65;
+  padding:12px 14px; resize:vertical;
+  min-height:90px; font-family:inherit;
+  transition:border-color .2s,background .2s;
+}
+.ipr-ta:focus { outline:none; border-color:rgba(180,94,255,.55); background:rgba(180,94,255,.05); }
+.ipr-actions { display:flex; align-items:center; gap:12px; flex-wrap:wrap; }
+.btn-ghost-sm {
+  background:transparent;
+  border:1.5px solid rgba(255,255,255,.14);
+  color:#a090c0; border-radius:10px;
+  padding:9px 18px; font-size:13px;
+  font-weight:600; cursor:pointer;
+  transition:border-color .2s,color .2s,background .2s;
+  font-family:inherit;
+}
+.btn-ghost-sm:hover { border-color:rgba(255,255,255,.28); color:#fff; background:rgba(255,255,255,.05); }
+.btn-amber { border-color:rgba(255,160,0,.35); color:#ffa000; }
+.btn-amber:hover { border-color:rgba(255,160,0,.7); color:#ffb300; background:rgba(255,160,0,.07); }
+.icm-video-wrap { border-radius:14px; overflow:hidden; background:#000; line-height:0; }
+.icm-video-wrap video { width:100%; max-height:55vh; object-fit:contain; display:block; }
+.icm-actions { justify-content:center; }
+@media (max-width:520px) {
+  .ipr-box { padding:20px 16px 18px; border-radius:18px; }
+  .ipr-actions { flex-direction:column; align-items:stretch; }
+  .ipr-actions .btn,.ipr-actions .btn-ghost-sm { width:100%; text-align:center; }
+}
 </style>
 {% endblock %}
 
@@ -979,7 +1077,15 @@ document.querySelectorAll('.ar-btn input').forEach(inp => {
 });
 document.querySelector('.ar-btn input[checked]')?.closest('.ar-btn')?.classList.add('active');
 
-// ── Submit ──
+// ── Interactive state ──
+let _iJobId       = null;
+let _iPrompts     = [];
+let _iNClips      = 1;
+let _iCurrentClip = 0;
+let _iLastFrameUrl = null;
+let _iPollTimer   = null;
+
+// ── Submit → /video/generate/prompts ──
 document.getElementById('upload-form').addEventListener('submit', async e => {
   e.preventDefault();
   const btn = document.getElementById('generate-btn');
@@ -995,19 +1101,19 @@ document.getElementById('upload-form').addEventListener('submit', async e => {
     clips > 1 ? I18N.generatingClips.replace('{n}', clips) : I18N.generatingVideo;
 
   document.getElementById('progress-overlay').style.display = 'flex';
-  setStep('queued');
+  setStep('analyzing');
 
   const fd = new FormData();
-  fd.append('photo',             _files.photo);
-  fd.append('audio',             _files.audio);
-  fd.append('style',             document.getElementById('style-input').value);
-  fd.append('aspect_ratio',      document.querySelector('[name="aspect_ratio"]:checked').value);
-  fd.append('video_duration',    document.getElementById('video-duration-input').value);
+  fd.append('photo',              _files.photo);
+  fd.append('audio',              _files.audio);
+  fd.append('style',              document.getElementById('style-input').value);
+  fd.append('aspect_ratio',       document.querySelector('[name="aspect_ratio"]:checked').value);
+  fd.append('video_duration',     document.getElementById('video-duration-input').value);
   fd.append('audio_duration_sec', document.getElementById('audio-duration-sec-input').value);
-  fd.append('enable_lipsync',    _lipsyncOn() ? 'on' : 'off');
+  fd.append('enable_lipsync',     _lipsyncOn() ? 'on' : 'off');
   fd.append('custom_prompt',
     _promptMode === 'custom'
-      ? (document.getElementById('custom-prompt-input').value.trim())
+      ? document.getElementById('custom-prompt-input').value.trim()
       : ''
   );
 
@@ -1016,7 +1122,7 @@ document.getElementById('upload-form').addEventListener('submit', async e => {
     const timer = setTimeout(() => ctrl.abort(), 300000);
     let res, data;
     try {
-      res  = await fetch('/video/generate', { method: 'POST', body: fd, signal: ctrl.signal });
+      res  = await fetch('/video/generate/prompts', { method: 'POST', body: fd, signal: ctrl.signal });
       data = await res.json();
     } catch (fetchErr) {
       const msg = fetchErr.name === 'AbortError' ? I18N.errTimeout : I18N.errNetwork;
@@ -1028,13 +1134,14 @@ document.getElementById('upload-form').addEventListener('submit', async e => {
     if (res.status === 401) { window.location.href = '/auth/login'; return; }
     if (!res.ok) throw new Error(data.error || I18N.errGenFailed);
 
-    pollStatus(data.job_id);
+    _iJobId = data.job_id;
+    _pollForPrompts();
   } catch (ex) {
     document.getElementById('progress-overlay').style.display = 'none';
-    err.textContent = ex.message;
+    err.textContent   = ex.message;
     err.style.display = 'block';
-    btn.disabled = false;
-    btn.textContent = I18N.generateBtn;
+    btn.disabled      = false;
+    btn.textContent   = I18N.generateBtn;
   }
 });
 
@@ -1046,16 +1153,17 @@ const STATUS_COPY = {
   processing: [{{ t('upload.status_processing_title') | tojson }}, {{ t('upload.status_processing_sub') | tojson }}],
   lipsyncing: [{{ t('upload.status_lipsyncing_title') | tojson }}, {{ t('upload.status_lipsyncing_sub') | tojson }}],
   completed:  [{{ t('upload.status_done_title')       | tojson }}, {{ t('upload.status_done_sub')       | tojson }}],
-  failed:     [{{ t('upload.status_failed_title')     | tojson }}, {{ t('upload.status_failed_sub')     | tojson }}],
+  failed:       [{{ t('upload.status_failed_title')     | tojson }}, {{ t('upload.status_failed_sub')     | tojson }}],
+  prompt_ready: [{{ t('upload.status_analyzing_title')  | tojson }}, {{ t('upload.status_analyzing_sub')  | tojson }}],
 };
 
 const _lipsyncOn = () => document.getElementById('lipsync-toggle').checked;
 
 function _getStatusStep(status) {
   if (_lipsyncOn()) {
-    return { analyzing: 1, generating: 2, processing: 3, lipsyncing: 4, completed: 5 }[status] || 0;
+    return { analyzing:1, prompt_ready:1, generating:2, processing:3, lipsyncing:4, completed:5 }[status] || 0;
   }
-  return { analyzing: 1, generating: 2, processing: 3, completed: 4 }[status] || 0;
+  return { analyzing:1, prompt_ready:1, generating:2, processing:3, completed:4 }[status] || 0;
 }
 
 document.getElementById('lipsync-toggle').addEventListener('change', () => {
@@ -1105,7 +1213,7 @@ const STEP_CONFIG = {
 };
 const ALL_ICON_ANIMS = ['si-anim-sparkle', 'si-anim-film', 'si-anim-lips', 'si-anim-zap'];
 
-function setStep(status) {
+function setStep(status, titleOverride, subOverride) {
   const stepNum = _getStatusStep(status);
   const cfg     = STEP_CONFIG[stepNum];
 
@@ -1144,44 +1252,240 @@ function setStep(status) {
     }
   });
 
-  const [title, sub] = STATUS_COPY[status] || [I18N.working, ''];
-  document.getElementById('progress-title').textContent = title;
-  document.getElementById('progress-sub').textContent   = sub;
+  const [defTitle, defSub] = STATUS_COPY[status] || [I18N.working, ''];
+  document.getElementById('progress-title').textContent = titleOverride ?? defTitle;
+  document.getElementById('progress-sub').textContent   = subOverride   ?? defSub;
 }
 
 function _resetForm(errMsg) {
+  if (_iPollTimer) { clearInterval(_iPollTimer); _iPollTimer = null; }
+  _iJobId = null;
   document.getElementById('progress-overlay').style.display = 'none';
   const err = document.getElementById('upload-error');
-  err.textContent = errMsg;
-  err.style.display = 'block';
-  document.getElementById('generate-btn').disabled = false;
+  err.textContent   = errMsg;
+  err.style.display = errMsg ? 'block' : 'none';
+  document.getElementById('generate-btn').disabled    = false;
   document.getElementById('generate-btn').textContent = I18N.generateBtn;
 }
 
-async function pollStatus(jobId) {
-  setStep('queued');
+// ── Poll /video/prompts/<job_id> until Claude is done generating prompts ──
+function _pollForPrompts() {
+  setStep('analyzing');
   let polls = 0;
-  const MAX_POLLS = 90;
-  const interval = setInterval(async () => {
+  _iPollTimer = setInterval(async () => {
     polls++;
-    if (polls > MAX_POLLS) {
-      clearInterval(interval);
-      window.location.href = `/result/${jobId}`;
+    if (polls > 120) {
+      clearInterval(_iPollTimer);
+      _resetForm(I18N.errTimeout);
       return;
     }
     try {
-      const res  = await fetch(`/video/status/${jobId}`);
+      const res  = await fetch(`/video/prompts/${_iJobId}`);
+      const data = await res.json();
+      if (data.status === 'ready') {
+        clearInterval(_iPollTimer);
+        _iPrompts  = data.prompts;
+        _iNClips   = data.n_clips;
+        document.getElementById('progress-overlay').style.display = 'none';
+        _showPromptModal();
+      } else if (data.status === 'failed') {
+        clearInterval(_iPollTimer);
+        _resetForm(I18N.errGenFailed);
+      }
+    } catch (ex) { /* keep polling */ }
+  }, 5000);
+}
+
+// ── Prompt preview/edit modal ──
+function _showPromptModal() {
+  const list = document.getElementById('ipr-prompt-list');
+  list.innerHTML = '';
+  _iPrompts.forEach((p, i) => {
+    const item = document.createElement('div');
+    item.className = 'ipr-prompt-item';
+    const label = document.createElement('div');
+    label.className = 'ipr-clip-label';
+    label.textContent = _iNClips > 1 ? `Clip ${i + 1} / ${_iNClips}` : 'Scene prompt';
+    const ta = document.createElement('textarea');
+    ta.className = 'ipr-ta';
+    ta.id        = `ipr-ta-${i}`;
+    ta.value     = p;
+    ta.rows      = 5;
+    item.appendChild(label);
+    item.appendChild(ta);
+    list.appendChild(item);
+  });
+  document.getElementById('ipr-modal').style.display = 'flex';
+}
+
+document.getElementById('ipr-confirm-btn').addEventListener('click', () => {
+  _iPrompts = _iPrompts.map((_, i) => {
+    const ta = document.getElementById(`ipr-ta-${i}`);
+    return ta ? ta.value.trim() || _iPrompts[i] : _iPrompts[i];
+  });
+  document.getElementById('ipr-modal').style.display = 'none';
+  _iCurrentClip  = 0;
+  _iLastFrameUrl = null;
+  _startClip(0);
+});
+
+document.getElementById('ipr-cancel-btn').addEventListener('click', () => {
+  document.getElementById('ipr-modal').style.display = 'none';
+  _resetForm('');
+});
+
+// ── Submit one clip, then poll ──
+async function _startClip(idx) {
+  document.getElementById('progress-overlay').style.display = 'flex';
+  setStep('generating',
+    _iNClips > 1 ? `Generazione clip ${idx + 1} / ${_iNClips}…` : null,
+    null
+  );
+  try {
+    const res  = await fetch('/video/clip/submit', {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body:    JSON.stringify({
+        job_id:    _iJobId,
+        clip_idx:  idx,
+        prompt:    _iPrompts[idx],
+        photo_url: _iLastFrameUrl || null,
+      }),
+    });
+    const data = await res.json();
+    if (res.status === 401) { window.location.href = '/auth/login'; return; }
+    if (!res.ok) { _resetForm(data.error || I18N.errGenFailed); return; }
+    _pollClip(idx);
+  } catch (ex) {
+    _resetForm(I18N.errNetwork);
+  }
+}
+
+// ── Poll /video/clip/status/<job_id>/<idx> ──
+function _pollClip(idx) {
+  let polls = 0;
+  _iPollTimer = setInterval(async () => {
+    polls++;
+    if (polls > 180) {
+      clearInterval(_iPollTimer);
+      _resetForm(I18N.errTimeout);
+      return;
+    }
+    try {
+      const res  = await fetch(`/video/clip/status/${_iJobId}/${idx}`);
+      const data = await res.json();
+      if (data.status === 'completed' && data.clip_url) {
+        clearInterval(_iPollTimer);
+        document.getElementById('progress-overlay').style.display = 'none';
+        _showClipModal(idx, data.clip_url);
+      } else if (data.status === 'failed') {
+        clearInterval(_iPollTimer);
+        _resetForm(I18N.errGenFailed);
+      }
+    } catch (ex) { /* keep polling */ }
+  }, 5000);
+}
+
+// ── Clip preview modal ──
+function _showClipModal(idx, videoUrl) {
+  const vid = document.getElementById('icm-video');
+  vid.src = videoUrl;
+  vid.play().catch(() => {});
+
+  const isLast = (idx >= _iNClips - 1);
+  document.getElementById('icm-title').textContent =
+    _iNClips > 1 ? `Clip ${idx + 1} / ${_iNClips}` : 'Anteprima clip';
+  document.getElementById('icm-sub').textContent =
+    _iNClips > 1 && !isLast
+      ? 'Soddisfatto? Continua con la clip successiva, oppure rigenera questa.'
+      : _iNClips > 1
+      ? 'Ultima clip! Continua per assemblare il tuo reel.'
+      : 'Clip generata! Continua per assemblare il reel.';
+
+  document.getElementById('icm-continue-btn').dataset.idx = idx;
+  document.getElementById('icm-regen-btn').dataset.idx    = idx;
+  document.getElementById('icm-modal').style.display = 'flex';
+}
+
+// Continua → extract last frame, advance to next clip or assemble
+document.getElementById('icm-continue-btn').addEventListener('click', async function () {
+  const idx    = parseInt(this.dataset.idx, 10);
+  const isLast = (idx >= _iNClips - 1);
+  const vid    = document.getElementById('icm-video');
+  vid.pause(); vid.src = '';
+  document.getElementById('icm-modal').style.display = 'none';
+
+  if (!isLast) {
+    document.getElementById('progress-overlay').style.display = 'flex';
+    setStep('processing', 'Estrazione frame…', null);
+    try {
+      const res  = await fetch(`/video/clip/last-frame/${_iJobId}/${idx}`, { method: 'POST' });
+      const data = await res.json();
+      _iLastFrameUrl = (res.ok && data.frame_url) ? data.frame_url : null;
+    } catch (ex) {
+      _iLastFrameUrl = null;
+    }
+    _startClip(idx + 1);
+  } else {
+    _triggerAssembly();
+  }
+});
+
+// Rigenera → re-submit same clip
+document.getElementById('icm-regen-btn').addEventListener('click', function () {
+  const idx = parseInt(this.dataset.idx, 10);
+  const vid = document.getElementById('icm-video');
+  vid.pause(); vid.src = '';
+  document.getElementById('icm-modal').style.display = 'none';
+  _startClip(idx);
+});
+
+// Annulla tutto
+document.getElementById('icm-abort-btn').addEventListener('click', () => {
+  const vid = document.getElementById('icm-video');
+  vid.pause(); vid.src = '';
+  document.getElementById('icm-modal').style.display = 'none';
+  _resetForm('');
+});
+
+// ── Trigger final assembly ──
+async function _triggerAssembly() {
+  document.getElementById('progress-overlay').style.display = 'flex';
+  setStep('processing', 'Assemblaggio reel…', null);
+  try {
+    const res  = await fetch(`/video/assemble/${_iJobId}`, { method: 'POST' });
+    const data = await res.json();
+    if (!res.ok) { _resetForm(data.error || I18N.errGenFailed); return; }
+    _pollFinal();
+  } catch (ex) {
+    _resetForm(I18N.errNetwork);
+  }
+}
+
+// ── Poll job status until completed/failed (assembly + lipsync phase) ──
+function _pollFinal() {
+  setStep('processing');
+  let polls = 0;
+  _iPollTimer = setInterval(async () => {
+    polls++;
+    if (polls > 360) {
+      clearInterval(_iPollTimer);
+      window.location.href = `/result/${_iJobId}`;
+      return;
+    }
+    try {
+      const res  = await fetch(`/video/status/${_iJobId}`);
       const data = await res.json();
       setStep(data.status);
       if (data.status === 'completed') {
-        clearInterval(interval);
-        window.location.href = `/result/${jobId}`;
+        clearInterval(_iPollTimer);
+        window.location.href = `/result/${_iJobId}`;
       }
       if (data.status === 'failed') {
-        clearInterval(interval);
+        clearInterval(_iPollTimer);
         _resetForm(data.error_message || I18N.errGenFailed);
       }
-    } catch (ex) { /* network hiccup, keep polling */ }
+    } catch (ex) { /* keep polling */ }
   }, 8000);
 }
 </script>

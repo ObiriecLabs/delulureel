@@ -181,3 +181,13 @@ ALTER TABLE reel_jobs ADD COLUMN IF NOT EXISTS credits_used INT DEFAULT 0;
 DROP FUNCTION IF EXISTS increment_reel_count(UUID);
 -- (new functions deduct_credits and reset_monthly_credits are created above)
 */
+
+-- ── MIGRATION: interactive clip-by-clip flow (2026-05-02) ────────────────────
+-- Run once in Supabase SQL editor:
+ALTER TABLE reel_jobs ADD COLUMN IF NOT EXISTS interactive       BOOLEAN DEFAULT FALSE;
+ALTER TABLE reel_jobs ADD COLUMN IF NOT EXISTS prompts           JSONB   DEFAULT NULL;
+ALTER TABLE reel_jobs ADD COLUMN IF NOT EXISTS clip_submissions  JSONB   DEFAULT '{}';
+ALTER TABLE reel_jobs ADD COLUMN IF NOT EXISTS photo_url         TEXT    DEFAULT NULL;
+
+-- status column comment update: includes new 'prompt_ready' status
+-- queued | analyzing | prompt_ready | generating | processing | lipsyncing | completed | failed

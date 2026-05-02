@@ -13,7 +13,7 @@ from supabase import create_client, ClientOptions
 
 from core.video_generator import (
     submit_reel,
-    fal_result, transcribe_audio_fal,
+    fal_result, fal_status_check, transcribe_audio_fal,
     estimate_cost, endpoint_for_duration, n_clips_for_duration,
     CLIP_LEN_MULTI, MAX_AUDIO_SEC,
     ENDPOINT_PRO, ENDPOINT_TURBO,
@@ -118,7 +118,7 @@ def _startup_recovery():
 
         result = sb.table('reel_jobs').select(
             'id,user_id,fal_request_id,fal_endpoint,aspect_ratio,estimated_cost,'
-            'enable_lipsync,target_secs_requested,clip_results,n_clips_expected,bpm,created_at'
+            'enable_lipsync,target_secs_requested,clip_results,n_clips_expected,bpm,created_at,interactive'
         ).in_('status', ['processing', 'queued', 'analyzing', 'generating', 'lipsyncing']).lt('created_at', cutoff).execute()
 
         rows = result.data or []
@@ -133,6 +133,19 @@ def _startup_recovery():
             endpoint = (job.get('fal_endpoint') or 'fal-ai/kling-video/v2.6/pro/image-to-video')
             job_id   = job['id']
             user_id  = job['user_id']
+
+            # Interactive jobs are user-controlled — skip auto-recovery.
+            # Age out very stale ones (> 2 h) so they don't clog the status list.
+            if job.get('interactive'):
+                created_str = job.get('created_at', '')
+                try:
+                    created_dt = datetime.fromisoformat(created_str.replace('Z', '+00:00'))
+                    age_h = (datetime.now(timezone.utc) - created_dt).total_seconds() / 3600
+                except Exception:
+                    age_h = 0
+                if age_h > 2:
+                    failed_ids.append(job_id)
+                continue
 
             # Multi-clip job — check if all clips arrived while the instance was down
             if req_id.startswith('multi:'):
@@ -1210,6 +1223,508 @@ def _run_assembly(job_id: str, clip_urls: list, job_data: dict):
             shutil.rmtree(tmp, ignore_errors=True)
         except Exception:
             pass
+
+
+# ── Interactive flow: generate prompts only (Step 1) ─────────────────────────
+
+@video_bp.route('/generate/prompts', methods=['POST'])
+@require_auth_api
+def generate_prompts():
+    """
+    Interactive flow Step 1: upload files, analyze audio, generate Claude prompts.
+    Returns job_id immediately; background thread updates prompts/photo_url in DB.
+    Frontend polls GET /video/prompts/<job_id> until status='prompt_ready'.
+    """
+    import time as _time
+    _t0 = _time.time()
+    global _global_active
+    user_id = request.current_user.id
+
+    try:
+        _db_check = _sb_service().table('reel_jobs').select('id').eq(
+            'user_id', user_id
+        ).in_('status', ['queued', 'analyzing', 'prompt_ready', 'generating', 'processing', 'lipsyncing']).limit(1).execute()
+        if _db_check.data:
+            return jsonify({'error': 'You already have a generation in progress.'}), 429
+    except Exception as _e:
+        print(f'[gen_prompts] DB lock check failed: {_e}')
+
+    with _lock:
+        if user_id in _active_user_jobs:
+            return jsonify({'error': 'You already have a generation in progress.'}), 429
+        if _global_active >= MAX_CONCURRENT_GLOBAL:
+            return jsonify({'error': 'Service at capacity. Please try again in a few minutes.'}), 429
+        _active_user_jobs[user_id] = '__pending__'
+        _global_active += 1
+
+    _thread_started = False
+    tmp_dir = None
+    try:
+        sb = _sb_service()
+        try:
+            prof = sb.table('profiles').select('*').eq('user_id', user_id).single().execute().data
+        except Exception:
+            return jsonify({'error': 'Profile not found.'}), 404
+
+        admin = bool(prof.get('is_admin', False))
+        if not admin:
+            if prof.get('status') == 'suspended':
+                return jsonify({'error': 'Account suspended.'}), 403
+            if prof.get('status') in ('cancelled', 'inactive'):
+                return jsonify({'error': 'No active subscription.'}), 403
+            if prof.get('status') == 'trial' and prof.get('trial_credits_used', 0) >= TRIAL_MAX_CREDITS:
+                return jsonify({'error': f'Trial credits exhausted ({TRIAL_MAX_CREDITS} credits).'}), 403
+            if prof.get('credits_used_this_month', 0) >= prof.get('credits_limit', 10):
+                return jsonify({'error': 'Monthly credits exhausted.'}), 403
+
+        photo = request.files.get('photo')
+        audio = request.files.get('audio')
+        if not photo or not audio:
+            return jsonify({'error': 'photo and audio files are required'}), 400
+
+        style        = (request.form.get('style', 'cinematic') or 'cinematic').lower()
+        aspect_ratio = request.form.get('aspect_ratio', '9:16') or '9:16'
+        if aspect_ratio not in ('9:16', '16:9', '1:1'):
+            aspect_ratio = '9:16'
+        enable_lipsync = request.form.get('enable_lipsync', 'off').lower() in ('on', '1', 'true', 'yes')
+        custom_prompt  = (request.form.get('custom_prompt', '') or '').strip()[:900]
+
+        video_duration = (request.form.get('video_duration', '10') or '10').strip()
+        try:
+            audio_dur_sec = max(0.0, float(request.form.get('audio_duration_sec', '0') or '0'))
+        except ValueError:
+            audio_dur_sec = 0.0
+
+        if video_duration == 'full':
+            target_secs = max(5, min(round(audio_dur_sec), MAX_AUDIO_SEC)) if audio_dur_sec > 0 else 10
+        elif video_duration in ('5', '10', '30'):
+            target_secs = int(video_duration)
+        else:
+            target_secs = 10
+
+        n_clips        = n_clips_for_duration(target_secs) if target_secs > 10 else 1
+        est_cost       = estimate_cost(target_secs, endpoint_for_duration(target_secs))
+        credits_needed = _credits_for_duration(target_secs)
+
+        if not admin:
+            if prof.get('status') == 'trial':
+                if prof.get('trial_credits_used', 0) + credits_needed > TRIAL_MAX_CREDITS:
+                    return jsonify({'error': f'This reel requires {credits_needed} credits but your trial only has {TRIAL_MAX_CREDITS - prof.get("trial_credits_used", 0)} left.'}), 403
+            if prof.get('credits_used_this_month', 0) + credits_needed > prof.get('credits_limit', 10):
+                remaining = prof.get('credits_limit', 10) - prof.get('credits_used_this_month', 0)
+                return jsonify({'error': f'This reel requires {credits_needed} credits but you only have {remaining} left.'}), 403
+
+        if not _budget_ok(est_cost):
+            return jsonify({'error': 'Service temporarily unavailable (daily budget reached).'}), 503
+
+        tmp_dir    = tempfile.mkdtemp(prefix='dlr_ipr_')
+        ext_photo  = (photo.filename or 'photo.jpg').rsplit('.', 1)[-1].lower() or 'jpg'
+        ext_audio  = (audio.filename or 'audio.mp3').rsplit('.', 1)[-1].lower() or 'mp3'
+        photo_path = os.path.join(tmp_dir, f'photo.{ext_photo}')
+        audio_path = os.path.join(tmp_dir, f'audio.{ext_audio}')
+        photo.save(photo_path)
+        audio.save(audio_path)
+
+        job_id = str(uuid.uuid4())
+        sb.table('reel_jobs').insert({
+            'id':                    job_id,
+            'user_id':               user_id,
+            'status':                'analyzing',
+            'style':                 style,
+            'aspect_ratio':          aspect_ratio,
+            'estimated_cost':        est_cost,
+            'enable_lipsync':        enable_lipsync,
+            'target_secs_requested': int(target_secs),
+            'n_clips_expected':      n_clips,
+            'interactive':           True,
+            'clip_results':          {},
+            'clip_submissions':      {},
+        }).execute()
+
+        with _lock:
+            _active_user_jobs[user_id] = job_id
+
+        thread = threading.Thread(
+            target=_run_prompt_generation,
+            args=(job_id, user_id, photo_path, audio_path, style, aspect_ratio,
+                  tmp_dir, target_secs, n_clips, ext_audio, custom_prompt),
+            kwargs={'is_admin': admin},
+            daemon=True,
+        )
+        thread.start()
+        _thread_started = True
+
+        return jsonify({'job_id': job_id})
+
+    finally:
+        if not _thread_started:
+            with _lock:
+                _active_user_jobs.pop(user_id, None)
+                _global_active = max(0, _global_active - 1)
+            if tmp_dir:
+                shutil.rmtree(tmp_dir, ignore_errors=True)
+
+
+def _run_prompt_generation(job_id, user_id, photo_path, audio_path, style,
+                           aspect_ratio, tmp_dir, target_secs, n_clips,
+                           ext_audio, custom_prompt='', is_admin=False):
+    """
+    Interactive flow Phase 1: analyze audio, whisper, generate N Claude prompts.
+    Uploads audio + photo to Supabase. Saves prompts + photo_url in DB.
+    Releases the global slot immediately — user controls clip submission.
+    """
+    global _global_active
+    _jid = job_id[:8]
+    sb   = _sb_service()
+
+    def update(status, **kw):
+        sb.table('reel_jobs').update({'status': status, **kw}).eq('id', job_id).execute()
+
+    try:
+        # 1 — Audio analysis
+        analysis = analyze_audio(audio_path)
+        gc.collect()
+        print(f'[promptgen/{_jid}] BPM={analysis["bpm"]:.0f}', flush=True)
+
+        # 2 — Upload audio → signed URL for Whisper
+        audio_key = f'jobs/{job_id}/audio.{ext_audio}'
+        with open(audio_path, 'rb') as fh:
+            sb.storage.from_('reel-uploads').upload(
+                audio_key, fh,
+                file_options={'content-type': f'audio/{ext_audio}'},
+            )
+        sig_a = sb.storage.from_('reel-uploads').create_signed_url(audio_key, 7200)
+        audio_signed_url = sig_a.get('signedURL') or sig_a.get('signedUrl') or ''
+
+        # 3 — Whisper transcription (graceful degradation)
+        lyrics = None
+        if not custom_prompt and audio_signed_url:
+            print(f'[promptgen/{_jid}] whisper START', flush=True)
+            lyrics = transcribe_audio_fal(audio_signed_url)
+            print(f'[promptgen/{_jid}] whisper {"DONE " + str(len(lyrics)) + " chars" if lyrics else "instrumental"}', flush=True)
+
+        # 4 — Upload photo → signed URL (stored as photo_url for clip 0)
+        ext_photo = (photo_path.rsplit('.', 1)[-1].lower()) or 'jpg'
+        photo_key = f'jobs/{job_id}/source.{ext_photo}'
+        with open(photo_path, 'rb') as fh:
+            sb.storage.from_('reel-uploads').upload(
+                photo_key, fh.read(),
+                file_options={'content-type': f'image/{ext_photo}'},
+            )
+        sig_p = sb.storage.from_('reel-uploads').create_signed_url(photo_key, 7200)
+        photo_url = sig_p.get('signedURL') or sig_p.get('signedUrl') or ''
+        if not photo_url:
+            raise RuntimeError(f'Could not sign photo URL: {sig_p}')
+
+        # 5 — Generate N prompts with per-clip shot variation
+        print(f'[promptgen/{_jid}] generating {n_clips} prompt(s)', flush=True)
+        if custom_prompt:
+            prompts = [custom_prompt] * n_clips
+        else:
+            prompts = [
+                generate_scene_prompt(
+                    analysis, style, photo_path=photo_path, lyrics=lyrics,
+                    aspect_ratio=aspect_ratio, clip_index=i, n_clips=n_clips,
+                )
+                for i in range(n_clips)
+            ]
+
+        # 6 — Save to DB: status=prompt_ready
+        update('prompt_ready',
+               bpm=analysis['bpm'],
+               prompts=prompts,
+               photo_url=photo_url)
+        print(f'[promptgen/{_jid}] prompt_ready — {n_clips} prompt(s) saved', flush=True)
+
+    except Exception as exc:
+        try:
+            update('failed', error_message=str(exc)[:500])
+        except Exception:
+            pass
+        print(f'[promptgen/{_jid}] FAILED: {exc}', flush=True)
+
+    finally:
+        # Release slot — user now controls clip submission interactively
+        with _lock:
+            _active_user_jobs.pop(user_id, None)
+            _global_active = max(0, _global_active - 1)
+        try:
+            shutil.rmtree(tmp_dir, ignore_errors=True)
+        except Exception:
+            pass
+
+
+@video_bp.route('/prompts/<job_id>')
+@require_auth_api
+def get_prompts(job_id):
+    """Poll endpoint: returns prompts when _run_prompt_generation completes."""
+    user_id = request.current_user.id
+    try:
+        row = _sb_service().table('reel_jobs').select(
+            'status,prompts,n_clips_expected,error_message,photo_url'
+        ).eq('id', job_id).eq('user_id', user_id).single().execute().data
+    except Exception:
+        return jsonify({'error': 'not found'}), 404
+    if not row:
+        return jsonify({'error': 'not found'}), 404
+
+    st = row.get('status', '')
+    if st == 'prompt_ready':
+        return jsonify({
+            'status':    'ready',
+            'prompts':   row.get('prompts') or [],
+            'n_clips':   int(row.get('n_clips_expected') or 1),
+            'photo_url': row.get('photo_url') or '',
+        })
+    if st == 'failed':
+        return jsonify({'status': 'failed', 'error': row.get('error_message') or 'Generation failed'})
+    return jsonify({'status': 'analyzing'})
+
+
+# ── Interactive flow: per-clip submission and status ──────────────────────────
+
+@video_bp.route('/clip/submit', methods=['POST'])
+@require_auth_api
+def clip_submit():
+    """
+    Submit a single clip to fal.ai for the interactive flow.
+    Stores the request_id in clip_submissions JSONB.
+    No webhook — the frontend polls /clip/status/<job_id>/<idx> directly.
+    """
+    user_id = request.current_user.id
+    data    = request.get_json(silent=True) or {}
+    job_id     = (data.get('job_id') or '').strip()
+    clip_index = int(data.get('clip_idx', data.get('clip_index', 0)))
+    prompt     = (data.get('prompt') or '').strip()
+    photo_url  = (data.get('photo_url') or '').strip()  # empty → use DB's photo_url
+
+    if not job_id or not prompt:
+        return jsonify({'error': 'job_id and prompt are required'}), 400
+
+    try:
+        row = _sb_service().table('reel_jobs').select(
+            'user_id,aspect_ratio,target_secs_requested,n_clips_expected,'
+            'clip_submissions,clip_results,status,photo_url'
+        ).eq('id', job_id).single().execute().data
+    except Exception:
+        return jsonify({'error': 'job not found'}), 404
+
+    if not row or row['user_id'] != user_id:
+        return jsonify({'error': 'not found'}), 404
+    if row.get('status') not in ('prompt_ready', 'generating'):
+        return jsonify({'error': f'invalid state: {row.get("status")}'}), 400
+
+    # Clip 0: frontend sends null photo_url → fall back to source photo stored in DB
+    if not photo_url:
+        photo_url = (row.get('photo_url') or '').strip()
+    if not photo_url:
+        return jsonify({'error': 'photo_url not available'}), 400
+
+    n_clips     = int(row.get('n_clips_expected') or 1)
+    target_secs = int(row.get('target_secs_requested') or 10)
+    clip_dur    = 10 if n_clips > 1 else target_secs
+
+    try:
+        fal = submit_reel(
+            photo_url, prompt,
+            duration=clip_dur,
+            aspect_ratio=row['aspect_ratio'],
+            endpoint=ENDPOINT_PRO,
+        )
+    except Exception as exc:
+        return jsonify({'error': f'fal.ai submit failed: {exc}'}), 502
+
+    # Update clip_submissions, clear any stale clip_results entry for this index
+    subs = row.get('clip_submissions') or {}
+    if isinstance(subs, str):
+        subs = json.loads(subs)
+    subs[str(clip_index)] = {'request_id': fal['request_id'], 'endpoint': ENDPOINT_PRO}
+
+    clip_results = row.get('clip_results') or {}
+    if isinstance(clip_results, str):
+        clip_results = json.loads(clip_results)
+    cleaned_results = {k: v for k, v in clip_results.items() if k != str(clip_index)}
+
+    _sb_service().table('reel_jobs').update({
+        'status':           'generating',
+        'clip_submissions': subs,
+        'clip_results':     cleaned_results,
+    }).eq('id', job_id).execute()
+
+    print(f'[clip_submit] job={job_id[:8]} clip={clip_index} req={fal["request_id"][:8]}', flush=True)
+    return jsonify({'ok': True, 'clip_index': clip_index})
+
+
+@video_bp.route('/clip/status/<job_id>/<int:idx>')
+@require_auth_api
+def clip_status_interactive(job_id, idx):
+    """Non-blocking status check for a single interactive clip."""
+    user_id = request.current_user.id
+    try:
+        row = _sb_service().table('reel_jobs').select(
+            'user_id,clip_submissions,clip_results'
+        ).eq('id', job_id).single().execute().data
+    except Exception:
+        return jsonify({'error': 'not found'}), 404
+
+    if not row or row['user_id'] != user_id:
+        return jsonify({'error': 'not found'}), 404
+
+    # Check if already persisted from a previous poll
+    clip_results = row.get('clip_results') or {}
+    if isinstance(clip_results, str):
+        clip_results = json.loads(clip_results)
+    if str(idx) in clip_results:
+        return jsonify({'status': 'completed', 'clip_url': clip_results[str(idx)]})
+
+    subs = row.get('clip_submissions') or {}
+    if isinstance(subs, str):
+        subs = json.loads(subs)
+    sub = subs.get(str(idx))
+    if not sub:
+        return jsonify({'status': 'not_submitted'}), 400
+
+    req_id   = sub['request_id']
+    endpoint = sub['endpoint']
+
+    st = fal_status_check(endpoint, req_id)
+
+    if st['status'] == 'COMPLETED' and st.get('url'):
+        _sb_service().rpc('add_clip_result', {
+            'p_job_id':   job_id,
+            'p_clip_idx': str(idx),
+            'p_clip_url': st['url'],
+        }).execute()
+        return jsonify({'status': 'completed', 'clip_url': st['url']})
+
+    if st['status'] == 'FAILED':
+        return jsonify({'status': 'failed'})
+
+    return jsonify({'status': 'generating'})
+
+
+@video_bp.route('/clip/last-frame/<job_id>/<int:idx>', methods=['POST'])
+@require_auth_api
+def clip_last_frame(job_id, idx):
+    """Extract the last frame of clip idx via FFmpeg and return a signed URL."""
+    import subprocess
+    user_id = request.current_user.id
+    try:
+        row = _sb_service().table('reel_jobs').select(
+            'user_id,clip_results'
+        ).eq('id', job_id).single().execute().data
+    except Exception:
+        return jsonify({'error': 'not found'}), 404
+
+    if not row or row['user_id'] != user_id:
+        return jsonify({'error': 'not found'}), 404
+
+    clip_results = row.get('clip_results') or {}
+    if isinstance(clip_results, str):
+        clip_results = json.loads(clip_results)
+    clip_url = clip_results.get(str(idx))
+    if not clip_url:
+        return jsonify({'error': 'clip not ready'}), 400
+
+    tmp = tempfile.mkdtemp(prefix='dlr_frm_')
+    try:
+        clip_path  = os.path.join(tmp, 'clip.mp4')
+        frame_path = os.path.join(tmp, 'last_frame.jpg')
+
+        resp = _requests.get(clip_url, stream=True, timeout=120)
+        resp.raise_for_status()
+        with open(clip_path, 'wb') as fh:
+            for chunk in resp.iter_content(chunk_size=65536):
+                fh.write(chunk)
+
+        # Seek to 0.15s before end to grab last frame
+        result = subprocess.run(
+            ['ffmpeg', '-sseof', '-0.15', '-i', clip_path,
+             '-vframes', '1', '-q:v', '2', '-y', frame_path],
+            capture_output=True, timeout=30,
+        )
+        if result.returncode != 0 or not os.path.exists(frame_path):
+            # Fallback: use thumbnail filter
+            result2 = subprocess.run(
+                ['ffmpeg', '-i', clip_path,
+                 '-vf', 'thumbnail', '-frames:v', '1', '-q:v', '2', '-y', frame_path],
+                capture_output=True, timeout=30,
+            )
+            if result2.returncode != 0 or not os.path.exists(frame_path):
+                return jsonify({'error': 'frame extraction failed'}), 500
+
+        frame_key = f'jobs/{job_id}/frame_{idx}.jpg'
+        sb = _sb_service()
+        with open(frame_path, 'rb') as fh:
+            sb.storage.from_('reel-uploads').upload(
+                frame_key, fh,
+                file_options={'content-type': 'image/jpeg', 'upsert': 'true'},
+            )
+        sig = sb.storage.from_('reel-uploads').create_signed_url(frame_key, 7200)
+        frame_url = sig.get('signedURL') or sig.get('signedUrl') or ''
+        if not frame_url:
+            return jsonify({'error': 'could not sign frame URL'}), 500
+
+        print(f'[last_frame] job={job_id[:8]} clip={idx} → frame signed', flush=True)
+        return jsonify({'frame_url': frame_url})
+
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
+@video_bp.route('/assemble/<job_id>', methods=['POST'])
+@require_auth_api
+def assemble_interactive(job_id):
+    """
+    Interactive flow final step: user confirmed all clips — spawn _run_assembly.
+    """
+    user_id = request.current_user.id
+    try:
+        row = _sb_service().table('reel_jobs').select(
+            'user_id,aspect_ratio,estimated_cost,target_secs_requested,bpm,'
+            'n_clips_expected,clip_results,enable_lipsync'
+        ).eq('id', job_id).single().execute().data
+    except Exception:
+        return jsonify({'error': 'not found'}), 404
+
+    if not row or row['user_id'] != user_id:
+        return jsonify({'error': 'not found'}), 404
+
+    n_clips = int(row.get('n_clips_expected') or 1)
+    clip_results = row.get('clip_results') or {}
+    if isinstance(clip_results, str):
+        clip_results = json.loads(clip_results)
+
+    ordered_urls = [clip_results.get(str(i)) for i in range(n_clips)]
+    if not all(ordered_urls):
+        missing = [i for i in range(n_clips) if not clip_results.get(str(i))]
+        return jsonify({'error': f'clips not ready: {missing}'}), 400
+
+    try:
+        prof     = _sb_service().table('profiles').select('is_admin').eq('user_id', user_id).single().execute().data
+        is_admin = bool((prof or {}).get('is_admin', False))
+    except Exception:
+        is_admin = False
+
+    job_data = {
+        'user_id':        user_id,
+        'aspect_ratio':   row.get('aspect_ratio', '9:16'),
+        'est_cost':       float(row.get('estimated_cost') or 0),
+        'target_secs':    int(row.get('target_secs_requested') or 10),
+        'bpm':            float(row.get('bpm') or 128),
+        'is_admin':       is_admin,
+        'n_clips':        n_clips,
+        'enable_lipsync': bool(row.get('enable_lipsync', False)),
+    }
+
+    threading.Thread(
+        target=_run_assembly,
+        args=(job_id, ordered_urls, job_data),
+        daemon=True,
+    ).start()
+
+    print(f'[assemble_interactive] job={job_id[:8]} spawned _run_assembly ({n_clips} clips)', flush=True)
+    return jsonify({'ok': True})
 
 
 # ── Status & SSE ──────────────────────────────────────────────────────────────
