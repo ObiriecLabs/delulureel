@@ -220,6 +220,18 @@ def generate():
     user_id = request.current_user.id
     print(f'[generate] START user={user_id[:8]}')
 
+    # DB-based cross-instance check: prevents the same user from running two jobs
+    # simultaneously when the app has multiple Render instances (in-memory dict is
+    # per-process and not shared across instances).
+    try:
+        _db_check = _sb_service().table('reel_jobs').select('id').eq(
+            'user_id', user_id
+        ).in_('status', ['queued', 'analyzing', 'generating', 'processing', 'lipsyncing']).limit(1).execute()
+        if _db_check.data:
+            return jsonify({'error': 'You already have a generation in progress.'}), 429
+    except Exception as _e:
+        print(f'[generate] DB lock check failed (non-fatal): {_e}')
+
     with _lock:
         if user_id in _active_user_jobs:
             return jsonify({'error': 'You already have a generation in progress.'}), 429
@@ -1161,3 +1173,31 @@ def profile():
         return jsonify(prof.data)
     except Exception:
         return jsonify({'plan': None, 'status': 'inactive'}), 200
+
+
+# ── Public share endpoint (no auth) ──────────────────────────────────────────
+
+@video_bp.route('/public/<job_id>')
+def public_job(job_id):
+    """Return public metadata for a shared reel — no auth required.
+    Only exposes output_url when status=completed (never raw uploads or prompts).
+    """
+    sb = _sb_service()
+    try:
+        job = sb.table('reel_jobs').select(
+            'status,output_url,style,aspect_ratio,bpm'
+        ).eq('id', job_id).single().execute()
+    except Exception:
+        return jsonify({'error': 'Not found'}), 404
+
+    data = job.data or {}
+    resp = {
+        'status':       data.get('status'),
+        'style':        data.get('style'),
+        'aspect_ratio': data.get('aspect_ratio'),
+        'bpm':          data.get('bpm'),
+    }
+    # Only expose the output URL when the job is completed
+    if data.get('status') == 'completed':
+        resp['output_url'] = data.get('output_url')
+    return jsonify(resp)

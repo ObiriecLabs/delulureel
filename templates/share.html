@@ -1,0 +1,253 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AI Reel — DELULUREEL</title>
+  <meta name="description" content="AI-generated videoclip synced to music. Made with DELULUREEL.">
+  <meta property="og:title" content="Check out this AI reel — DELULUREEL">
+  <meta property="og:description" content="AI-generated videoclip synced to music. Upload your track + photo and make yours in minutes.">
+  <meta property="og:type" content="video.other">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/static/css/main.css">
+  <style>
+    .share-wrap {
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+    .share-nav {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 16px 24px;
+      border-bottom: 1px solid rgba(180,94,255,.1);
+      background: rgba(6,2,14,.85);
+      backdrop-filter: blur(16px);
+      position: sticky;
+      top: 0;
+      z-index: 100;
+    }
+    .share-main {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 40px 20px;
+      gap: 28px;
+    }
+    .share-player-wrap {
+      width: 100%;
+      max-width: 380px;
+      border-radius: 16px;
+      overflow: hidden;
+      box-shadow: 0 0 60px rgba(180,94,255,.25);
+      position: relative;
+      background: #0b0518;
+    }
+    .share-player-wrap.ar-landscape { max-width: 640px; }
+    .share-player-wrap.ar-square    { max-width: 420px; }
+    .share-video {
+      width: 100%;
+      display: block;
+    }
+    .share-meta {
+      text-align: center;
+    }
+    .share-meta-badge {
+      display: inline-block;
+      padding: 4px 14px;
+      border-radius: 999px;
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: .6px;
+      text-transform: uppercase;
+      background: rgba(180,94,255,.12);
+      border: 1px solid rgba(180,94,255,.3);
+      color: #B45EFF;
+      margin-bottom: 10px;
+    }
+    .share-meta-info {
+      font-size: 13px;
+      color: rgba(238,230,255,.45);
+    }
+    .share-actions {
+      display: flex;
+      gap: 12px;
+      flex-wrap: wrap;
+      justify-content: center;
+    }
+    .share-cta-section {
+      margin-top: 8px;
+      padding: 24px 28px;
+      border-radius: 16px;
+      background: rgba(180,94,255,.06);
+      border: 1px solid rgba(180,94,255,.12);
+      text-align: center;
+      max-width: 400px;
+      width: 100%;
+    }
+    .share-cta-title {
+      font-size: 15px;
+      font-weight: 700;
+      margin-bottom: 6px;
+    }
+    .share-cta-sub {
+      font-size: 13px;
+      color: rgba(238,230,255,.5);
+      margin-bottom: 16px;
+    }
+    .share-state-center {
+      text-align: center;
+      padding: 40px 20px;
+    }
+    .share-state-center h2 {
+      font-size: 22px;
+      font-weight: 700;
+      margin-bottom: 10px;
+    }
+    .share-state-center p {
+      color: rgba(238,230,255,.5);
+      margin-bottom: 24px;
+      font-size: 15px;
+    }
+    .share-footer {
+      text-align: center;
+      padding: 16px 24px;
+      font-size: 12px;
+      color: rgba(238,230,255,.2);
+      border-top: 1px solid rgba(255,255,255,.04);
+    }
+    .share-footer a { color: rgba(238,230,255,.35); text-decoration: none; }
+  </style>
+</head>
+<body>
+
+<div class="share-wrap">
+
+  <nav class="share-nav">
+    <a href="/" class="logo grad-text">DELULUREEL</a>
+    <a href="/trial" class="btn btn-primary btn-sm">Try Free →</a>
+  </nav>
+
+  <main class="share-main" id="share-main">
+
+    <!-- Loading -->
+    <div id="state-loading" class="share-state-center">
+      <div class="spinner spinner-lg" style="margin:0 auto 16px"></div>
+      <p>Loading reel…</p>
+    </div>
+
+    <!-- Completed -->
+    <div id="state-done" style="display:none; width:100%; display:none; flex-direction:column; align-items:center; gap:24px;">
+      <div class="share-player-wrap" id="player-wrap">
+        <video id="share-video" controls playsinline loop class="share-video"></video>
+      </div>
+      <div class="share-meta">
+        <div class="share-meta-badge">✅ Reel ready</div>
+        <div class="share-meta-info" id="share-meta-info"></div>
+      </div>
+      <div class="share-actions">
+        <a id="share-download-btn" href="#" download class="btn btn-primary">↓ Download Reel</a>
+      </div>
+      <div class="share-cta-section">
+        <p class="share-cta-title">Make your own AI reel</p>
+        <p class="share-cta-sub">Upload your track + photo. AI generates a beat-synced videoclip in minutes.</p>
+        <a href="/trial" class="btn btn-primary" style="width:100%;justify-content:center">Start Free Trial →</a>
+      </div>
+    </div>
+
+    <!-- Processing -->
+    <div id="state-processing" style="display:none">
+      <div class="share-state-center">
+        <div class="spinner spinner-lg" style="margin:0 auto 16px"></div>
+        <h2>Reel is being generated…</h2>
+        <p>Check back in a few minutes.<br>The AI is still working on it.</p>
+        <a href="/trial" class="btn btn-ghost">Create Your Own →</a>
+      </div>
+    </div>
+
+    <!-- Failed / not found -->
+    <div id="state-failed" style="display:none">
+      <div class="share-state-center">
+        <div style="font-size:48px;margin-bottom:12px">😔</div>
+        <h2>Reel unavailable</h2>
+        <p>This reel could not be loaded or may have expired.</p>
+        <a href="/trial" class="btn btn-primary">Create Your Own →</a>
+      </div>
+    </div>
+
+  </main>
+
+  <footer class="share-footer">
+    Made with <a href="/">DELULUREEL</a> &nbsp;·&nbsp;
+    <a href="/trial">Start your free trial</a> &nbsp;·&nbsp;
+    &copy; 2026 Obiriec Labs
+  </footer>
+
+</div>
+
+<script>
+const JOB_ID = '{{ job_id }}';
+
+function showState(id) {
+  ['state-loading', 'state-done', 'state-processing', 'state-failed'].forEach(s => {
+    const el = document.getElementById(s);
+    el.style.display = s === id ? (s === 'state-done' ? 'flex' : 'block') : 'none';
+  });
+  if (id === 'state-done') {
+    document.getElementById('state-done').style.flexDirection = 'column';
+    document.getElementById('state-done').style.alignItems    = 'center';
+    document.getElementById('state-done').style.gap           = '24px';
+    document.getElementById('state-done').style.width         = '100%';
+  }
+}
+
+async function loadReel() {
+  try {
+    const res  = await fetch(`/video/public/${JOB_ID}`);
+    const data = await res.json();
+
+    if (res.status === 404 || data.error) {
+      showState('state-failed');
+      return;
+    }
+
+    if (data.status === 'completed' && data.output_url) {
+      showState('state-done');
+
+      const video = document.getElementById('share-video');
+      video.src   = data.output_url;
+      document.getElementById('share-download-btn').href = data.output_url;
+
+      const ar      = data.aspect_ratio || '9:16';
+      const arClass = { '9:16': 'ar-portrait', '16:9': 'ar-landscape', '1:1': 'ar-square' }[ar] || 'ar-portrait';
+      document.getElementById('player-wrap').classList.add(arClass);
+
+      const parts = [];
+      if (data.bpm)          parts.push(`${data.bpm} BPM`);
+      if (data.style)        parts.push(data.style.charAt(0).toUpperCase() + data.style.slice(1));
+      if (data.aspect_ratio) parts.push(data.aspect_ratio);
+      document.getElementById('share-meta-info').textContent = parts.join(' · ');
+      return;
+    }
+
+    if (data.status === 'failed') {
+      showState('state-failed');
+      return;
+    }
+
+    // In progress
+    showState('state-processing');
+
+  } catch (ex) {
+    showState('state-failed');
+  }
+}
+
+loadReel();
+</script>
+</body>
+</html>

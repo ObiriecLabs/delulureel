@@ -129,6 +129,20 @@ def terms():
 def contact():
     return redirect('/')           # placeholder until contact form / email page is ready
 
+# Public share page (no auth required)
+@app.route('/share/<job_id>')
+def share_page(job_id):
+    return render_template('share.html', job_id=job_id)
+
+# Error handlers
+@app.errorhandler(404)
+def not_found(e):
+    return render_template('404.html', lang=get_lang()), 404
+
+@app.errorhandler(500)
+def server_error(e):
+    return render_template('500.html'), 500
+
 # Health check (Render uses this)
 @app.route('/health')
 def health():
