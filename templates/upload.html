@@ -1168,7 +1168,7 @@ async function pollStatus(jobId) {
     polls++;
     if (polls > MAX_POLLS) {
       clearInterval(interval);
-      _resetForm('Generation timed out. Please try again.');
+      window.location.href = `/result/${jobId}`;
       return;
     }
     try {

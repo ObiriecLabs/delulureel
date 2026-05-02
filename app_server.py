@@ -46,9 +46,10 @@ app.secret_key = os.getenv('SECRET_KEY', 'dev-secret-key-change-in-prod')
 app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1, x_prefix=1)
 
 app.config.update(
-    SESSION_COOKIE_SECURE=True,    # only send cookie over HTTPS
-    SESSION_COOKIE_HTTPONLY=True,  # block JS access
-    SESSION_COOKIE_SAMESITE='Lax', # allow cross-site navigations (Stripe redirect back)
+    SESSION_COOKIE_SECURE=True,       # only send cookie over HTTPS
+    SESSION_COOKIE_HTTPONLY=True,     # block JS access
+    SESSION_COOKIE_SAMESITE='Lax',    # allow cross-site navigations (Stripe redirect back)
+    MAX_CONTENT_LENGTH=60 * 1024 * 1024,  # 60 MB max upload (photo 10MB + audio 50MB)
 )
 
 # ── Blueprints ──
