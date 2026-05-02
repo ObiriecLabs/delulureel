@@ -145,7 +145,7 @@ Annuale = 2 mesi gratis.
 
 ---
 
-## STATO CORRENTE (2026-05-02)
+## STATO CORRENTE (2026-05-02 — aggiornato sessione 2)
 
 **Completato sessioni precedenti:**
 - MVP completo: landing, auth, billing, video pipeline, templates, CSS, JS
@@ -312,14 +312,37 @@ _run_assembly (thread breve ~120s, su istanza che ha ricevuto l'ultimo webhook):
 
 **Costo fal.ai accumulato in test (non recuperabili):** ~$17.51
 
+### Sessione 2 — i18n completa + Storage RLS
+
+**i18n (commit `681f34a`):**
+- `core/i18n.py`: loader traduzioni con `get_lang()` + fallback `Accept-Language`
+- `translations/{en,it,fr,de,es}.json`: 5 file completi (nav, dashboard, upload, result, auth)
+- `app_server.py`: context processor `inject_i18n` + route `POST /set-lang`
+- `templates/base.html`: lang switcher nel nav + `<html lang="{{ lang }}">`
+- Tutti i template (`dashboard`, `upload`, `result`, `auth/*`): stringhe JS via `| tojson`
+- CSS: `.lang-switcher`, `.lang-switcher-auth`
+
+**Email reminder Day 5 (`_on_trial_will_end`):** già implementata in sessione precedente — confermata presente e funzionante in `billing/routes.py`
+
+**Storage RLS (migration `storage_rls_bucket_security`):**
+- `reel-uploads`: reso PRIVATE — foto e audio non più accessibili via CDN pubblico
+- `reel-outputs`: rimasto PUBLIC (link condivisione reel) + policy SELECT API per own jobs
+- Policy `users_select_own_outputs` + `users_select_own_uploads` su `storage.objects`
+- Logica: `split_part(name, '/', 2)` = job_id → join `reel_jobs.user_id = auth.uid()`
+- Service_role (server) bypassa RLS → pipeline non impattata
+
+**Stato Supabase DB (completo):**
+- `profiles`: RLS ✅
+- `reel_jobs`: RLS ✅
+- `daily_budget`: RLS ✅ (applicata sessione 1)
+- `storage.objects`: RLS ✅ + 2 policy SELECT (applicata questa sessione)
+- `reel-uploads` bucket: PRIVATE ✅
+- `reel-outputs` bucket: PUBLIC ✅
+
 **Prossimi step:**
-1. **`git push origin main`** — deployare gli 11 commit dell'audit su Render (conferma Armando)
-2. ~~Eseguire `ALTER TABLE daily_budget ENABLE ROW LEVEL SECURITY;` su Supabase~~ — **GIÀ APPLICATO** via MCP tool
-3. **TEST end-to-end 30s** su produzione — verificare che tutti 3 clip arrivino e assembly completi
-4. Monitorare log Render per `assembly/{jid} COMPLETED`
-5. Eseguire Storage RLS policies su Supabase (bucket reel-uploads, reel-outputs)
-6. Implementare email reminder Day 5 via Resend (`_on_trial_will_end`)
-7. Test signup → email confirm → trial → pagamento → generazione completa
+1. **TEST end-to-end su produzione** — signup → trial → upload foto+audio → generazione 30s (3 clip via webhook) → assembly → download reel
+2. **Landing page** — quella attuale è placeholder statico; serve landing vera con pricing, demo video, CTA per traffico organico
+3. Test signup → email confirm → trial → pagamento → generazione completa
 
 ---
 
