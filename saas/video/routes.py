@@ -72,19 +72,21 @@ def _sb_service():
 
 
 def _budget_ok(cost: float) -> bool:
-    today = str(date.today())
-    if _daily['date'] != today:
-        _daily['date'] = today
-        _daily['usd']  = 0.0
-    return _daily['usd'] + cost <= DAILY_BUDGET_CAP_USD
+    with _lock:
+        today = str(date.today())
+        if _daily['date'] != today:
+            _daily['date'] = today
+            _daily['usd']  = 0.0
+        return _daily['usd'] + cost <= DAILY_BUDGET_CAP_USD
 
 
 def _record_spend(cost: float):
-    today = str(date.today())
-    if _daily['date'] != today:
-        _daily['date'] = today
-        _daily['usd']  = 0.0
-    _daily['usd'] = round(_daily['usd'] + cost, 4)
+    with _lock:
+        today = str(date.today())
+        if _daily['date'] != today:
+            _daily['date'] = today
+            _daily['usd']  = 0.0
+        _daily['usd'] = round(_daily['usd'] + cost, 4)
     try:
         _sb_service().rpc('add_daily_spend', {'p_usd': cost}).execute()
     except Exception:
@@ -231,6 +233,7 @@ def generate():
 
     # Slot is now held. Release it in the finally block if we fail to start the thread.
     _thread_started = False
+    tmp_dir = None   # set before try so finally can clean it up safely
     try:
         # Fetch profile
         print(f'[generate] fetching profile ({_time.time()-_t0:.1f}s)')
@@ -367,6 +370,8 @@ def generate():
             with _lock:
                 _active_user_jobs.pop(user_id, None)
                 _global_active = max(0, _global_active - 1)
+            if tmp_dir:
+                shutil.rmtree(tmp_dir, ignore_errors=True)
 
 
 # ── Phase 1: Pre-generation (single clip, webhook mode) ───────────────────────

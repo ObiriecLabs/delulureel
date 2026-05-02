@@ -99,8 +99,11 @@ def portal():
         return redirect(url_for('auth.login'))
 
     sb = _sb_service()
-    profile = sb.table('profiles').select('stripe_customer_id').eq('user_id', user_id).single().execute()
-    customer_id = profile.data.get('stripe_customer_id')
+    try:
+        profile = sb.table('profiles').select('stripe_customer_id').eq('user_id', user_id).single().execute()
+        customer_id = (profile.data or {}).get('stripe_customer_id')
+    except Exception:
+        return redirect(url_for('dashboard'))
 
     if not customer_id:
         return redirect(url_for('dashboard'))
