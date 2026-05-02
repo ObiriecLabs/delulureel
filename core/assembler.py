@@ -2,6 +2,10 @@ import os
 import ffmpeg
 from typing import List, Optional, Sequence
 
+# Honour FFMPEG_PATH env var — lets Render / Fly override the binary location.
+# Defaults to 'ffmpeg' (expected to be on PATH in all standard environments).
+_FFMPEG_CMD = os.getenv('FFMPEG_PATH', 'ffmpeg')
+
 SCALE_MAP = {
     '9:16': ('1080', '1920'),
     '16:9': ('1920', '1080'),
@@ -31,7 +35,7 @@ def _trim_clips_to_beats(
                 .input(clip, t=float(dur))
                 .output(out, c='copy')
                 .overwrite_output()
-                .run(quiet=True)
+                .run(quiet=True, cmd=_FFMPEG_CMD)
             )
             trimmed.append(out)
         except Exception:
@@ -90,7 +94,7 @@ def assemble_reel(
             **extra,
         )
         .overwrite_output()
-        .run(quiet=True, capture_stderr=True)
+        .run(quiet=True, capture_stderr=True, cmd=_FFMPEG_CMD)
     )
 
     return output_path
@@ -108,6 +112,6 @@ def extract_segment(
         .input(source, ss=start, t=duration)
         .output(output_path, c='copy')
         .overwrite_output()
-        .run(quiet=True)
+        .run(quiet=True, cmd=_FFMPEG_CMD)
     )
     return output_path

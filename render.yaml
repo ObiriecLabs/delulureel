@@ -54,3 +54,5 @@ services:
         value: "10"
       - key: TRIAL_MAX_CREDITS
         value: "6"
+      - key: COST_MARGIN_MULTIPLIER
+        value: "2.5"
