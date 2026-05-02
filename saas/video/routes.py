@@ -940,12 +940,25 @@ def fal_webhook_multi(job_id, clip_idx, n_clips):
 
     # Atomic JSONB update — works correctly across all Render instances
     try:
-        result      = sb.rpc('add_clip_result', {
+        result = sb.rpc('add_clip_result', {
             'p_job_id':   job_id,
             'p_clip_idx': str(clip_idx),
             'p_clip_url': video_url,
         }).execute()
-        clip_results = result.data or {}   # {"0": "url0", "2": "url2", ...}
+        # supabase-py wraps RETURNS JSONB as [{"add_clip_result": {...}}] (list)
+        # rather than a plain dict — unpack correctly regardless of SDK version.
+        raw = result.data
+        if isinstance(raw, list) and raw:
+            first = raw[0]
+            clip_results = (first.get('add_clip_result') if isinstance(first, dict) else None) or {}
+        elif isinstance(raw, dict):
+            clip_results = raw
+        else:
+            clip_results = {}
+        # Fallback: if still empty re-read from DB (handles any future SDK change)
+        if not clip_results:
+            fb = sb.table('reel_jobs').select('clip_results').eq('id', job_id).single().execute()
+            clip_results = ((fb.data or {}).get('clip_results')) or {}
     except Exception as exc:
         print(f'[webhook_multi/{job_id[:8]}] DB update failed: {exc}', flush=True)
         return jsonify({'ok': True}), 200
