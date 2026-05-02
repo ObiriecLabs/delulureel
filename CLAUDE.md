@@ -180,10 +180,25 @@ Annuale = 2 mesi gratis.
 - Nessun simbolo rimosso trovato in codebase
 - Working tree clean
 
+### Audit pass 9 (check indipendente) — 5 nuovi bug trovati e fixati
+- **BUG 7 — TOCTOU race in `generate()`**: check slot e acquire slot erano due operazioni
+  lock separate con ~100ms+ di lavoro DB nel mezzo. Due request concorrenti dallo stesso
+  utente potevano entrambe passare il check prima che una avesse scritto su `_active_user_jobs`.
+  Fix: acquisizione atomica del slot (sentinel `'__pending__'`) nel PRIMO lock block + pattern
+  `_thread_started` con `finally` che rilascia se il thread non parte.
+  Commit: `fcc0893`
+- **BUG 8 — dead `global _global_active` in `_run_assembly`**: dichiarazione residua da
+  refactoring precedente, la funzione non modifica mai `_global_active`. Rimossa.
+- **BUG 9 — `result.html` line 99**: `'Kling 3.0 Pro is building your reel'` → `'Kling AI'`
+- **BUG 10 — `upload.html` line 136** + **`landing/index.html` line 986**: stesso stale brand name
+- **BUG 11 — `requirements.txt`**: rimossi `resend>=2.0.0` (billing usa raw requests, mai l'SDK)
+  e `Pillow>=10.0.0` (nessun import PIL in tutto il codebase)
+
 **Stato codebase al termine dell'audit:**
 - `video_generator.py`: solo `submit_reel`, `fal_result`, `transcribe_audio_fal`, helpers di costo
-- Nessun dead code, nessun import orfano, nessun commento stale
-- 3 commit in attesa di push (`a83642e`, `e527d2c`, `0e73789`) — push richiede conferma Armando
+- `generate()` in `video/routes.py`: TOCTOU race chiusa, pattern check+acquire atomico
+- Nessun dead code, nessun import orfano, nessun commento stale, zero branding stale
+- 7 commit in attesa di push (`a83642e`…`fcc0893`) — push richiede conferma Armando
 
 **Architettura pipeline multi-clip (definitiva):**
 ```
@@ -208,7 +223,7 @@ _run_assembly (thread breve ~120s, su istanza che ha ricevuto l'ultimo webhook):
 **Costo fal.ai accumulato in test (non recuperabili):** ~$17.51
 
 **Prossimi step:**
-1. **`git push origin main`** — deployare i 3 commit dell'audit su Render (conferma Armando)
+1. **`git push origin main`** — deployare i 7 commit dell'audit su Render (conferma Armando)
 2. **TEST end-to-end 30s** su produzione — verificare che tutti 3 clip arrivino e assembly completi
 3. Monitorare log Render per `assembly/{jid} COMPLETED`
 4. Eseguire Storage RLS policies su Supabase (bucket reel-uploads, reel-outputs)
