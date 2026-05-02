@@ -266,6 +266,30 @@ Annuale = 2 mesi gratis.
   supabase/email-templates/, GitHub, Render service
 - 11 commit in attesa di push (`a83642e`…`57a49bc`) — push richiede conferma Armando
 
+### Audit pass 14 — analisi approfondita core/, sicurezza, edge-case input
+- **BUG L — SECURITY: `aspect_ratio` non validato → path traversal**: valore dal form usato
+  direttamente in `ar_slug = aspect_ratio.replace(':','x')` e interpolato in:
+  - `output_key = f'jobs/{job_id}/reel_{ar_slug}.mp4'` (Supabase Storage key)
+  - `final_path = os.path.join(tmp, f'reel_{ar_slug}.mp4')` (local filepath)
+  Un attacker poteva iniettare `'../outputs/stealth'` per scrivere fuori dal path atteso.
+  Fix: whitelist check in `generate()` — qualsiasi valore non in `('9:16','16:9','1:1')` → `'9:16'`.
+- **BUG M — `transcribe_audio_fal` lingua hardcodata italiano**: `language='it'` default forzava
+  Whisper a disabilitare l'auto-detection. Brani inglesi/spagnoli/francesi venivano "trascritti"
+  in italiano producendo testo spazzatura che inquinava i prompt Claude.
+  Fix: campo `language` rimosso dal body → Whisper usa auto-detect.
+- **BUG N — `extract_segment()` dead code in `assembler.py`**: mai importata né chiamata.
+  Rimossa.
+- **BUG O — `target_secs=0` su audio full-track < 1s**: `int(0.9) = 0` → `duration="0"` a
+  fal.ai → job failure. Fix: `max(5, min(round(audio_dur_sec), MAX_AUDIO_SEC))` — floor di 5s
+  (minimo supportato da Kling).
+  Commit: `4ce882f`
+
+**Stato codebase al termine dell'audit pass 14 — CONVERGENZA ✅:**
+- core/assembler.py: solo `assemble_reel` + `_trim_clips_to_beats` (nessun dead code)
+- core/video_generator.py: Whisper auto-detect, nessun parametro lingua
+- saas/video/routes.py: aspect_ratio validato a whitelist, target_secs floor 5s
+- 12 commit in attesa di push (`a83642e`…`4ce882f`) — push richiede conferma Armando
+
 **Architettura pipeline multi-clip (definitiva):**
 ```
 _run_pipeline (thread breve ~60s):
