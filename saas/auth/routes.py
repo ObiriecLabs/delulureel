@@ -199,10 +199,11 @@ def reset_password():
     if request.method == 'GET':
         return render_template('auth/reset_password.html', access_token=access_token)
 
-    data     = request.get_json(silent=True) or request.form
-    password = data.get('password', '')
-    confirm  = data.get('confirm', '')
-    token    = data.get('access_token', '')
+    data          = request.get_json(silent=True) or request.form
+    password      = data.get('password', '')
+    confirm       = data.get('confirm', '')
+    token         = data.get('access_token', '')
+    refresh_token = data.get('refresh_token', '')
 
     if not token:
         return render_template('auth/reset_password.html', error='Invalid or expired reset link. Please request a new one.', access_token='')
@@ -215,10 +216,11 @@ def reset_password():
 
     try:
         sb = _get_sb()
-        sb.auth.set_session(token, '')
+        sb.auth.set_session(token, refresh_token)
         sb.auth.update_user({'password': password})
         return render_template('auth/reset_password.html', success=True)
     except Exception as e:
+        print(f'[reset_password] set_session/update_user failed: {e}')
         return render_template('auth/reset_password.html', error='Reset failed. The link may have expired — request a new one.', access_token=token)
 
 
