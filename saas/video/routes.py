@@ -268,6 +268,8 @@ def generate():
 
         style        = (request.form.get('style', 'cinematic') or 'cinematic').lower()
         aspect_ratio = request.form.get('aspect_ratio', '9:16') or '9:16'
+        if aspect_ratio not in ('9:16', '16:9', '1:1'):
+            aspect_ratio = '9:16'
         enable_lipsync = request.form.get('enable_lipsync', 'off').lower() in ('on', '1', 'true', 'yes')
         custom_prompt  = (request.form.get('custom_prompt', '') or '').strip()[:900]
 
@@ -280,7 +282,9 @@ def generate():
             audio_dur_sec = 0.0
 
         if video_duration == 'full':
-            target_secs = min(int(audio_dur_sec), MAX_AUDIO_SEC) if audio_dur_sec > 0 else 10
+            # round() instead of int() prevents target_secs=0 for sub-1s clips;
+            # max(5,...) enforces Kling's minimum supported duration.
+            target_secs = max(5, min(round(audio_dur_sec), MAX_AUDIO_SEC)) if audio_dur_sec > 0 else 10
         elif video_duration in ('5', '10', '30'):
             target_secs = int(video_duration)
         else:

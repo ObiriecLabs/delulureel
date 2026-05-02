@@ -98,20 +98,3 @@ def assemble_reel(
     )
 
     return output_path
-
-
-def extract_segment(
-    source: str,
-    start: float,
-    duration: float,
-    output_path: str,
-) -> str:
-    """Cut a segment from source (video or audio) and write to output_path."""
-    (
-        ffmpeg
-        .input(source, ss=start, t=duration)
-        .output(output_path, c='copy')
-        .overwrite_output()
-        .run(quiet=True, cmd=_FFMPEG_CMD)
-    )
-    return output_path

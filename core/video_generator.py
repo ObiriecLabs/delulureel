@@ -160,7 +160,7 @@ def fal_result(endpoint: str, request_id: str) -> Dict:
 
 # ── Lyrics transcription ──────────────────────────────────────────────────────
 
-def transcribe_audio_fal(audio_url: str, language: str = 'it') -> Optional[str]:
+def transcribe_audio_fal(audio_url: str) -> Optional[str]:
     """
     Transcribe audio using fal-ai/whisper (sync endpoint — no queue needed).
 
@@ -169,14 +169,14 @@ def transcribe_audio_fal(audio_url: str, language: str = 'it') -> Optional[str]:
 
     fal.ai Whisper API:
       POST https://fal.run/fal-ai/whisper
-      Body: { "audio_url": "...", "language": "it", "task": "transcribe" }
+      Body: { "audio_url": "...", "task": "transcribe" }
       Response: { "text": "...", "chunks": [...] }
     """
     url  = f'{FAL_RUN_BASE}/fal-ai/whisper'
     body = {
         'audio_url': audio_url,
-        'language':  language,
         'task':      'transcribe',
+        # language omitted — Whisper auto-detects; hardcoding 'it' breaks non-Italian tracks
     }
 
     try:
