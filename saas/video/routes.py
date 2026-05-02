@@ -1104,7 +1104,7 @@ def status_stream(job_id):
     def _gen():
         import time
         sb = _sb_service()
-        for _ in range(80):  # max ~13 min at 10s interval
+        for _ in range(360):  # max ~60 min at 10s interval (full-track jobs take 20-40 min)
             try:
                 job = sb.table('reel_jobs').select(
                     'status,output_url,error_message,bpm'
