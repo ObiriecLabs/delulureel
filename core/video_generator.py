@@ -100,7 +100,9 @@ def submit_reel(
 ) -> Dict:
     """
     Submit a single clip to fal.ai queue.
-    Returns {'request_id', 'endpoint', 'estimated_cost'}.
+    Returns {'request_id', 'endpoint', 'estimated_cost', 'status_url', 'response_url'}.
+    status_url / response_url come directly from fal.ai and use the correct namespace
+    path (e.g. fal-ai/kling-video/requests/{id}) rather than the full versioned endpoint.
     """
     url = f'{FAL_QUEUE_BASE}/{endpoint}'
     if webhook_url:
@@ -128,26 +130,44 @@ def submit_reel(
         'request_id':     req_id,
         'endpoint':       endpoint,
         'estimated_cost': estimate_cost(duration, endpoint),
+        'status_url':     data.get('status_url', ''),
+        'response_url':   data.get('response_url', ''),
     }
 
 
 # ── Status / result ───────────────────────────────────────────────────────────
 
-def fal_result(endpoint: str, request_id: str) -> Dict:
+def _namespace(endpoint: str) -> str:
+    """
+    Extract the base namespace from a versioned fal.ai endpoint path.
+    e.g. 'fal-ai/kling-video/v2.6/pro/image-to-video' → 'fal-ai/kling-video'
+    fal.ai's status_url / response_url use this shortened form.
+    """
+    parts = endpoint.split('/')
+    return '/'.join(parts[:2]) if len(parts) >= 2 else endpoint
+
+
+def fal_result(endpoint: str, request_id: str, response_url: str = '') -> Dict:
     """
     Fetch completed result dict from fal.ai queue.
 
-    Uses a 2-URL cascade because newer endpoints (e.g. v2.6/pro) return 405
-    on the endpoint-scoped /requests/ path.
-    Falls back to the global queue URL which always works.
+    Tries three URL patterns because fal.ai's actual result path uses the base
+    namespace (e.g. fal-ai/kling-video/requests/{id}), not the full versioned
+    endpoint path (which returns 405).
     """
+    ns = _namespace(endpoint)
     urls = [
-        (f'{FAL_QUEUE_BASE}/{endpoint}/requests/{request_id}', 60),
-        (f'{FAL_QUEUE_BASE}/requests/{request_id}',            60),
+        (response_url,                                              60) if response_url else None,
+        (f'{FAL_QUEUE_BASE}/{ns}/requests/{request_id}',           60),
+        (f'{FAL_QUEUE_BASE}/{endpoint}/requests/{request_id}',     60),
+        (f'{FAL_QUEUE_BASE}/requests/{request_id}',                60),
     ]
 
     last_err = None
-    for url, timeout in urls:
+    for item in urls:
+        if not item:
+            continue
+        url, timeout = item
         resp = _req.get(url, headers=_headers_get(), timeout=timeout)
         if resp.status_code == 405:
             last_err = f'405 on {url}'
@@ -160,26 +180,40 @@ def fal_result(endpoint: str, request_id: str) -> Dict:
 
 # ── Non-blocking status check ────────────────────────────────────────────────
 
-def fal_status_check(endpoint: str, request_id: str) -> Dict:
+def fal_status_check(
+    endpoint: str,
+    request_id: str,
+    status_url: str = '',
+    response_url: str = '',
+) -> Dict:
     """
     Single non-blocking status check for a queued fal.ai job.
     Returns {'status': 'IN_QUEUE'|'IN_PROGRESS'|'COMPLETED'|'FAILED', 'url': str|None}.
     On COMPLETED, fetches the result URL via fal_result().
     Never raises — returns IN_QUEUE on any error.
+
+    Prefer passing status_url/response_url from fal.ai's submission response — they
+    use the correct namespace-scoped path (e.g. fal-ai/kling-video/requests/{id})
+    rather than the full versioned endpoint which returns 405 on status checks.
     """
-    status_urls = [
-        (f'{FAL_QUEUE_BASE}/{endpoint}/requests/{request_id}/status', 30),
-        (f'{FAL_QUEUE_BASE}/requests/{request_id}/status',            30),
+    ns = _namespace(endpoint)
+    candidates = [
+        status_url,                                                            # fal-provided (most reliable)
+        f'{FAL_QUEUE_BASE}/{ns}/requests/{request_id}/status',                # namespace-scoped
+        f'{FAL_QUEUE_BASE}/{endpoint}/requests/{request_id}/status',          # full endpoint
+        f'{FAL_QUEUE_BASE}/requests/{request_id}/status',                     # global
     ]
-    for url, timeout in status_urls:
+    for url in candidates:
+        if not url:
+            continue
         try:
-            resp = _req.get(url, headers=_headers_get(), timeout=timeout)
+            resp = _req.get(url, headers=_headers_get(), timeout=30)
             if resp.status_code == 405:
                 continue
             resp.raise_for_status()
             st = resp.json().get('status', 'IN_QUEUE')
             if st == 'COMPLETED':
-                result  = fal_result(endpoint, request_id)
+                result  = fal_result(endpoint, request_id, response_url)
                 vid_url = (result.get('video') or {}).get('url') or result.get('video_url', '')
                 return {'status': 'COMPLETED', 'url': vid_url}
             return {'status': st, 'url': None}

@@ -1538,7 +1538,12 @@ def clip_submit():
     subs = row.get('clip_submissions') or {}
     if isinstance(subs, str):
         subs = json.loads(subs)
-    subs[str(clip_index)] = {'request_id': fal['request_id'], 'endpoint': ENDPOINT_PRO}
+    subs[str(clip_index)] = {
+        'request_id':   fal['request_id'],
+        'endpoint':     ENDPOINT_PRO,
+        'status_url':   fal.get('status_url', ''),
+        'response_url': fal.get('response_url', ''),
+    }
 
     clip_results = row.get('clip_results') or {}
     if isinstance(clip_results, str):
@@ -1584,10 +1589,12 @@ def clip_status_interactive(job_id, idx):
     if not sub:
         return jsonify({'status': 'not_submitted'}), 400
 
-    req_id   = sub['request_id']
-    endpoint = sub['endpoint']
+    req_id       = sub['request_id']
+    endpoint     = sub['endpoint']
+    status_url   = sub.get('status_url', '')
+    response_url = sub.get('response_url', '')
 
-    st = fal_status_check(endpoint, req_id)
+    st = fal_status_check(endpoint, req_id, status_url=status_url, response_url=response_url)
 
     if st['status'] == 'COMPLETED' and st.get('url'):
         _sb_service().rpc('add_clip_result', {
