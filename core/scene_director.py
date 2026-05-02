@@ -70,6 +70,15 @@ _STYLE_HINTS = {
     'minimal':   'clean white or dark studio, single spotlight, elegant slow movement, luxury aesthetic',
 }
 
+# Per-clip shot variation — cycles for any n_clips value
+_CLIP_VARIATIONS = [
+    'Shot type for this clip: wide establishing shot — full body visible, environment in frame',
+    'Shot type for this clip: medium shot — waist-up framing, expressive gesture and movement',
+    'Shot type for this clip: close-up — face or striking detail, maximum emotional intensity',
+    'Shot type for this clip: dramatic angle — low angle or overhead, dynamic composition',
+    'Shot type for this clip: tracking shot — camera follows subject laterally, sense of motion',
+]
+
 
 def generate_scene_prompt(
     audio_analysis: Dict,
@@ -77,6 +86,8 @@ def generate_scene_prompt(
     photo_path: Optional[str] = None,
     lyrics: Optional[str] = None,
     aspect_ratio: str = '9:16',
+    clip_index: int = 0,
+    n_clips: int = 1,
 ) -> str:
     bpm           = audio_analysis.get('bpm', 120)
     duration      = audio_analysis.get('duration', 30)
@@ -116,7 +127,14 @@ def generate_scene_prompt(
         "Write a Kling AI image-to-video prompt for a music video clip matching the audio energy described above."
     )
 
+    # When generating multiple clips, prepend a variation directive so each clip
+    # has a distinct shot type — prevents fal.ai from generating the same scene N times.
+    variation_line = ''
+    if n_clips > 1:
+        variation_line = _CLIP_VARIATIONS[clip_index % len(_CLIP_VARIATIONS)] + '\n'
+
     text_prompt = (
+        f"{variation_line}"
         f"BPM: {bpm:.0f} ({tempo_desc})\n"
         f"Duration: {duration:.0f}s\n"
         f"Energy: {energy_desc}\n"

@@ -159,13 +159,14 @@ def _startup_recovery():
                             is_admin_r = False
                         real_target = int(job.get('target_secs_requested') or n_clips_exp * CLIP_LEN_MULTI)
                         job_data_r  = {
-                            'user_id':      user_id,
-                            'aspect_ratio': job.get('aspect_ratio', '9:16'),
-                            'est_cost':     float(job.get('estimated_cost') or 0),
-                            'target_secs':  real_target,
-                            'bpm':          float(job.get('bpm') or 128),
-                            'is_admin':     is_admin_r,
-                            'n_clips':      n_clips_exp,
+                            'user_id':        user_id,
+                            'aspect_ratio':   job.get('aspect_ratio', '9:16'),
+                            'est_cost':       float(job.get('estimated_cost') or 0),
+                            'target_secs':    real_target,
+                            'bpm':            float(job.get('bpm') or 128),
+                            'is_admin':       is_admin_r,
+                            'n_clips':        n_clips_exp,
+                            'enable_lipsync': bool(job.get('enable_lipsync', False)),
                         }
                         threading.Thread(
                             target=_run_assembly,
@@ -900,12 +901,19 @@ def _run_pipeline(job_id, user_id, photo_path, audio_path, style, aspect_ratio,
             lyrics = transcribe_audio_fal(audio_signed_url)
             print(f'[pipeline/{_jid}] whisper {"DONE " + str(len(lyrics)) + " chars" if lyrics else "instrumental"}', flush=True)
 
-        # 3 — Scene prompt
+        # 3 — Scene prompts: one per clip with shot-type variation
         update('generating', bpm=analysis['bpm'])
-        prompt = custom_prompt or generate_scene_prompt(
-            analysis, style, photo_path=photo_path, lyrics=lyrics, aspect_ratio=aspect_ratio
-        )
-        print(f'[pipeline/{_jid}] prompt len={len(prompt)}', flush=True)
+        if custom_prompt:
+            prompts = [custom_prompt] * n_clips
+        else:
+            prompts = [
+                generate_scene_prompt(
+                    analysis, style, photo_path=photo_path, lyrics=lyrics,
+                    aspect_ratio=aspect_ratio, clip_index=i, n_clips=n_clips,
+                )
+                for i in range(n_clips)
+            ]
+        print(f'[pipeline/{_jid}] {len(prompts)} prompt(s) generated', flush=True)
 
         # 4 — Upload photo → signed URL for fal.ai
         ext_photo = (photo_path.rsplit('.', 1)[-1].lower()) or 'jpg'
@@ -927,17 +935,17 @@ def _run_pipeline(job_id, user_id, photo_path, audio_path, style, aspect_ratio,
         update('processing',
                fal_request_id=f'multi:{n_clips}',
                fal_endpoint=ENDPOINT_TURBO,
-               prompt=prompt,
+               prompt=prompts[0],
                n_clips_expected=n_clips,
                target_secs_requested=int(target_secs),
                clip_results={})     # must be dict not string — string '{}' becomes JSONB scalar and breaks || merge
 
-        # 6 — Submit N clips, each with its own webhook URL
+        # 6 — Submit N clips, each with its own webhook URL and distinct prompt
         for i in range(n_clips):
             wh = f'{APP_BASE_URL}/video/webhook/fal/multi/{job_id}/{i}/{n_clips}'
             try:
                 h = submit_reel(
-                    photo_url, prompt,
+                    photo_url, prompts[i],
                     duration=clip_len, aspect_ratio=aspect_ratio,
                     endpoint=ENDPOINT_TURBO, webhook_url=wh,
                 )
@@ -1041,7 +1049,7 @@ def fal_webhook_multi(job_id, clip_idx, n_clips):
     # All N clips collected — fetch job and spawn assembly
     try:
         job = sb.table('reel_jobs').select(
-            'user_id,aspect_ratio,estimated_cost,n_clips_expected,target_secs_requested,bpm'
+            'user_id,aspect_ratio,estimated_cost,n_clips_expected,target_secs_requested,bpm,enable_lipsync'
         ).eq('id', job_id).single().execute().data
         prof = sb.table('profiles').select('is_admin').eq('user_id', job['user_id']).single().execute().data
     except Exception as exc:
@@ -1056,13 +1064,14 @@ def fal_webhook_multi(job_id, clip_idx, n_clips):
 
     real_target = int(job.get('target_secs_requested') or n_clips * CLIP_LEN_MULTI)
     job_data = {
-        'user_id':      job['user_id'],
-        'aspect_ratio': job.get('aspect_ratio', '9:16'),
-        'est_cost':     float(job.get('estimated_cost') or 0),
-        'target_secs':  real_target,
-        'bpm':          float(job.get('bpm') or 128),
-        'is_admin':     bool((prof or {}).get('is_admin', False)),
-        'n_clips':      n_clips,
+        'user_id':        job['user_id'],
+        'aspect_ratio':   job.get('aspect_ratio', '9:16'),
+        'est_cost':       float(job.get('estimated_cost') or 0),
+        'target_secs':    real_target,
+        'bpm':            float(job.get('bpm') or 128),
+        'is_admin':       bool((prof or {}).get('is_admin', False)),
+        'n_clips':        n_clips,
+        'enable_lipsync': bool(job.get('enable_lipsync', False)),
     }
 
     threading.Thread(
@@ -1081,16 +1090,17 @@ def _run_assembly(job_id: str, clip_urls: list, job_data: dict):
     Runs on whichever instance received the final webhook — instance-agnostic because
     it fetches audio from Supabase Storage rather than a local temp file.
     """
-    _jid         = job_id[:8]
-    sb           = _sb_service()
-    user_id      = job_data['user_id']
-    aspect_ratio = job_data['aspect_ratio']
-    est_cost     = job_data['est_cost']
-    target_secs  = job_data['target_secs']
-    is_admin     = job_data['is_admin']
-    bpm          = job_data['bpm']
-    n_clips      = job_data['n_clips']
-    tmp          = tempfile.mkdtemp(prefix='dlr_asm_')
+    _jid           = job_id[:8]
+    sb             = _sb_service()
+    user_id        = job_data['user_id']
+    aspect_ratio   = job_data['aspect_ratio']
+    est_cost       = job_data['est_cost']
+    target_secs    = job_data['target_secs']
+    is_admin       = job_data['is_admin']
+    bpm            = job_data['bpm']
+    n_clips        = job_data['n_clips']
+    enable_lipsync = job_data.get('enable_lipsync', False)
+    tmp            = tempfile.mkdtemp(prefix='dlr_asm_')
 
     clip_durations = beat_cut_durations(
         bpm=bpm,
@@ -1114,7 +1124,8 @@ def _run_assembly(job_id: str, clip_urls: list, job_data: dict):
         audio_key  = f'jobs/{job_id}/{audio_file["name"]}'
         ext_audio  = audio_file['name'].rsplit('.', 1)[-1]
         audio_path = os.path.join(tmp, f'audio.{ext_audio}')
-        sig        = sb.storage.from_('reel-uploads').create_signed_url(audio_key, 3600)
+        # TTL 7200s — must survive the full assembly + optional lipsync window
+        sig        = sb.storage.from_('reel-uploads').create_signed_url(audio_key, 7200)
         audio_url  = sig.get('signedURL') or sig.get('signedUrl') or ''
         if not audio_url:
             raise RuntimeError(f'Cannot sign audio URL: {sig}')
@@ -1144,6 +1155,29 @@ def _run_assembly(job_id: str, clip_urls: list, job_data: dict):
                       clip_durations=clip_durations)
         gc.collect()
         print(f'[assembly/{_jid}] FFmpeg done', flush=True)
+
+        # Lipsync on the assembled video (applied post-FFmpeg so sync covers the full track)
+        if enable_lipsync:
+            update('lipsyncing')
+            print(f'[assembly/{_jid}] lipsync START', flush=True)
+            # Upload assembled video to a temp path so fal.ai can fetch it via URL
+            tmp_video_key = f'jobs/{job_id}/assembled_tmp.mp4'
+            with open(final_path, 'rb') as fh:
+                sb.storage.from_('reel-uploads').upload(
+                    tmp_video_key, fh,
+                    file_options={'content-type': 'video/mp4'},
+                )
+            sig_v = sb.storage.from_('reel-uploads').create_signed_url(tmp_video_key, 3600)
+            assembled_url = sig_v.get('signedURL') or sig_v.get('signedUrl') or ''
+            if not assembled_url:
+                raise RuntimeError(f'Cannot sign assembled video URL: {sig_v}')
+            lipsync_url = apply_lipsync(assembled_url, audio_url)
+            resp_ls = _requests.get(lipsync_url, stream=True, timeout=300)
+            resp_ls.raise_for_status()
+            with open(final_path, 'wb') as fh:
+                for chunk in resp_ls.iter_content(chunk_size=65536):
+                    fh.write(chunk)
+            print(f'[assembly/{_jid}] lipsync DONE', flush=True)
 
         # Upload final reel
         output_key = f'jobs/{job_id}/reel_{ar_slug}.mp4'
