@@ -39,7 +39,6 @@ USD_TO_EUR        = 0.925   # update as needed
 
 CLIP_LEN_MULTI = 10    # seconds per Kling Turbo clip in multi-clip mode
 MAX_AUDIO_SEC  = 600   # cap full-track at 10 min
-MAX_WAIT_MULTI = 2700  # 45 min ceiling — architectural reference for multi-clip jobs
 
 FAL_QUEUE_BASE = 'https://queue.fal.run'
 

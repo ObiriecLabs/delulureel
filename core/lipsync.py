@@ -85,12 +85,25 @@ def poll_lipsync(request_id: str, max_wait: int = MAX_WAIT) -> str:
         if st == 'COMPLETED':
             result = st_data.get('_result') or {}
             if not result:
-                # Fetch explicitly if _parse didn't embed it
-                res    = _req.get(
-                    f'{FAL_QUEUE_BASE}/{LIPSYNC_ENDPOINT}/requests/{request_id}',
-                    headers=_headers_get(), timeout=60,
-                )
-                result = res.json()
+                # Fetch explicitly if _parse didn't embed it — 2-URL cascade
+                # (endpoint-scoped path returns 405 on some fal.ai model versions)
+                fetch_urls = [
+                    (f'{FAL_QUEUE_BASE}/{LIPSYNC_ENDPOINT}/requests/{request_id}', 60),
+                    (f'{FAL_QUEUE_BASE}/requests/{request_id}',                    60),
+                ]
+                last_fetch_err = None
+                for fetch_url, fetch_timeout in fetch_urls:
+                    r = _req.get(fetch_url, headers=_headers_get(), timeout=fetch_timeout)
+                    if r.status_code == 405:
+                        last_fetch_err = f'405 on {fetch_url}'
+                        continue
+                    r.raise_for_status()
+                    result = r.json()
+                    break
+                else:
+                    raise RuntimeError(
+                        f'Lipsync result unreachable for {request_id}: {last_fetch_err}'
+                    )
             url = (result.get('video') or {}).get('url') or result.get('video_url') or ''
             if not url:
                 raise RuntimeError(f'Lipsync: no video URL in result: {result}')

@@ -123,8 +123,11 @@ END;
 $$;
 
 -- ── ROW LEVEL SECURITY ────────────────────────────────────────────────────────
-ALTER TABLE profiles  ENABLE ROW LEVEL SECURITY;
-ALTER TABLE reel_jobs ENABLE ROW LEVEL SECURITY;
+ALTER TABLE profiles    ENABLE ROW LEVEL SECURITY;
+ALTER TABLE reel_jobs   ENABLE ROW LEVEL SECURITY;
+ALTER TABLE daily_budget ENABLE ROW LEVEL SECURITY;
+-- daily_budget: no policies = zero access from anon/authenticated clients.
+-- Only SECURITY DEFINER functions (add_daily_spend, etc.) can read/write it.
 
 -- Profiles
 CREATE POLICY "select_own_profile" ON profiles
