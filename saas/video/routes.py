@@ -223,136 +223,150 @@ def generate():
             return jsonify({'error': 'You already have a generation in progress.'}), 429
         if _global_active >= MAX_CONCURRENT_GLOBAL:
             return jsonify({'error': 'Service at capacity. Please try again in a few minutes.'}), 429
-
-    # Fetch profile
-    print(f'[generate] fetching profile ({_time.time()-_t0:.1f}s)')
-    sb = _sb_service()
-    try:
-        prof = sb.table('profiles').select('*').eq('user_id', user_id).single().execute().data
-        print(f'[generate] profile OK ({_time.time()-_t0:.1f}s) status={prof.get("status")}')
-    except Exception as e:
-        print(f'[generate] profile FAILED ({_time.time()-_t0:.1f}s): {e}')
-        return jsonify({'error': 'Profile not found. Please contact support.'}), 404
-
-    # Admin bypass — read from profiles.is_admin (reliable, no env var dependency)
-    admin = bool(prof.get('is_admin', False))
-    print(f'[admin_check] user={user_id[:8]} is_admin={admin}', flush=True)
-    if not admin:
-        # Access checks
-        if prof.get('status') == 'suspended':
-            return jsonify({'error': 'Account suspended. Please update your payment method.'}), 403
-        if prof.get('status') in ('cancelled', 'inactive'):
-            return jsonify({'error': 'No active subscription. Please start a trial.'}), 403
-        # Credit pre-check (precise check happens again after duration is known)
-        if prof.get('status') == 'trial' and prof.get('trial_credits_used', 0) >= TRIAL_MAX_CREDITS:
-            return jsonify({'error': f'Trial credits exhausted ({TRIAL_MAX_CREDITS} credits). Billing starts on Day 7.'}), 403
-        if prof.get('credits_used_this_month', 0) >= prof.get('credits_limit', 10):
-            return jsonify({'error': 'Monthly credits exhausted. Upgrade your plan for more.'}), 403
-
-    # Files
-    photo = request.files.get('photo')
-    audio = request.files.get('audio')
-    if not photo or not audio:
-        return jsonify({'error': 'photo and audio files are required'}), 400
-
-    style        = (request.form.get('style', 'cinematic') or 'cinematic').lower()
-    aspect_ratio = request.form.get('aspect_ratio', '9:16') or '9:16'
-    enable_lipsync = request.form.get('enable_lipsync', 'off').lower() in ('on', '1', 'true', 'yes')
-    custom_prompt  = (request.form.get('custom_prompt', '') or '').strip()[:900]
-
-    # ── Duration / clip count ────────────────────────────────────────────────
-    video_duration = (request.form.get('video_duration', '10') or '10').strip()
-
-    try:
-        audio_dur_sec = max(0.0, float(request.form.get('audio_duration_sec', '0') or '0'))
-    except ValueError:
-        audio_dur_sec = 0.0
-
-    if video_duration == 'full':
-        target_secs = min(int(audio_dur_sec), MAX_AUDIO_SEC) if audio_dur_sec > 0 else 10
-    elif video_duration in ('5', '10', '30'):
-        target_secs = int(video_duration)
-    else:
-        target_secs = 10
-
-    endpoint       = endpoint_for_duration(target_secs)
-    n_clips        = n_clips_for_duration(target_secs) if target_secs > 10 else 1
-    est_cost       = estimate_cost(target_secs, endpoint)
-    credits_needed = _credits_for_duration(target_secs)
-
-    # Precise credit check now that we know the actual duration (admin bypasses)
-    if not admin:
-        if prof.get('status') == 'trial':
-            if prof.get('trial_credits_used', 0) + credits_needed > TRIAL_MAX_CREDITS:
-                return jsonify({'error': f'This reel requires {credits_needed} credits but your trial only has {TRIAL_MAX_CREDITS - prof.get("trial_credits_used", 0)} left.'}), 403
-        if prof.get('credits_used_this_month', 0) + credits_needed > prof.get('credits_limit', 10):
-            remaining = prof.get('credits_limit', 10) - prof.get('credits_used_this_month', 0)
-            return jsonify({'error': f'This reel requires {credits_needed} credits but you only have {remaining} left this month.'}), 403
-
-    if not _budget_ok(est_cost):
-        return jsonify({'error': 'Service temporarily unavailable (daily budget reached).'}), 503
-
-    # Save uploads to temp dir
-    tmp_dir   = tempfile.mkdtemp(prefix='dlr_')
-    ext_photo = (photo.filename or 'photo.jpg').rsplit('.', 1)[-1].lower() or 'jpg'
-    ext_audio = (audio.filename or 'audio.mp3').rsplit('.', 1)[-1].lower() or 'mp3'
-    photo_path = os.path.join(tmp_dir, f'photo.{ext_photo}')
-    audio_path = os.path.join(tmp_dir, f'audio.{ext_audio}')
-    print(f'[generate] saving files ({_time.time()-_t0:.1f}s)')
-    photo.save(photo_path)
-    audio.save(audio_path)
-    print(f'[generate] files saved ({_time.time()-_t0:.1f}s)')
-
-    job_id = str(uuid.uuid4())
-
-    # Persist job
-    print(f'[generate] inserting job ({_time.time()-_t0:.1f}s)')
-    _sb_service().table('reel_jobs').insert({
-        'id':               job_id,
-        'user_id':          user_id,
-        'status':           'queued',
-        'style':            style,
-        'aspect_ratio':     aspect_ratio,
-        'estimated_cost':   est_cost,
-        'enable_lipsync':   enable_lipsync,       # stored in DB — cross-instance safe
-        'target_secs_requested': int(target_secs), # stored in DB — cross-instance safe
-    }).execute()
-
-    print(f'[generate] job inserted ({_time.time()-_t0:.1f}s)')
-
-    # Lock slots
-    with _lock:
-        _active_user_jobs[user_id] = job_id
+        # Atomically reserve the slot — closes TOCTOU race between check and acquire.
+        # Without this, two concurrent requests from the same user can both pass the
+        # check above before either has written to _active_user_jobs.
+        _active_user_jobs[user_id] = '__pending__'
         _global_active += 1
 
-    # ── Dispatch ─────────────────────────────────────────────────────────────
-    # Single clip → webhook-based (fal.ai generates, notifies us when done)
-    # Multi-clip  → polling (N parallel jobs, harder to webhook-aggregate)
-    if n_clips == 1:
-        thread = threading.Thread(
-            target=_run_pre_generation,
-            args=(job_id, user_id, photo_path, audio_path, style, aspect_ratio,
-                  est_cost, tmp_dir, target_secs, ext_audio, enable_lipsync, custom_prompt),
-            kwargs={'is_admin': admin},
-            daemon=True,
-        )
-    else:
-        thread = threading.Thread(
-            target=_run_pipeline,
-            args=(job_id, user_id, photo_path, audio_path, style, aspect_ratio,
-                  est_cost, tmp_dir, target_secs, n_clips, enable_lipsync, custom_prompt),
-            kwargs={'is_admin': admin},
-            daemon=True,
-        )
-    thread.start()
+    # Slot is now held. Release it in the finally block if we fail to start the thread.
+    _thread_started = False
+    try:
+        # Fetch profile
+        print(f'[generate] fetching profile ({_time.time()-_t0:.1f}s)')
+        sb = _sb_service()
+        try:
+            prof = sb.table('profiles').select('*').eq('user_id', user_id).single().execute().data
+            print(f'[generate] profile OK ({_time.time()-_t0:.1f}s) status={prof.get("status")}')
+        except Exception as e:
+            print(f'[generate] profile FAILED ({_time.time()-_t0:.1f}s): {e}')
+            return jsonify({'error': 'Profile not found. Please contact support.'}), 404
 
-    print(f'[generate] DONE returning job_id ({_time.time()-_t0:.1f}s)')
-    return jsonify({
-        'job_id':       job_id,
-        'status':       'queued',
-        'target_secs':  target_secs,
-        'n_clips':      n_clips,
-    })
+        # Admin bypass — read from profiles.is_admin (reliable, no env var dependency)
+        admin = bool(prof.get('is_admin', False))
+        print(f'[admin_check] user={user_id[:8]} is_admin={admin}', flush=True)
+        if not admin:
+            # Access checks
+            if prof.get('status') == 'suspended':
+                return jsonify({'error': 'Account suspended. Please update your payment method.'}), 403
+            if prof.get('status') in ('cancelled', 'inactive'):
+                return jsonify({'error': 'No active subscription. Please start a trial.'}), 403
+            # Credit pre-check (precise check happens again after duration is known)
+            if prof.get('status') == 'trial' and prof.get('trial_credits_used', 0) >= TRIAL_MAX_CREDITS:
+                return jsonify({'error': f'Trial credits exhausted ({TRIAL_MAX_CREDITS} credits). Billing starts on Day 7.'}), 403
+            if prof.get('credits_used_this_month', 0) >= prof.get('credits_limit', 10):
+                return jsonify({'error': 'Monthly credits exhausted. Upgrade your plan for more.'}), 403
+
+        # Files
+        photo = request.files.get('photo')
+        audio = request.files.get('audio')
+        if not photo or not audio:
+            return jsonify({'error': 'photo and audio files are required'}), 400
+
+        style        = (request.form.get('style', 'cinematic') or 'cinematic').lower()
+        aspect_ratio = request.form.get('aspect_ratio', '9:16') or '9:16'
+        enable_lipsync = request.form.get('enable_lipsync', 'off').lower() in ('on', '1', 'true', 'yes')
+        custom_prompt  = (request.form.get('custom_prompt', '') or '').strip()[:900]
+
+        # ── Duration / clip count ────────────────────────────────────────────────
+        video_duration = (request.form.get('video_duration', '10') or '10').strip()
+
+        try:
+            audio_dur_sec = max(0.0, float(request.form.get('audio_duration_sec', '0') or '0'))
+        except ValueError:
+            audio_dur_sec = 0.0
+
+        if video_duration == 'full':
+            target_secs = min(int(audio_dur_sec), MAX_AUDIO_SEC) if audio_dur_sec > 0 else 10
+        elif video_duration in ('5', '10', '30'):
+            target_secs = int(video_duration)
+        else:
+            target_secs = 10
+
+        endpoint       = endpoint_for_duration(target_secs)
+        n_clips        = n_clips_for_duration(target_secs) if target_secs > 10 else 1
+        est_cost       = estimate_cost(target_secs, endpoint)
+        credits_needed = _credits_for_duration(target_secs)
+
+        # Precise credit check now that we know the actual duration (admin bypasses)
+        if not admin:
+            if prof.get('status') == 'trial':
+                if prof.get('trial_credits_used', 0) + credits_needed > TRIAL_MAX_CREDITS:
+                    return jsonify({'error': f'This reel requires {credits_needed} credits but your trial only has {TRIAL_MAX_CREDITS - prof.get("trial_credits_used", 0)} left.'}), 403
+            if prof.get('credits_used_this_month', 0) + credits_needed > prof.get('credits_limit', 10):
+                remaining = prof.get('credits_limit', 10) - prof.get('credits_used_this_month', 0)
+                return jsonify({'error': f'This reel requires {credits_needed} credits but you only have {remaining} left this month.'}), 403
+
+        if not _budget_ok(est_cost):
+            return jsonify({'error': 'Service temporarily unavailable (daily budget reached).'}), 503
+
+        # Save uploads to temp dir
+        tmp_dir   = tempfile.mkdtemp(prefix='dlr_')
+        ext_photo = (photo.filename or 'photo.jpg').rsplit('.', 1)[-1].lower() or 'jpg'
+        ext_audio = (audio.filename or 'audio.mp3').rsplit('.', 1)[-1].lower() or 'mp3'
+        photo_path = os.path.join(tmp_dir, f'photo.{ext_photo}')
+        audio_path = os.path.join(tmp_dir, f'audio.{ext_audio}')
+        print(f'[generate] saving files ({_time.time()-_t0:.1f}s)')
+        photo.save(photo_path)
+        audio.save(audio_path)
+        print(f'[generate] files saved ({_time.time()-_t0:.1f}s)')
+
+        job_id = str(uuid.uuid4())
+
+        # Persist job
+        print(f'[generate] inserting job ({_time.time()-_t0:.1f}s)')
+        _sb_service().table('reel_jobs').insert({
+            'id':               job_id,
+            'user_id':          user_id,
+            'status':           'queued',
+            'style':            style,
+            'aspect_ratio':     aspect_ratio,
+            'estimated_cost':   est_cost,
+            'enable_lipsync':   enable_lipsync,       # stored in DB — cross-instance safe
+            'target_secs_requested': int(target_secs), # stored in DB — cross-instance safe
+        }).execute()
+
+        print(f'[generate] job inserted ({_time.time()-_t0:.1f}s)')
+
+        # Replace pending sentinel with the real job_id before handing off to thread
+        with _lock:
+            _active_user_jobs[user_id] = job_id
+
+        # ── Dispatch ─────────────────────────────────────────────────────────────
+        # Single clip → webhook-based (fal.ai generates, notifies us when done)
+        # Multi-clip  → polling (N parallel jobs, harder to webhook-aggregate)
+        if n_clips == 1:
+            thread = threading.Thread(
+                target=_run_pre_generation,
+                args=(job_id, user_id, photo_path, audio_path, style, aspect_ratio,
+                      est_cost, tmp_dir, target_secs, ext_audio, enable_lipsync, custom_prompt),
+                kwargs={'is_admin': admin},
+                daemon=True,
+            )
+        else:
+            thread = threading.Thread(
+                target=_run_pipeline,
+                args=(job_id, user_id, photo_path, audio_path, style, aspect_ratio,
+                      est_cost, tmp_dir, target_secs, n_clips, enable_lipsync, custom_prompt),
+                kwargs={'is_admin': admin},
+                daemon=True,
+            )
+        thread.start()
+        _thread_started = True
+
+        print(f'[generate] DONE returning job_id ({_time.time()-_t0:.1f}s)')
+        return jsonify({
+            'job_id':       job_id,
+            'status':       'queued',
+            'target_secs':  target_secs,
+            'n_clips':      n_clips,
+        })
+
+    finally:
+        if not _thread_started:
+            with _lock:
+                _active_user_jobs.pop(user_id, None)
+                _global_active = max(0, _global_active - 1)
 
 
 # ── Phase 1: Pre-generation (single clip, webhook mode) ───────────────────────
@@ -964,7 +978,6 @@ def _run_assembly(job_id: str, clip_urls: list, job_data: dict):
     Runs on whichever instance received the final webhook — instance-agnostic because
     it fetches audio from Supabase Storage rather than a local temp file.
     """
-    global _global_active
     _jid         = job_id[:8]
     sb           = _sb_service()
     user_id      = job_data['user_id']
