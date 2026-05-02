@@ -194,11 +194,27 @@ Annuale = 2 mesi gratis.
 - **BUG 11 — `requirements.txt`**: rimossi `resend>=2.0.0` (billing usa raw requests, mai l'SDK)
   e `Pillow>=10.0.0` (nessun import PIL in tutto il codebase)
 
-**Stato codebase al termine dell'audit:**
+### Audit pass 10 (check globale definitivo) — 3 nuovi bug trovati e fixati
+- **BUG A — `video_generator.py` costante morta**: `MAX_WAIT_MULTI = 2700` definita ma mai
+  usata dopo il cleanup del pass 6 (era già rimossa dall'import in routes.py). Rimossa.
+- **BUG B — `lipsync.py` `poll_lipsync()` no fallback URL**: nel branch "fetch esplicito result"
+  (quando `_fal_status_lipsync` non embedded il dict), si usava solo l'URL endpoint-scoped che
+  può restituire 405 su modelli fal.ai più recenti. Aggiunto 2-URL cascade identico a
+  `fal_result()`: prova endpoint-scoped, se 405 fallback a global queue URL.
+- **BUG C — `schema.sql` RLS mancante su `daily_budget`**: solo `profiles` e `reel_jobs`
+  avevano `ENABLE ROW LEVEL SECURITY`. `daily_budget` era accessibile via anon/authenticated
+  key PostgREST → attaccante poteva azzerare o gonfiare `usd_spent` e bypassare
+  `DAILY_BUDGET_CAP_USD`. Fix: `ALTER TABLE daily_budget ENABLE ROW LEVEL SECURITY;` senza
+  policy aggiuntive → zero accesso da client key; solo funzioni SECURITY DEFINER possono scrivere.
+  Commit: `0c6d6b4`
+
+**Stato codebase al termine dell'audit pass 10 — CONVERGENZA ✅:**
 - `video_generator.py`: solo `submit_reel`, `fal_result`, `transcribe_audio_fal`, helpers di costo
+- `lipsync.py`: 2-URL cascade su tutti i path (status 4-URL + result fetch 2-URL)
 - `generate()` in `video/routes.py`: TOCTOU race chiusa, pattern check+acquire atomico
+- `schema.sql`: RLS abilitata su tutti e 3 le tabelle
 - Nessun dead code, nessun import orfano, nessun commento stale, zero branding stale
-- 7 commit in attesa di push (`a83642e`…`fcc0893`) — push richiede conferma Armando
+- 8 commit in attesa di push (`a83642e`…`0c6d6b4`) — push richiede conferma Armando
 
 **Architettura pipeline multi-clip (definitiva):**
 ```
@@ -223,12 +239,13 @@ _run_assembly (thread breve ~120s, su istanza che ha ricevuto l'ultimo webhook):
 **Costo fal.ai accumulato in test (non recuperabili):** ~$17.51
 
 **Prossimi step:**
-1. **`git push origin main`** — deployare i 7 commit dell'audit su Render (conferma Armando)
-2. **TEST end-to-end 30s** su produzione — verificare che tutti 3 clip arrivino e assembly completi
-3. Monitorare log Render per `assembly/{jid} COMPLETED`
-4. Eseguire Storage RLS policies su Supabase (bucket reel-uploads, reel-outputs)
-5. Implementare email reminder Day 5 via Resend (`_on_trial_will_end`)
-6. Test signup → email confirm → trial → pagamento → generazione completa
+1. **`git push origin main`** — deployare gli 8 commit dell'audit su Render (conferma Armando)
+2. **Eseguire `ALTER TABLE daily_budget ENABLE ROW LEVEL SECURITY;` su Supabase** — la migrazione schema.sql va applicata manualmente al DB esistente (Dashboard → SQL Editor)
+3. **TEST end-to-end 30s** su produzione — verificare che tutti 3 clip arrivino e assembly completi
+4. Monitorare log Render per `assembly/{jid} COMPLETED`
+5. Eseguire Storage RLS policies su Supabase (bucket reel-uploads, reel-outputs)
+6. Implementare email reminder Day 5 via Resend (`_on_trial_will_end`)
+7. Test signup → email confirm → trial → pagamento → generazione completa
 
 ---
 
