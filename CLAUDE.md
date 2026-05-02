@@ -216,6 +216,31 @@ Annuale = 2 mesi gratis.
 - Nessun dead code, nessun import orfano, nessun commento stale, zero branding stale
 - 8 commit in attesa di push (`a83642e`…`0c6d6b4`) — push richiede conferma Armando
 
+### Audit pass 11 — 3 nuovi bug trovati e fixati
+- **BUG D — `generate()` tmp_dir leak**: `tmp_dir` creata dentro il `try:` → se thread non
+  partiva, il `finally` non poteva pulirla (variabile non definita). Fix: `tmp_dir = None`
+  prima del `try:`, cleanup condizionale in `finally`.
+- **BUG E — `_budget_ok()` / `_record_spend()` race condition**: `_daily` dict mutato senza
+  `_lock` → in ambiente multithreaded (`--threads 8`) due thread potevano superare il budget cap
+  simultaneamente. Fix: wrap mutazioni dict in `with _lock:`. Chiamata `rpc()` mantenuta fuori
+  dal lock per non bloccare altri thread su I/O lento.
+- **BUG F — `billing/portal()` crash HTTP 500**: `single().execute()` su profilo mancante
+  solleva eccezione non catturata. Fix: try/except + redirect a dashboard.
+  Commit: `a758658`
+
+### Audit pass 12 — 2 nuovi bug trovati e fixati
+- **BUG G — `app_server.py` no `MAX_CONTENT_LENGTH`**: Flask accettava upload di dimensioni
+  illimitate → possibile DoS / OOM su Render free tier. Fix: 60 MB cap (10 MB photo + 50 MB audio).
+- **BUG H — `upload.html` poll timeout mostra errore invece di redirect**: `pollStatus()` aveva
+  ceiling 90 × 8s = 12 min, poi mostrava "Generation timed out." — ma job full-track 30s impiegano
+  20-40+ min. Fix: su `polls > MAX_POLLS`, redirect a `/result/<jobId>` che pollina indefinitamente.
+  Commit: `9b94b82`
+
+**Stato codebase al termine dell'audit pass 12 — CONVERGENZA ✅:**
+- Tutti i file .py, templates, config, auth, static verificati — zero bug residui noti
+- 10 commit in attesa di push (`a83642e`…`9b94b82`) — push richiede conferma Armando
+- `daily_budget` RLS già applicata su DB live Supabase (migration via MCP tool)
+
 **Architettura pipeline multi-clip (definitiva):**
 ```
 _run_pipeline (thread breve ~60s):
@@ -239,8 +264,8 @@ _run_assembly (thread breve ~120s, su istanza che ha ricevuto l'ultimo webhook):
 **Costo fal.ai accumulato in test (non recuperabili):** ~$17.51
 
 **Prossimi step:**
-1. **`git push origin main`** — deployare gli 8 commit dell'audit su Render (conferma Armando)
-2. **Eseguire `ALTER TABLE daily_budget ENABLE ROW LEVEL SECURITY;` su Supabase** — la migrazione schema.sql va applicata manualmente al DB esistente (Dashboard → SQL Editor)
+1. **`git push origin main`** — deployare i 10 commit dell'audit su Render (conferma Armando)
+2. ~~Eseguire `ALTER TABLE daily_budget ENABLE ROW LEVEL SECURITY;` su Supabase~~ — **GIÀ APPLICATO** via MCP tool
 3. **TEST end-to-end 30s** su produzione — verificare che tutti 3 clip arrivino e assembly completi
 4. Monitorare log Render per `assembly/{jid} COMPLETED`
 5. Eseguire Storage RLS policies su Supabase (bucket reel-uploads, reel-outputs)
