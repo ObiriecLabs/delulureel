@@ -2,15 +2,15 @@
 {% block title %}Create Reel — DELULUREEL{% endblock %}
 
 {% block nav_extra %}
-<a href="/dashboard" class="nav-back">&larr; Dashboard</a>
+<a href="/dashboard" class="nav-back">{{ t('nav.back_dashboard') }}</a>
 {% endblock %}
 
 {% block content %}
 <div class="container upload-container">
 
   <div class="upload-header">
-    <h1 class="dash-title">Create New Reel</h1>
-    <p class="dash-sub">Upload your photo and track. AI does the rest.</p>
+    <h1 class="dash-title">{{ t('upload.title') }}</h1>
+    <p class="dash-sub">{{ t('upload.subtitle') }}</p>
   </div>
 
   <!-- UPLOAD FORM -->
@@ -23,9 +23,9 @@
         <input type="file" id="photo-input" name="photo" accept="image/*" hidden>
         <div class="drop-inner" id="photo-inner">
           <div class="drop-icon">&#x1F4F8;</div>
-          <div class="drop-title">Your Photo</div>
-          <div class="drop-sub">Front-facing, clear background works best</div>
-          <div class="drop-formats">JPG, PNG, WEBP &middot; max 10 MB</div>
+          <div class="drop-title">{{ t('upload.photo_title') }}</div>
+          <div class="drop-sub">{{ t('upload.photo_sub') }}</div>
+          <div class="drop-formats">{{ t('upload.photo_formats') }}</div>
         </div>
         <div class="drop-preview" id="photo-preview" style="display:none">
           <img id="photo-img" src="" alt="Photo preview">
@@ -38,9 +38,9 @@
         <input type="file" id="audio-input" name="audio" accept="audio/*" hidden>
         <div class="drop-inner" id="audio-inner">
           <div class="drop-icon">&#x1F3B5;</div>
-          <div class="drop-title">Your Track</div>
-          <div class="drop-sub">AI will analyze BPM and sync the video</div>
-          <div class="drop-formats">MP3, WAV, M4A &middot; max 50 MB</div>
+          <div class="drop-title">{{ t('upload.audio_title') }}</div>
+          <div class="drop-sub">{{ t('upload.audio_sub') }}</div>
+          <div class="drop-formats">{{ t('upload.audio_formats') }}</div>
         </div>
         <div class="drop-preview" id="audio-preview" style="display:none">
           <div class="audio-preview-icon">&#x1F3B5;</div>
@@ -56,7 +56,7 @@
     <div class="options-row">
 
       <div class="option-group">
-        <label class="option-label">Style</label>
+        <label class="option-label">{{ t('upload.style_label') }}</label>
         <div class="style-grid" id="style-grid">
           <button type="button" class="style-btn active" data-style="cinematic">&#x1F3AC; Cinematic</button>
           <button type="button" class="style-btn" data-style="neon">&#x1F49C; Neon</button>
@@ -68,7 +68,7 @@
       </div>
 
       <div class="option-group">
-        <label class="option-label">Aspect Ratio</label>
+        <label class="option-label">{{ t('upload.ar_label') }}</label>
         <div class="ar-grid">
           <label class="ar-btn">
             <input type="radio" name="aspect_ratio" value="9:16" checked>
@@ -93,30 +93,30 @@
 
       <!-- Duration picker -->
       <div class="option-group">
-        <label class="option-label">Video Duration</label>
+        <label class="option-label">{{ t('upload.dur_label') }}</label>
         <div class="dur-grid" id="dur-grid">
 
           <button type="button" class="dur-btn" data-dur="5">
             <span class="dur-time">5s</span>
-            <span class="dur-name">Quick clip</span>
-            <span class="dur-cost">1 credito</span>
+            <span class="dur-name">{{ t('upload.dur_5_name') }}</span>
+            <span class="dur-cost">{{ t('upload.credit_1') }}</span>
           </button>
 
           <button type="button" class="dur-btn active" data-dur="10">
             <span class="dur-time">10s</span>
-            <span class="dur-name">Short reel</span>
-            <span class="dur-cost">2 crediti</span>
+            <span class="dur-name">{{ t('upload.dur_10_name') }}</span>
+            <span class="dur-cost">{{ t('upload.credits_format')|replace('{n}','2') }}</span>
           </button>
 
           <button type="button" class="dur-btn" data-dur="30">
             <span class="dur-time">30s</span>
-            <span class="dur-name">Extended &middot; 3 clips</span>
-            <span class="dur-cost">6 crediti</span>
+            <span class="dur-name">{{ t('upload.dur_30_name') }}</span>
+            <span class="dur-cost">{{ t('upload.credits_format')|replace('{n}','6') }}</span>
           </button>
 
           <button type="button" class="dur-btn dur-btn-full" data-dur="full" id="dur-full-btn" disabled>
-            <span class="dur-time">Full Track</span>
-            <span class="dur-name" id="dur-full-name">Load audio to calculate</span>
+            <span class="dur-time">{{ t('upload.dur_full_time') }}</span>
+            <span class="dur-name" id="dur-full-name">{{ t('upload.dur_full_name_placeholder') }}</span>
             <span class="dur-cost" id="dur-full-cost">&mdash;</span>
           </button>
 
@@ -129,11 +129,11 @@
         <!-- Live cost banner -->
         <div class="cost-banner" id="cost-banner">
           <div class="cost-left">
-            <span class="cost-label">Est. cost</span>
-            <span class="cost-value" id="cost-display">2 crediti</span>
+            <span class="cost-label">{{ t('upload.cost_label') }}</span>
+            <span class="cost-value" id="cost-display">{{ t('upload.credits_format')|replace('{n}','2') }}</span>
           </div>
           <div class="cost-right">
-            <span class="cost-detail" id="cost-detail">1 clip &middot; Kling AI &middot; included in your plan</span>
+            <span class="cost-detail" id="cost-detail">{{ t('upload.cost_included') }}</span>
           </div>
         </div>
       </div>
@@ -142,17 +142,17 @@
 
     <!-- Scene Prompt -->
     <div class="prompt-section">
-      <label class="option-label">Scene Prompt</label>
+      <label class="option-label">{{ t('upload.scene_label') }}</label>
       <div class="prompt-mode-grid" id="prompt-mode-grid">
         <button type="button" class="prompt-mode-btn active" data-mode="auto">
           <span class="pm-icon">&#x2728;</span>
-          <span class="pm-title">Auto-generate</span>
-          <span class="pm-sub">Claude AI writes the scene from your audio</span>
+          <span class="pm-title">{{ t('upload.auto_title') }}</span>
+          <span class="pm-sub">{{ t('upload.auto_sub') }}</span>
         </button>
         <button type="button" class="prompt-mode-btn" data-mode="custom">
           <span class="pm-icon">&#x270D;&#xFE0F;</span>
-          <span class="pm-title">Custom prompt</span>
-          <span class="pm-sub">You describe the exact scene you want</span>
+          <span class="pm-title">{{ t('upload.custom_title') }}</span>
+          <span class="pm-sub">{{ t('upload.custom_sub') }}</span>
         </button>
       </div>
       <div class="prompt-custom-area" id="prompt-custom-area" style="display:none">
@@ -164,7 +164,7 @@
           rows="5"
         ></textarea>
         <div class="prompt-footer-row">
-          <span class="prompt-hint">Kling AI animates this scene starting from your photo</span>
+          <span class="prompt-hint">{{ t('upload.prompt_hint') }}</span>
           <span class="prompt-counter"><span id="prompt-char-count">0</span> / 900</span>
         </div>
       </div>
@@ -173,8 +173,8 @@
     <!-- Lipsync toggle -->
     <div class="lipsync-row">
       <div class="lipsync-info">
-        <span class="lipsync-title">&#x1F444; Lip Sync</span>
-        <span class="lipsync-sub">AI animates lip movement to match every beat of the track</span>
+        <span class="lipsync-title">{{ t('upload.lipsync_title') }}</span>
+        <span class="lipsync-sub">{{ t('upload.lipsync_sub') }}</span>
       </div>
       <label class="toggle-switch-label" title="Enable AI lip sync">
         <input type="checkbox" name="enable_lipsync" id="lipsync-toggle" value="on" checked>
@@ -188,9 +188,9 @@
     <!-- Submit -->
     <div class="upload-actions">
       <button type="submit" class="btn btn-primary btn-lg" id="generate-btn" disabled>
-        Generate Reel &rarr;
+        {{ t('upload.generate_btn') }}
       </button>
-      <p class="upload-note" id="upload-note">~2 min &middot; Your plan includes this generation</p>
+      <p class="upload-note" id="upload-note">{{ t('upload.upload_note_10') }}</p>
     </div>
 
   </form>
@@ -199,8 +199,8 @@
   <div class="progress-overlay" id="progress-overlay" style="display:none">
     <div class="progress-card">
       <div class="progress-anim"></div>
-      <h2 class="progress-title" id="progress-title">Analyzing your track&hellip;</h2>
-      <p class="progress-sub" id="progress-sub">Detecting BPM and energy peaks</p>
+      <h2 class="progress-title" id="progress-title">{{ t('upload.status_analyzing_title') }}</h2>
+      <p class="progress-sub" id="progress-sub">{{ t('upload.status_analyzing_sub') }}</p>
       <div class="progress-steps">
 
         <div class="pstep" id="pstep-1" data-step="1" data-status="analyzing">
@@ -210,27 +210,27 @@
             </span>
             <span class="eq-emoji">&#x1F3B5;</span>
           </span>
-          Analyzing audio
+          {{ t('upload.pstep_audio') }}
         </div>
 
         <div class="pstep" id="pstep-2" data-step="2" data-status="generating">
           <span class="step-icon si-sparkle">&#x2728;</span>
-          Writing scene prompt
+          {{ t('upload.pstep_scene') }}
         </div>
 
         <div class="pstep" id="pstep-3" data-step="3" data-status="processing">
           <span class="step-icon si-film">&#x1F3AC;</span>
-          <span id="pstep-video-label">Generating video</span>
+          <span id="pstep-video-label">{{ t('upload.pstep_video') }}</span>
         </div>
 
         <div class="pstep" id="pstep-ls" data-step="4" data-status="lipsyncing">
           <span class="step-icon si-lips">&#x1F444;</span>
-          Syncing lip movement
+          {{ t('upload.pstep_lipsync') }}
         </div>
 
         <div class="pstep" id="pstep-4" data-step="5" data-status="completed">
           <span class="step-icon si-zap">&#x26A1;</span>
-          Assembling final reel
+          {{ t('upload.pstep_assembly') }}
         </div>
 
       </div>
@@ -758,6 +758,27 @@
 
 {% block scripts %}
 <script>
+const I18N = {
+  loadAudioCalc:   {{ t('upload.dur_full_name_placeholder') | tojson }},
+  creditsFormat:   {{ t('upload.credits_format')            | tojson }},
+  credit1:         {{ t('upload.credit_1')                  | tojson }},
+  clip1Format:     {{ t('upload.clip_1_format')             | tojson }},
+  clipsFormat:     {{ t('upload.clips_format')              | tojson }},
+  fullClipsFormat: {{ t('upload.full_clips_format')         | tojson }},
+  uploadNote5:     {{ t('upload.upload_note_5')             | tojson }},
+  uploadNote10:    {{ t('upload.upload_note_10')            | tojson }},
+  uploadNote30:    {{ t('upload.upload_note_30')            | tojson }},
+  uploadNoteFull:  {{ t('upload.upload_note_full')          | tojson }},
+  generateBtn:     {{ t('upload.generate_btn')              | tojson }},
+  starting:        {{ t('upload.starting')                  | tojson }},
+  generatingClips: {{ t('upload.generating_clips')          | tojson }},
+  generatingVideo: {{ t('upload.generating_video')          | tojson }},
+  errTimeout:      {{ t('upload.err_timeout')               | tojson }},
+  errNetwork:      {{ t('upload.err_network')               | tojson }},
+  errGenFailed:    {{ t('upload.err_gen_failed')            | tojson }},
+  working:         {{ t('upload.working')                   | tojson }},
+};
+
 // ── Prompt mode selector ──
 let _promptMode = 'auto';
 
@@ -770,7 +791,6 @@ document.getElementById('prompt-mode-grid').addEventListener('click', e => {
   });
   document.getElementById('prompt-custom-area').style.display =
     _promptMode === 'custom' ? 'block' : 'none';
-  // Focus textarea when switching to custom
   if (_promptMode === 'custom') {
     document.getElementById('custom-prompt-input').focus();
   }
@@ -821,7 +841,6 @@ function setFile(type, file) {
     document.getElementById('audio-name').textContent  = file.name;
     const player = document.getElementById('audio-player');
     player.src = URL.createObjectURL(file);
-    // Detect duration once metadata loads
     player.addEventListener('loadedmetadata', () => {
       _audioDurSec = Math.round(player.duration) || 0;
       document.getElementById('audio-duration-sec-input').value = _audioDurSec;
@@ -841,9 +860,8 @@ function clearFile(type) {
     const fb = document.getElementById('dur-full-btn');
     fb.disabled = true;
     fb.classList.remove('enabled');
-    document.getElementById('dur-full-name').textContent = 'Load audio to calculate';
+    document.getElementById('dur-full-name').textContent = I18N.loadAudioCalc;
     document.getElementById('dur-full-cost').textContent = '—';
-    // If full was selected, fall back to 10s
     if (document.getElementById('video-duration-input').value === 'full') {
       selectDur('10');
     }
@@ -861,7 +879,7 @@ function checkReady() {
 
 // ── Credit constants (1 credit = 5 seconds of generated video) ──
 const SEC_PER_CREDIT = 5;
-const CLIP_LEN       = 10;   // secs per Kling clip in multi-clip mode
+const CLIP_LEN       = 10;
 const MAX_AUDIO_SEC  = 600;
 
 function fmtDur(s) {
@@ -875,18 +893,22 @@ function secsToCredits(secs) {
 }
 
 function calcCost(dur) {
-  if (dur === '5')  return { credits: 1,                         clips: 1, detail: '1 clip · 1 credit' };
-  if (dur === '10') return { credits: 2,                         clips: 1, detail: '1 clip · 2 credits' };
+  if (dur === '5')  return { credits: 1, clips: 1,
+    detail: I18N.clip1Format.replace('{cr}', 1) };
+  if (dur === '10') return { credits: 2, clips: 1,
+    detail: I18N.clip1Format.replace('{cr}', 2) };
   if (dur === '30') {
     const n = Math.ceil(30 / CLIP_LEN);
-    return { credits: 6, clips: n, detail: `${n} clips stitched · 6 credits` };
+    return { credits: 6, clips: n,
+      detail: I18N.clipsFormat.replace('{n}', n).replace('{cr}', 6) };
   }
   if (dur === 'full') {
-    if (!_audioDurSec) return { credits: null, clips: 0, detail: 'Load audio to calculate' };
+    if (!_audioDurSec) return { credits: null, clips: 0, detail: I18N.loadAudioCalc };
     const secs = Math.min(_audioDurSec, MAX_AUDIO_SEC);
     const n    = Math.ceil(secs / CLIP_LEN);
     const cr   = secsToCredits(secs);
-    return { credits: cr, clips: n, detail: `${n} clips · ${fmtDur(secs)} · ${cr} credits` };
+    return { credits: cr, clips: n,
+      detail: I18N.fullClipsFormat.replace('{n}', n).replace('{dur}', fmtDur(secs)).replace('{cr}', cr) };
   }
   return { credits: null, clips: 0, detail: '' };
 }
@@ -900,7 +922,7 @@ function updateFullTrackBtn() {
     const n    = Math.ceil(secs / CLIP_LEN);
     const cr   = secsToCredits(secs);
     name.textContent = `${fmtDur(secs)} · ${n} clips`;
-    cost.textContent = `${cr} crediti`;
+    cost.textContent = I18N.creditsFormat.replace('{n}', cr);
     fb.disabled = false;
     fb.classList.add('enabled');
   }
@@ -909,11 +931,14 @@ function updateFullTrackBtn() {
 function updateCostBanner() {
   const dur   = document.getElementById('video-duration-input').value;
   const { credits, detail } = calcCost(dur);
-  document.getElementById('cost-display').textContent = credits !== null ? `${credits} crediti` : '—';
+  document.getElementById('cost-display').textContent =
+    credits !== null ? I18N.creditsFormat.replace('{n}', credits) : '—';
   document.getElementById('cost-detail').textContent  = detail;
-  // Update time estimate note
-  const dur10 = dur === '5' ? '~90s' : dur === '10' ? '~2 min' : dur === '30' ? '~6 min' : 'may take 20–40+ min';
-  document.getElementById('upload-note').textContent = `${dur10} · Your plan includes this generation`;
+  const noteMap = {
+    '5': I18N.uploadNote5, '10': I18N.uploadNote10,
+    '30': I18N.uploadNote30, 'full': I18N.uploadNoteFull,
+  };
+  document.getElementById('upload-note').textContent = noteMap[dur] || I18N.uploadNote10;
 }
 
 // ── Duration selector ──
@@ -934,7 +959,6 @@ document.getElementById('dur-grid').addEventListener('click', e => {
   selectDur(btn.dataset.dur);
 });
 
-// Initial banner
 updateCostBanner();
 
 // ── Style selector ──
@@ -962,21 +986,14 @@ document.getElementById('upload-form').addEventListener('submit', async e => {
   const err = document.getElementById('upload-error');
   err.style.display = 'none';
   btn.disabled = true;
-  btn.textContent = 'Starting…';
+  btn.textContent = I18N.starting;
 
   const dur = document.getElementById('video-duration-input').value;
   const { clips } = calcCost(dur);
 
-  // Update step 3 label for multi-clip jobs
-  if (clips > 1) {
-    document.getElementById('pstep-video-label').textContent =
-      `Generating ${clips} video clips`;
-  } else {
-    document.getElementById('pstep-video-label').textContent =
-      'Generating video';
-  }
+  document.getElementById('pstep-video-label').textContent =
+    clips > 1 ? I18N.generatingClips.replace('{n}', clips) : I18N.generatingVideo;
 
-  // Show progress overlay immediately — user sees feedback during file upload
   document.getElementById('progress-overlay').style.display = 'flex';
   setStep('queued');
 
@@ -1002,45 +1019,36 @@ document.getElementById('upload-form').addEventListener('submit', async e => {
       res  = await fetch('/video/generate', { method: 'POST', body: fd, signal: ctrl.signal });
       data = await res.json();
     } catch (fetchErr) {
-      const msg = fetchErr.name === 'AbortError'
-        ? 'Request timed out — server may be busy. Please try again.'
-        : 'Network error — server may have restarted. Please try again in a few seconds.';
+      const msg = fetchErr.name === 'AbortError' ? I18N.errTimeout : I18N.errNetwork;
       throw new Error(msg);
     } finally {
       clearTimeout(timer);
     }
 
-    if (res.status === 401) {
-      window.location.href = '/auth/login';
-      return;
-    }
-    if (!res.ok) throw new Error(data.error || 'Generation failed');
+    if (res.status === 401) { window.location.href = '/auth/login'; return; }
+    if (!res.ok) throw new Error(data.error || I18N.errGenFailed);
 
     pollStatus(data.job_id);
   } catch (ex) {
-    // Hide overlay and reset form on any error
     document.getElementById('progress-overlay').style.display = 'none';
     err.textContent = ex.message;
     err.style.display = 'block';
     btn.disabled = false;
-    btn.textContent = 'Generate Reel →';
+    btn.textContent = I18N.generateBtn;
   }
 });
 
 // ── Status polling ──
 const STATUS_COPY = {
-  queued:     ['Queued…',            'Waiting for a generation slot'],
-  analyzing:  ['Analyzing audio…',   'Detecting BPM, energy peaks, and structure'],
-  generating: ['Writing scene…',     'Claude AI is designing your video prompt'],
-  processing: ['Generating video…',  'AI is building your reel frame by frame'],
-  lipsyncing: ['Syncing lips…',      'AI is animating lip movement to match your track'],
-  completed:  ['Done! 🎉',           'Your reel is ready'],
-  failed:     ['Generation failed',  'Something went wrong'],
+  queued:     [{{ t('upload.status_queued_title')     | tojson }}, {{ t('upload.status_queued_sub')     | tojson }}],
+  analyzing:  [{{ t('upload.status_analyzing_title')  | tojson }}, {{ t('upload.status_analyzing_sub')  | tojson }}],
+  generating: [{{ t('upload.status_generating_title') | tojson }}, {{ t('upload.status_generating_sub') | tojson }}],
+  processing: [{{ t('upload.status_processing_title') | tojson }}, {{ t('upload.status_processing_sub') | tojson }}],
+  lipsyncing: [{{ t('upload.status_lipsyncing_title') | tojson }}, {{ t('upload.status_lipsyncing_sub') | tojson }}],
+  completed:  [{{ t('upload.status_done_title')       | tojson }}, {{ t('upload.status_done_sub')       | tojson }}],
+  failed:     [{{ t('upload.status_failed_title')     | tojson }}, {{ t('upload.status_failed_sub')     | tojson }}],
 };
 
-// Step numbers change based on lipsync toggle:
-//   lipsync ON  → 5 steps (lipsyncing = step 4, completed = step 5)
-//   lipsync OFF → 4 steps (completed = step 4, lipsync step hidden)
 const _lipsyncOn = () => document.getElementById('lipsync-toggle').checked;
 
 function _getStatusStep(status) {
@@ -1050,16 +1058,13 @@ function _getStatusStep(status) {
   return { analyzing: 1, generating: 2, processing: 3, completed: 4 }[status] || 0;
 }
 
-// Toggle lipsync step visibility when user flips the switch
 document.getElementById('lipsync-toggle').addEventListener('change', () => {
   document.getElementById('pstep-ls').style.display = _lipsyncOn() ? '' : 'none';
 });
-// Initial state
 document.getElementById('pstep-ls').style.display = _lipsyncOn() ? '' : 'none';
 
-// Per-step orb HTML — swapped into .progress-anim on each step change
 const ORB_HTML = {
-  0: '',  // queued — default gradient blob
+  0: '',
   1: `<div class="orb-inner orb-audio">
         <span class="ob"></span><span class="ob"></span><span class="ob"></span>
         <span class="ob"></span><span class="ob"></span><span class="ob"></span>
@@ -1091,7 +1096,6 @@ const ORB_HTML = {
       </div>`,
 };
 
-// Per-step row icon animation config (unchanged)
 const STEP_CONFIG = {
   1: { iconAnim: null               },
   2: { iconAnim: 'si-anim-sparkle'  },
@@ -1100,13 +1104,11 @@ const STEP_CONFIG = {
   5: { iconAnim: 'si-anim-zap'      },
 };
 const ALL_ICON_ANIMS = ['si-anim-sparkle', 'si-anim-film', 'si-anim-lips', 'si-anim-zap'];
-const ALL_ORB_ANIMS  = [];
 
 function setStep(status) {
   const stepNum = _getStatusStep(status);
   const cfg     = STEP_CONFIG[stepNum];
 
-  // ── Big orb — swap HTML graphic per step ──
   const orb = document.querySelector('.progress-anim');
   if (orb) {
     if (stepNum > 0) {
@@ -1120,7 +1122,6 @@ function setStep(status) {
     }
   }
 
-  // ── Step rows (filter hidden steps so numbering stays correct) ──
   const visibleSteps = Array.from(document.querySelectorAll('.pstep'))
     .filter(el => el.style.display !== 'none');
   visibleSteps.forEach((el, i) => {
@@ -1129,14 +1130,12 @@ function setStep(status) {
     el.classList.toggle('pstep-done',   n < stepNum);
     el.classList.toggle('pstep-active', active);
 
-    // Icon animation classes
     const icon = el.querySelector('.step-icon');
     if (icon) {
       ALL_ICON_ANIMS.forEach(c => icon.classList.remove(c));
       if (active && cfg?.iconAnim) icon.classList.add(cfg.iconAnim);
     }
 
-    // Eq bars (step 1 only)
     const eqBars  = el.querySelector('.eq-icon');
     const eqEmoji = el.querySelector('.eq-emoji');
     if (eqBars && eqEmoji) {
@@ -1145,8 +1144,7 @@ function setStep(status) {
     }
   });
 
-  // ── Title / sub ──
-  const [title, sub] = STATUS_COPY[status] || ['Working…', ''];
+  const [title, sub] = STATUS_COPY[status] || [I18N.working, ''];
   document.getElementById('progress-title').textContent = title;
   document.getElementById('progress-sub').textContent   = sub;
 }
@@ -1157,13 +1155,13 @@ function _resetForm(errMsg) {
   err.textContent = errMsg;
   err.style.display = 'block';
   document.getElementById('generate-btn').disabled = false;
-  document.getElementById('generate-btn').textContent = 'Generate Reel →';
+  document.getElementById('generate-btn').textContent = I18N.generateBtn;
 }
 
 async function pollStatus(jobId) {
   setStep('queued');
   let polls = 0;
-  const MAX_POLLS = 90;   // 90 × 8s = 12 min hard ceiling
+  const MAX_POLLS = 90;
   const interval = setInterval(async () => {
     polls++;
     if (polls > MAX_POLLS) {
@@ -1181,7 +1179,7 @@ async function pollStatus(jobId) {
       }
       if (data.status === 'failed') {
         clearInterval(interval);
-        _resetForm(data.error_message || 'Generation failed. Please try again.');
+        _resetForm(data.error_message || I18N.errGenFailed);
       }
     } catch (ex) { /* network hiccup, keep polling */ }
   }, 8000);

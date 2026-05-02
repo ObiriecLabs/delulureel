@@ -24,6 +24,7 @@ except Exception:
 from flask import Flask, send_from_directory, redirect, request, session, url_for, render_template, jsonify
 from werkzeug.middleware.proxy_fix import ProxyFix
 from dotenv import load_dotenv
+from core.i18n import get_lang, t as _t, SUPPORTED_LANGS, LANG_NAMES
 
 load_dotenv()
 
@@ -51,6 +52,26 @@ app.config.update(
     SESSION_COOKIE_SAMESITE='Lax',    # allow cross-site navigations (Stripe redirect back)
     MAX_CONTENT_LENGTH=60 * 1024 * 1024,  # 60 MB max upload (photo 10MB + audio 50MB)
 )
+
+# ── i18n context processor ──
+@app.context_processor
+def inject_i18n():
+    lang = get_lang(session, request)
+    return dict(
+        t=lambda key: _t(key, lang),
+        lang=lang,
+        SUPPORTED_LANGS=SUPPORTED_LANGS,
+        LANG_NAMES=LANG_NAMES,
+    )
+
+# ── Language switcher ──
+@app.route('/set-lang', methods=['POST', 'GET'])
+def set_lang():
+    lang = request.form.get('lang') or request.args.get('lang', 'en')
+    if lang in SUPPORTED_LANGS:
+        session['lang'] = lang
+    referrer = request.referrer
+    return redirect(referrer if referrer else url_for('dashboard'))
 
 # ── Blueprints ──
 from saas.auth.routes import auth_bp

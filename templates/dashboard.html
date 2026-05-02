@@ -7,35 +7,35 @@
   <!-- Welcome banner (shown once after trial setup) -->
   <div class="welcome-banner" id="welcome-banner" style="display:none">
     <span>🎬</span>
-    <span>Welcome to DELULUREEL! Your 7-day trial is active. You have <strong>6 credits</strong> to use.</span>
+    <span>{{ t('dashboard.welcome') }}</span>
     <button onclick="document.getElementById('welcome-banner').style.display='none'" class="banner-close">×</button>
   </div>
 
   <!-- Header row -->
   <div class="dash-header">
     <div>
-      <h1 class="dash-title">Your Reels</h1>
-      <p class="dash-sub">Create AI-generated videoclips from your music &amp; photo.</p>
+      <h1 class="dash-title">{{ t('dashboard.title') }}</h1>
+      <p class="dash-sub">{{ t('dashboard.subtitle') }}</p>
     </div>
-    <a href="/upload" class="btn btn-primary">+ Create New Reel</a>
+    <a href="/upload" class="btn btn-primary">{{ t('dashboard.create_btn') }}</a>
   </div>
 
   <!-- Plan info bar -->
   <div class="plan-bar" id="plan-bar">
     <div class="plan-bar-item">
-      <span class="plan-bar-label">Plan</span>
+      <span class="plan-bar-label">{{ t('dashboard.plan_label') }}</span>
       <span class="plan-bar-value" id="plan-name">–</span>
     </div>
     <div class="plan-bar-item">
-      <span class="plan-bar-label">Status</span>
+      <span class="plan-bar-label">{{ t('dashboard.status_label') }}</span>
       <span class="plan-bar-value" id="plan-status">–</span>
     </div>
     <div class="plan-bar-item">
-      <span class="plan-bar-label">Credits this month</span>
+      <span class="plan-bar-label">{{ t('dashboard.credits_label') }}</span>
       <span class="plan-bar-value" id="plan-usage">–</span>
     </div>
     <div class="plan-bar-item plan-bar-cta">
-      <a href="/billing/portal" class="btn btn-ghost btn-sm">Manage billing</a>
+      <a href="/billing/portal" class="btn btn-ghost btn-sm">{{ t('dashboard.manage_billing') }}</a>
     </div>
   </div>
 
@@ -49,13 +49,13 @@
 
   <!-- Reels grid -->
   <div class="reels-section">
-    <h2 class="section-title-sm">Recent Reels</h2>
+    <h2 class="section-title-sm">{{ t('dashboard.recent_reels') }}</h2>
     <div class="reels-grid" id="reels-grid">
       <div class="reels-empty" id="reels-empty" style="display:none">
         <div class="empty-icon">🎬</div>
-        <p class="empty-title">No reels yet</p>
-        <p class="empty-sub">Upload your first photo + track to get started.</p>
-        <a href="/upload" class="btn btn-primary">Create Your First Reel</a>
+        <p class="empty-title">{{ t('dashboard.no_reels_title') }}</p>
+        <p class="empty-sub">{{ t('dashboard.no_reels_sub') }}</p>
+        <a href="/upload" class="btn btn-primary">{{ t('dashboard.create_first') }}</a>
       </div>
     </div>
     <div class="reels-loading" id="reels-loading">
@@ -68,6 +68,27 @@
 
 {% block scripts %}
 <script>
+const I18N = {
+  statusTrial:     {{ t('dashboard.status_trial')     | tojson }},
+  statusActive:    {{ t('dashboard.status_active')    | tojson }},
+  statusSuspended: {{ t('dashboard.status_suspended') | tojson }},
+  statusCancelled: {{ t('dashboard.status_cancelled') | tojson }},
+  statusInactive:  {{ t('dashboard.status_inactive')  | tojson }},
+  reelReady:       {{ t('dashboard.reel_ready')       | tojson }},
+  reelFailed:      {{ t('dashboard.reel_failed')      | tojson }},
+  reelQueued:      {{ t('dashboard.reel_queued')      | tojson }},
+  reelAnalyzing:   {{ t('dashboard.reel_analyzing')   | tojson }},
+  reelGenerating:  {{ t('dashboard.reel_generating')  | tojson }},
+  reelProcessing:  {{ t('dashboard.reel_processing')  | tojson }},
+  reelLipsyncing:  {{ t('dashboard.reel_lipsyncing')  | tojson }},
+  creditsCounter:  {{ t('dashboard.credits_counter')  | tojson }},
+  pctUsed:         {{ t('dashboard.pct_used')         | tojson }},
+  dateLocale:      {{ t('dashboard.date_locale')      | tojson }},
+  download:        {{ t('dashboard.download')         | tojson }},
+  view:            {{ t('dashboard.view')             | tojson }},
+  checkStatus:     {{ t('dashboard.check_status')     | tojson }},
+};
+
 const urlParams = new URLSearchParams(window.location.search);
 if (urlParams.get('welcome') === '1') {
   document.getElementById('welcome-banner').style.display = 'flex';
@@ -78,23 +99,30 @@ if (urlParams.get('welcome') === '1') {
 fetch('/video/profile')
   .then(r => r.json())
   .then(p => {
-    const PLAN_NAMES = { creator: 'Creator', pro: 'Pro', studio: 'Studio' };
-    const STATUS_LABELS = { trial: '🟡 Trial', active: '🟢 Active', suspended: '🔴 Suspended', cancelled: '⚫ Cancelled', inactive: '⚫ Inactive' };
+    const PLAN_NAMES    = { creator: 'Creator', pro: 'Pro', studio: 'Studio' };
+    const STATUS_LABELS = {
+      trial: I18N.statusTrial, active: I18N.statusActive,
+      suspended: I18N.statusSuspended, cancelled: I18N.statusCancelled,
+      inactive: I18N.statusInactive,
+    };
 
     document.getElementById('plan-name').textContent   = PLAN_NAMES[p.plan] || '–';
     document.getElementById('plan-status').textContent = STATUS_LABELS[p.status] || p.status;
 
     const used  = p.credits_used_this_month || 0;
     const limit = p.credits_limit || 10;
-    document.getElementById('plan-usage').textContent  = `${used} / ${limit} crediti`;
+    document.getElementById('plan-usage').textContent  =
+      I18N.creditsCounter.replace('{used}', used).replace('{limit}', limit);
 
     // Usage bar
     const pct = Math.min(100, Math.round((used / limit) * 100));
     const bar = document.getElementById('usage-bar-wrap');
     bar.style.display = 'flex';
     document.getElementById('usage-bar-fill').style.width = pct + '%';
-    document.getElementById('usage-bar-fill').className   = 'usage-bar-fill' + (pct >= 90 ? ' danger' : pct >= 70 ? ' warn' : '');
-    document.getElementById('usage-bar-label').textContent = `${pct}% used`;
+    document.getElementById('usage-bar-fill').className   =
+      'usage-bar-fill' + (pct >= 90 ? ' danger' : pct >= 70 ? ' warn' : '');
+    document.getElementById('usage-bar-label').textContent =
+      I18N.pctUsed.replace('{pct}', pct);
   })
   .catch(() => {});
 
@@ -113,14 +141,27 @@ fetch('/video/history')
       return;
     }
 
+    const statusClass = {
+      completed: 'status-ok', failed: 'status-fail',
+      queued: 'status-pending', analyzing: 'status-pending',
+      generating: 'status-pending', processing: 'status-pending', lipsyncing: 'status-pending',
+    };
+    const statusLabel = {
+      completed: I18N.reelReady,  failed:     I18N.reelFailed,
+      queued:    I18N.reelQueued, analyzing:  I18N.reelAnalyzing,
+      generating: I18N.reelGenerating, processing: I18N.reelProcessing,
+      lipsyncing: I18N.reelLipsyncing,
+    };
+
     jobs.forEach(job => {
-      const card = document.createElement('div');
+      const card  = document.createElement('div');
       card.className = 'reel-card';
 
-      const statusClass = { completed: 'status-ok', failed: 'status-fail', queued: 'status-pending', analyzing: 'status-pending', generating: 'status-pending', processing: 'status-pending', lipsyncing: 'status-pending' }[job.status] || 'status-pending';
-      const statusLabel = { completed: 'Ready', failed: 'Failed', queued: 'Queued', analyzing: 'Analyzing…', generating: 'Generating…', processing: 'Processing…', lipsyncing: 'Lip syncing…' }[job.status] || job.status;
-
-      const date = new Date(job.created_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
+      const cls   = statusClass[job.status] || 'status-pending';
+      const label = statusLabel[job.status]  || job.status;
+      const date  = new Date(job.created_at).toLocaleDateString(
+        I18N.dateLocale, { day: 'numeric', month: 'short', year: 'numeric' }
+      );
 
       card.innerHTML = `
         <div class="reel-thumb ${job.status !== 'completed' ? 'reel-thumb-pending' : ''}">
@@ -132,19 +173,19 @@ fetch('/video/history')
           }
         </div>
         <div class="reel-meta">
-          <span class="reel-badge ${statusClass}">${statusLabel}</span>
+          <span class="reel-badge ${cls}">${label}</span>
           <span class="reel-style">${job.style || 'cinematic'} · ${job.aspect_ratio || '9:16'}</span>
           ${job.bpm ? `<span class="reel-bpm">${job.bpm} BPM</span>` : ''}
           <span class="reel-date">${date}</span>
         </div>
         ${job.status === 'completed' ? `
           <div class="reel-actions">
-            <a href="${job.output_url}" download class="btn btn-ghost btn-sm">Download</a>
-            <a href="/result/${job.id}" class="btn btn-sm btn-outline">View</a>
+            <a href="${job.output_url}" download class="btn btn-ghost btn-sm">${I18N.download}</a>
+            <a href="/result/${job.id}" class="btn btn-sm btn-outline">${I18N.view}</a>
           </div>` : ''
         }
         ${job.status !== 'completed' && job.status !== 'failed'
-          ? `<div class="reel-actions"><a href="/result/${job.id}" class="btn btn-sm btn-ghost">Check status</a></div>` : ''
+          ? `<div class="reel-actions"><a href="/result/${job.id}" class="btn btn-sm btn-ghost">${I18N.checkStatus}</a></div>` : ''
         }
       `;
       grid.appendChild(card);

@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="{{ lang }}">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -18,7 +18,14 @@
       <a href="/" class="logo grad-text">DELULUREEL</a>
       <div class="nav-right">
         {% block nav_extra %}{% endblock %}
-        <a href="/auth/logout" class="nav-logout">Log out</a>
+        <form action="/set-lang" method="POST" class="lang-switcher">
+          <select name="lang" onchange="this.form.submit()" aria-label="Language">
+            {% for code in SUPPORTED_LANGS %}
+            <option value="{{ code }}"{% if code == lang %} selected{% endif %}>{{ LANG_NAMES[code] }}</option>
+            {% endfor %}
+          </select>
+        </form>
+        <a href="/auth/logout" class="nav-logout">{{ t('nav.logout') }}</a>
       </div>
     </div>
   </div>

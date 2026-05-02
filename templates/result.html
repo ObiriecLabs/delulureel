@@ -1,8 +1,8 @@
 {% extends 'base.html' %}
-{% block title %}Your Reel — DELULUREEL{% endblock %}
+{% block title %}{{ t('result.reel_ready_title') }} — DELULUREEL{% endblock %}
 
 {% block nav_extra %}
-<a href="/dashboard" class="nav-back">← Dashboard</a>
+<a href="/dashboard" class="nav-back">{{ t('nav.back_dashboard') }}</a>
 {% endblock %}
 
 {% block content %}
@@ -11,21 +11,21 @@
   <!-- Loading state -->
   <div class="result-loading" id="result-loading">
     <div class="spinner spinner-lg"></div>
-    <p>Loading your reel…</p>
+    <p>{{ t('result.loading') }}</p>
   </div>
 
   <!-- Processing state -->
   <div class="result-processing" id="result-processing" style="display:none">
     <div class="processing-card">
       <div class="progress-anim"></div>
-      <h2 id="proc-title">Generating your reel…</h2>
+      <h2 id="proc-title">{{ t('result.generating_title') }}</h2>
       <p id="proc-sub" class="proc-sub"></p>
       <div class="progress-steps">
-        <div class="pstep" id="rs-1">🎵 Analyzing audio</div>
-        <div class="pstep" id="rs-2">✨ Writing scene prompt</div>
-        <div class="pstep" id="rs-3">🎬 Generating video (Kling AI)</div>
-        <div class="pstep" id="rs-4">👄 Syncing lip movement</div>
-        <div class="pstep" id="rs-5">⚡ Assembling final reel</div>
+        <div class="pstep" id="rs-1">{{ t('result.step_audio') }}</div>
+        <div class="pstep" id="rs-2">{{ t('result.step_scene') }}</div>
+        <div class="pstep" id="rs-3">{{ t('result.step_video') }}</div>
+        <div class="pstep" id="rs-4">{{ t('result.step_lipsync') }}</div>
+        <div class="pstep" id="rs-5">{{ t('result.step_assembly') }}</div>
       </div>
     </div>
   </div>
@@ -33,9 +33,9 @@
   <!-- Failed state -->
   <div class="result-failed" id="result-failed" style="display:none">
     <div class="failed-icon">😔</div>
-    <h2>Generation failed</h2>
+    <h2>{{ t('result.failed_title') }}</h2>
     <p id="failed-msg" class="failed-msg"></p>
-    <a href="/upload" class="btn btn-primary">Try Again →</a>
+    <a href="/upload" class="btn btn-primary">{{ t('result.try_again') }}</a>
   </div>
 
   <!-- Completed state -->
@@ -57,26 +57,26 @@
 
       <!-- Info & actions -->
       <div class="result-info">
-        <div class="result-badge">✅ Reel ready</div>
-        <h1 class="result-title">Your reel is ready.</h1>
+        <div class="result-badge">{{ t('result.badge_ready') }}</div>
+        <h1 class="result-title">{{ t('result.reel_ready_title') }}</h1>
         <p class="result-sub" id="result-meta"></p>
 
         <div class="result-actions">
           <a id="download-btn" href="#" download class="btn btn-primary btn-lg">
-            ↓ Download Reel
+            {{ t('result.download_btn') }}
           </a>
-          <a href="/upload" class="btn btn-ghost btn-lg">+ Create Another</a>
+          <a href="/upload" class="btn btn-ghost btn-lg">{{ t('result.create_another') }}</a>
         </div>
 
         <!-- Prompt used (collapsible) -->
         <details class="prompt-details">
-          <summary>AI prompt used</summary>
+          <summary>{{ t('result.ai_prompt_label') }}</summary>
           <p id="prompt-text" class="prompt-text"></p>
         </details>
 
         <div class="result-formats" id="result-formats">
-          <p class="formats-label">Need another format?</p>
-          <p class="formats-note">Upgrade to Pro to get 9:16, 16:9, and 1:1 exports from the same generation.</p>
+          <p class="formats-label">{{ t('result.formats_label') }}</p>
+          <p class="formats-note">{{ t('result.formats_note') }}</p>
         </div>
       </div>
 
@@ -91,13 +91,18 @@
 <script>
 const JOB_ID = '{{ job_id }}';
 
+const I18N = {
+  working:      {{ t('result.working')        | tojson }},
+  errUnexpected: {{ t('result.err_unexpected') | tojson }},
+};
+
 const STATUS_STEP = { analyzing: 1, generating: 2, processing: 3, lipsyncing: 4, completed: 5 };
 const STATUS_COPY = {
-  queued:     ['Queued…',            'Waiting for an available generation slot'],
-  analyzing:  ['Analyzing audio…',   'Detecting BPM and energy peaks'],
-  generating: ['Writing scene…',     'Claude AI is designing your video'],
-  processing: ['Generating video…',  'Kling AI is building your reel (~90s)'],
-  lipsyncing: ['Syncing lips…',      'AI is animating lip movement to match your track'],
+  queued:     [{{ t('result.status_queued_title')     | tojson }}, {{ t('result.status_queued_sub')     | tojson }}],
+  analyzing:  [{{ t('result.status_analyzing_title')  | tojson }}, {{ t('result.status_analyzing_sub')  | tojson }}],
+  generating: [{{ t('result.status_generating_title') | tojson }}, {{ t('result.status_generating_sub') | tojson }}],
+  processing: [{{ t('result.status_processing_title') | tojson }}, {{ t('result.status_processing_sub') | tojson }}],
+  lipsyncing: [{{ t('result.status_lipsyncing_title') | tojson }}, {{ t('result.status_lipsyncing_sub') | tojson }}],
 };
 
 function showState(id) {
@@ -114,7 +119,7 @@ function setStep(status) {
     el.classList.toggle('pstep-done',   i < n);
     el.classList.toggle('pstep-active', i === n);
   });
-  const [title, sub] = STATUS_COPY[status] || ['Working…', ''];
+  const [title, sub] = STATUS_COPY[status] || [I18N.working, ''];
   document.getElementById('proc-title').textContent = title;
   document.getElementById('proc-sub').textContent   = sub;
 }
@@ -152,7 +157,7 @@ async function loadJob() {
 
     if (data.status === 'failed') {
       showState('result-failed');
-      document.getElementById('failed-msg').textContent = data.error_message || 'An unexpected error occurred.';
+      document.getElementById('failed-msg').textContent = data.error_message || I18N.errUnexpected;
       return;
     }
 
