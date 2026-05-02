@@ -869,7 +869,7 @@ def _run_pipeline(job_id, user_id, photo_path, audio_path, style, aspect_ratio,
                prompt=prompt,
                n_clips_expected=n_clips,
                target_secs_requested=int(target_secs),
-               clip_results='{}')   # reset in case of retry
+               clip_results={})     # must be dict not string — string '{}' becomes JSONB scalar and breaks || merge
 
         # 6 — Submit N clips, each with its own webhook URL
         for i in range(n_clips):
@@ -955,10 +955,18 @@ def fal_webhook_multi(job_id, clip_idx, n_clips):
             clip_results = raw
         else:
             clip_results = {}
-        # Fallback: if still empty re-read from DB (handles any future SDK change)
-        if not clip_results:
-            fb = sb.table('reel_jobs').select('clip_results').eq('id', job_id).single().execute()
-            clip_results = ((fb.data or {}).get('clip_results')) or {}
+        # Always re-read from DB — avoids any RPC return format ambiguity
+        fb = sb.table('reel_jobs').select('clip_results').eq('id', job_id).single().execute()
+        clip_results = (fb.data or {}).get('clip_results') or {}
+        # Normalise: broken jobs have clip_results as a JSON array (legacy bug where
+        # clip_results was initialised as the string '{}' → JSONB scalar, then ||
+        # produces an array instead of an object merge).
+        if isinstance(clip_results, list):
+            merged = {}
+            for item in clip_results:
+                if isinstance(item, dict):
+                    merged.update(item)
+            clip_results = merged
     except Exception as exc:
         print(f'[webhook_multi/{job_id[:8]}] DB update failed: {exc}', flush=True)
         return jsonify({'ok': True}), 200
