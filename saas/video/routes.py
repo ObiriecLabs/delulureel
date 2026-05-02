@@ -99,9 +99,12 @@ def _startup_recovery():
     """On startup: recover jobs where fal.ai completed but post-gen was killed.
 
     For each job stuck in processing/queued/analyzing/generating:
-    - If it has a valid single-clip fal_request_id: fetch the completed result
-      from fal.ai and restart _run_post_generation.
-    - Otherwise: mark failed (unrecoverable — e.g. multi-clip, pre-gen killed).
+    - Multi-clip (fal_request_id='multi:N'): if all N clip_results are in DB, spawn
+      _run_assembly immediately (clips already delivered, assembly never ran).
+      If clips are still in-flight, leave in processing for up to 60 min.
+    - Single-clip with a valid fal_request_id: fetch the completed result from
+      fal.ai and restart _run_post_generation.
+    - No req_id / 'pending': unrecoverable — mark failed.
 
     Called from app_server.py after blueprint registration.
     """
@@ -115,7 +118,7 @@ def _startup_recovery():
 
         result = sb.table('reel_jobs').select(
             'id,user_id,fal_request_id,fal_endpoint,aspect_ratio,estimated_cost,'
-            'enable_lipsync,target_secs_requested'
+            'enable_lipsync,target_secs_requested,clip_results,n_clips_expected,bpm,created_at'
         ).in_('status', ['processing', 'queued', 'analyzing', 'generating', 'lipsyncing']).lt('created_at', cutoff).execute()
 
         rows = result.data or []
@@ -131,8 +134,66 @@ def _startup_recovery():
             job_id   = job['id']
             user_id  = job['user_id']
 
-            # Multi-clip, pre-gen killed, or no fal_request_id — unrecoverable
-            if not req_id or req_id.startswith('multi:') or req_id == 'pending':
+            # Multi-clip job — check if all clips arrived while the instance was down
+            if req_id.startswith('multi:'):
+                n_clips_exp   = int(job.get('n_clips_expected') or 0)
+                clip_results  = job.get('clip_results') or {}
+                # Normalize legacy JSONB-array corruption (string '{}' init bug)
+                if isinstance(clip_results, list):
+                    merged = {}
+                    for item in clip_results:
+                        if isinstance(item, dict):
+                            merged.update(item)
+                    clip_results = merged
+                n_done = len(clip_results) if isinstance(clip_results, dict) else 0
+
+                if n_clips_exp > 0 and n_done >= n_clips_exp:
+                    # All clips are in the DB — fal.ai already delivered everything.
+                    # The assembly thread just never started because the instance restarted.
+                    ordered_urls = [clip_results.get(str(i)) for i in range(n_clips_exp)]
+                    if all(ordered_urls):
+                        try:
+                            prof_r     = sb.table('profiles').select('is_admin').eq('user_id', user_id).single().execute().data
+                            is_admin_r = bool((prof_r or {}).get('is_admin', False))
+                        except Exception:
+                            is_admin_r = False
+                        real_target = int(job.get('target_secs_requested') or n_clips_exp * CLIP_LEN_MULTI)
+                        job_data_r  = {
+                            'user_id':      user_id,
+                            'aspect_ratio': job.get('aspect_ratio', '9:16'),
+                            'est_cost':     float(job.get('estimated_cost') or 0),
+                            'target_secs':  real_target,
+                            'bpm':          float(job.get('bpm') or 128),
+                            'is_admin':     is_admin_r,
+                            'n_clips':      n_clips_exp,
+                        }
+                        threading.Thread(
+                            target=_run_assembly,
+                            args=(job_id, ordered_urls, job_data_r),
+                            daemon=True,
+                        ).start()
+                        recovered += 1
+                        print(f'🔄  Recovering multi-clip job {job_id[:8]}... ({n_done}/{n_clips_exp} clips ready — spawning assembly)', flush=True)
+                    else:
+                        failed_ids.append(job_id)
+                        print(f'⚠️  Job {job_id[:8]} multi-clip: clip_results has gaps — marking failed', flush=True)
+                else:
+                    # Not all webhooks arrived yet; only give up after 60 min
+                    created_str = job.get('created_at', '')
+                    try:
+                        created_dt  = datetime.fromisoformat(created_str.replace('Z', '+00:00'))
+                        age_minutes = (datetime.now(timezone.utc) - created_dt).total_seconds() / 60
+                    except Exception:
+                        age_minutes = 0
+                    if age_minutes > 60:
+                        failed_ids.append(job_id)
+                        print(f'⚠️  Job {job_id[:8]} multi-clip: only {n_done}/{n_clips_exp} clips after {age_minutes:.0f} min — marking failed', flush=True)
+                    else:
+                        print(f'⏳  Job {job_id[:8]} multi-clip: {n_done}/{n_clips_exp} clips — webhook(s) still in-flight ({age_minutes:.1f} min)', flush=True)
+                continue
+
+            # Pre-gen killed (no req_id yet) or 'pending' sentinel — unrecoverable
+            if not req_id or req_id == 'pending':
                 failed_ids.append(job_id)
                 continue
 
