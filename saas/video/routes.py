@@ -388,6 +388,11 @@ def _run_pre_generation(job_id, user_id, photo_path, audio_path, style,
     def _log(msg):
         print(f'[pregen/{_jid}] {msg} ({_time.time()-_t0:.1f}s)', flush=True)
 
+    # True once fal.ai accepted the job and the webhook will fire.
+    # On the success path the slot is owned by _run_post_generation;
+    # on failure it must be released here.
+    _submitted = False
+
     try:
         # 1 — Audio analysis
         _log('audio analysis START')
@@ -429,7 +434,7 @@ def _run_pre_generation(job_id, user_id, photo_path, audio_path, style,
         else:
             _log('claude scene prompt START')
             prompt = generate_scene_prompt(analysis, style, photo_path=photo_path,
-                                           lyrics=lyrics)
+                                           lyrics=lyrics, aspect_ratio=aspect_ratio)
             _log(f'claude scene prompt DONE len={len(prompt)}')
 
         # 5 — Upload photo to Supabase Storage → get signed URL for fal.ai
@@ -483,6 +488,10 @@ def _run_pre_generation(job_id, user_id, photo_path, audio_path, style,
         with _webhook_lock:
             _fal_req_to_job[fal['request_id']] = job_id
 
+        # Slot ownership transfers to _run_post_generation from this point.
+        # The finally block must NOT release it — _run_post_generation will.
+        _submitted = True
+
         # Thread ends here. fal.ai is generating the video on their servers.
         # Execution resumes in _run_post_generation when the webhook fires.
 
@@ -495,12 +504,13 @@ def _run_pre_generation(job_id, user_id, photo_path, audio_path, style,
             print(f'[pregen/{_jid}] WARNING: could not mark job failed: {_ue}', flush=True)
 
     finally:
-        # ALWAYS release the in-memory slot, regardless of how we exited.
-        # Previously this was only in the except block — if update() threw,
-        # the slot was never released and the user was permanently locked out.
-        with _lock:
-            _active_user_jobs.pop(user_id, None)
-            _global_active = max(0, _global_active - 1)
+        # Release slot only on failure: if _submitted is True, ownership passed to
+        # _run_post_generation (webhook path) or fal_webhook ERROR handler.
+        # Releasing here on the success path would double-decrement _global_active.
+        if not _submitted:
+            with _lock:
+                _active_user_jobs.pop(user_id, None)
+                _global_active = max(0, _global_active - 1)
         # Local files no longer needed — audio is now on Supabase
         try:
             shutil.rmtree(tmp_dir, ignore_errors=True)
@@ -797,7 +807,7 @@ def _run_pipeline(job_id, user_id, photo_path, audio_path, style, aspect_ratio,
         # 3 — Scene prompt
         update('generating', bpm=analysis['bpm'])
         prompt = custom_prompt or generate_scene_prompt(
-            analysis, style, photo_path=photo_path, lyrics=lyrics
+            analysis, style, photo_path=photo_path, lyrics=lyrics, aspect_ratio=aspect_ratio
         )
         print(f'[pipeline/{_jid}] prompt len={len(prompt)}', flush=True)
 
@@ -879,18 +889,16 @@ def fal_webhook_multi(job_id, clip_idx, n_clips):
     sb        = _sb_service()
 
     # Handle fal.ai error
+    # NOTE: do NOT release the in-memory slot here — _run_pipeline already released
+    # it in its finally block (multi-clip always releases after Phase 1).
     if status == 'ERROR' or not video_url:
         err = str(data.get('error', 'fal.ai clip error'))[:300]
         print(f'[webhook_multi/{job_id[:8]}] clip {clip_idx} ERROR: {err}', flush=True)
         try:
-            job = sb.table('reel_jobs').select('user_id').eq('id', job_id).single().execute().data
             sb.table('reel_jobs').update({
                 'status':        'failed',
                 'error_message': f'Clip {clip_idx + 1}/{n_clips} failed: {err}',
             }).eq('id', job_id).execute()
-            with _lock:
-                _active_user_jobs.pop(job['user_id'], None)
-                _global_active = max(0, _global_active - 1)
         except Exception:
             pass
         return jsonify({'ok': True}), 200
@@ -1045,10 +1053,9 @@ def _run_assembly(job_id: str, clip_urls: list, job_data: dict):
         print(f'[assembly/{_jid}] FAILED: {exc}', flush=True)
 
     finally:
-        # Release slot on this instance (harmless if already released by _run_pipeline)
-        with _lock:
-            _active_user_jobs.pop(user_id, None)
-            _global_active = max(0, _global_active - 1)
+        # Do NOT release the in-memory slot — _run_pipeline already released it
+        # in its own finally block (multi-clip Phase 1 always releases after submission).
+        # Releasing here would double-decrement _global_active if another job is active.
         try:
             shutil.rmtree(tmp, ignore_errors=True)
         except Exception:

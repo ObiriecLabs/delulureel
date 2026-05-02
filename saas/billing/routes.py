@@ -218,7 +218,7 @@ def _send_welcome_email(customer_id: str, plan: str):
       <li>1 credit = 5 seconds of AI video (reel 10s = 2 credits)</li>
       <li>AI scene direction synced to your BPM</li>
       <li>9:16 · 16:9 · 1:1 export formats</li>
-      <li>Character consistency via Kling 3.0 Pro</li>
+      <li>Character consistency via Kling AI</li>
     </ul>
     <p>Upload your first track + photo and drop your reel in minutes.</p>
     <a href="https://delulureel.com/upload" class="cta">Create your first reel →</a>

@@ -56,6 +56,12 @@ Rules:
   Do NOT quote or paraphrase the lyrics literally — express their essence visually.
 - Output ONLY the prompt text — no preamble, no labels, no quotes"""
 
+_FORMAT_HINTS = {
+    '9:16': 'vertical 9:16 — TikTok / Instagram Reels',
+    '16:9': 'horizontal 16:9 — YouTube / landscape',
+    '1:1':  'square 1:1 — Instagram feed',
+}
+
 _STYLE_HINTS = {
     'cinematic': 'anamorphic lens, shallow DOF, moody color grade, golden hour or blue hour lighting',
     'neon':      'neon lights, cyberpunk palette, rain-soaked streets, lens flares, synthwave aesthetic',
@@ -70,6 +76,7 @@ def generate_scene_prompt(
     style: str = 'cinematic',
     photo_path: Optional[str] = None,
     lyrics: Optional[str] = None,
+    aspect_ratio: str = '9:16',
 ) -> str:
     bpm           = audio_analysis.get('bpm', 120)
     duration      = audio_analysis.get('duration', 30)
@@ -86,6 +93,7 @@ def generate_scene_prompt(
     energy_desc     = 'intense, high-impact' if is_energetic else 'atmospheric, emotional'
     brightness_desc = 'bright vivid colors' if is_bright else 'rich dark tones'
     style_hint      = _STYLE_HINTS.get(style, _STYLE_HINTS['cinematic'])
+    format_desc     = _FORMAT_HINTS.get(aspect_ratio, f'{aspect_ratio} format')
 
     # Build lyrics block — truncate to ~600 chars to keep prompt concise
     lyrics_block = ''
@@ -114,7 +122,7 @@ def generate_scene_prompt(
         f"Energy: {energy_desc}\n"
         f"Color palette: {brightness_desc}\n"
         f"Style: {style} — {style_hint}\n"
-        f"Format: vertical 9:16 for TikTok/Reels"
+        f"Format: {format_desc}"
         f"{lyrics_block}\n\n"
         f"{closing}"
     )
