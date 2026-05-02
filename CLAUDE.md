@@ -241,6 +241,31 @@ Annuale = 2 mesi gratis.
 - 10 commit in attesa di push (`a83642e`…`9b94b82`) — push richiede conferma Armando
 - `daily_budget` RLS già applicata su DB live Supabase (migration via MCP tool)
 
+### Audit pass 13 — check globale esteso (file auth + esterni: GitHub, Render, Supabase)
+- **BUG I — CRITICO: `reset_password.html` password reset completamente rotto**:
+  `auth/routes.py` documenta esplicitamente che Supabase invia `access_token` nel fragment URL
+  (`#access_token=...`) — mai inviato al server. Il template NON aveva il JS per estrarlo, quindi
+  il campo hidden era sempre vuoto e il form restituiva sempre "Invalid or expired reset link".
+  Fix: IIFE (stesso pattern di `callback.html`) che legge `window.location.hash`, popola il campo
+  hidden e rimuove il token dall'URL bar via `history.replaceState` (sicurezza: token non rimane
+  nella history del browser).
+- **BUG K — `status_stream` SSE ceiling troppo basso**: 80 × 10s = 13 min. Job full-track 30s
+  impiegano 20-40+ min. Raised to 360 (~60 min). Endpoint non usato dai template attuali (usa
+  fetch polling), ma parte dell'API pubblica.
+  Commit: `57a49bc`
+
+**Check esterno completato:**
+- GitHub: 13 commit locali non pushati (commits `a83642e`…`57a49bc`) — push richiede conferma Armando
+- Render: servizio live su commit `05d1801a` (obsoleto di 13 commit) — deploy automatico dopo push
+- Supabase: DB OK, `daily_budget` RLS applicata, tutte le funzioni SECURITY DEFINER intatte
+- `render.yaml`: tutte le 20 env var correttamente dichiarate (compresi i `sync: false` per secrets)
+
+**Stato codebase al termine dell'audit pass 13 — CONVERGENZA ✅:**
+- Copertura totale: tutti i file .py (core/, saas/), tutti i template HTML, auth templates,
+  static/js/main.js, static/css/main.css, render.yaml, requirements.txt, schema.sql, runtime.txt,
+  supabase/email-templates/, GitHub, Render service
+- 11 commit in attesa di push (`a83642e`…`57a49bc`) — push richiede conferma Armando
+
 **Architettura pipeline multi-clip (definitiva):**
 ```
 _run_pipeline (thread breve ~60s):
@@ -264,7 +289,7 @@ _run_assembly (thread breve ~120s, su istanza che ha ricevuto l'ultimo webhook):
 **Costo fal.ai accumulato in test (non recuperabili):** ~$17.51
 
 **Prossimi step:**
-1. **`git push origin main`** — deployare i 10 commit dell'audit su Render (conferma Armando)
+1. **`git push origin main`** — deployare gli 11 commit dell'audit su Render (conferma Armando)
 2. ~~Eseguire `ALTER TABLE daily_budget ENABLE ROW LEVEL SECURITY;` su Supabase~~ — **GIÀ APPLICATO** via MCP tool
 3. **TEST end-to-end 30s** su produzione — verificare che tutti 3 clip arrivino e assembly completi
 4. Monitorare log Render per `assembly/{jid} COMPLETED`
