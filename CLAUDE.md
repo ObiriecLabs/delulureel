@@ -33,7 +33,7 @@ Eseguire la skill `delulureel-saas-model` per ricaricare il contesto completo de
 | Audio       | librosa                      | BPM, beat_times, energy peaks       |
 | Assembly    | FFmpeg / ffmpeg-python       | concat + audio sync + 9:16/16:9/1:1 |
 | Storage     | Supabase Storage             | bucket `reel-uploads` + `reel-outputs` |
-| Deploy      | Render                       | auto-deploy da GitHub main          |
+| Deploy      | Fly.io                       | `flyctl deploy` MANUALE da locale — NON auto da GitHub |
 | Landing     | HTML statico in `landing/`   | self-contained, zero Flask          |
 
 ---
