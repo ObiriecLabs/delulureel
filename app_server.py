@@ -156,10 +156,12 @@ def health():
 
 
 import threading
-from saas.video.routes import _startup_recovery
-# Startup recovery runs after a short delay so httpcore is fully
-# initialised in the master before this daemon thread first touches supabase.
+from saas.video.routes import _startup_recovery, _periodic_recovery_sweep
+# Startup recovery: rescues orphaned jobs after a deploy/restart.
+# Periodic sweep: every 10 min, recovers interactive clips stuck in 'generating'.
+# Both use a short initial delay so httpcore is fully initialised first.
 threading.Timer(5.0, _startup_recovery).start()
+threading.Thread(target=_periodic_recovery_sweep, daemon=True).start()
 
 
 def _find_free_port(start: int = 5000, end: int = 5100) -> int:

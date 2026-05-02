@@ -1363,13 +1363,21 @@ async function _startClip(idx) {
 
 // ── Poll /video/clip/status/<job_id>/<idx> ──
 function _pollClip(idx) {
-  let polls = 0;
+  let polls          = 0;
+  let recoveryFired  = false;   // call /clip/recover once at the 3-min mark
   _iPollTimer = setInterval(async () => {
     polls++;
+    // Hard timeout: 15 min (180 × 5s)
     if (polls > 180) {
       clearInterval(_iPollTimer);
       _resetForm(I18N.errTimeout);
       return;
+    }
+    // Auto-recovery at 3 min: ask the server to re-check fal.ai directly.
+    // This rescues clips that completed on fal.ai but whose status was missed.
+    if (polls === 36 && !recoveryFired) {
+      recoveryFired = true;
+      fetch(`/video/clip/recover/${_iJobId}`, { method: 'POST' }).catch(() => {});
     }
     try {
       const res  = await fetch(`/video/clip/status/${_iJobId}/${idx}`);

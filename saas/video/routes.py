@@ -95,6 +95,60 @@ def _record_spend(cost: float):
 
 # ── Startup recovery ─────────────────────────────────────────────────────────
 
+def _recover_interactive_clips(sb, job_id, clip_submissions, clip_results, n_clips_expected):
+    """
+    Query fal.ai for every unresolved clip of an interactive job and persist
+    any completed results via the add_clip_result RPC.
+
+    Returns (n_newly_recovered: int, all_clips_done: bool).
+    Safe to call from any thread; never raises.
+    """
+    if isinstance(clip_submissions, str):
+        try:
+            clip_submissions = json.loads(clip_submissions)
+        except Exception:
+            clip_submissions = {}
+    if isinstance(clip_results, str):
+        try:
+            clip_results = json.loads(clip_results)
+        except Exception:
+            clip_results = {}
+
+    clip_submissions = clip_submissions or {}
+    clip_results     = dict(clip_results or {})   # local copy — we mutate it
+    n_recovered      = 0
+
+    for idx_str, sub in clip_submissions.items():
+        if idx_str in clip_results:
+            continue  # already have this result
+        req_id       = sub.get('request_id', '')
+        endpoint     = sub.get('endpoint', ENDPOINT_PRO)
+        status_url   = sub.get('status_url', '')
+        response_url = sub.get('response_url', '')
+        if not req_id:
+            continue
+        try:
+            st = fal_status_check(
+                endpoint, req_id,
+                status_url=status_url, response_url=response_url,
+            )
+            if st['status'] == 'COMPLETED' and st.get('url'):
+                sb.rpc('add_clip_result', {
+                    'p_job_id':   job_id,
+                    'p_clip_idx': idx_str,
+                    'p_clip_url': st['url'],
+                }).execute()
+                clip_results[idx_str] = st['url']
+                n_recovered += 1
+                print(f'🔄  [recovery] job={job_id[:8]} clip={idx_str} recovered from fal.ai', flush=True)
+        except Exception as exc:
+            print(f'⚠️  [recovery] job={job_id[:8]} clip={idx_str}: {exc}', flush=True)
+
+    n_total  = int(n_clips_expected) if n_clips_expected else len(clip_submissions)
+    all_done = n_total > 0 and all(str(i) in clip_results for i in range(n_total))
+    return n_recovered, all_done
+
+
 def _startup_recovery():
     """On startup: recover jobs where fal.ai completed but post-gen was killed.
 
@@ -134,8 +188,8 @@ def _startup_recovery():
             job_id   = job['id']
             user_id  = job['user_id']
 
-            # Interactive jobs are user-controlled — skip auto-recovery.
-            # Age out very stale ones (> 2 h) so they don't clog the status list.
+            # Interactive jobs — try to recover completed clips from fal.ai,
+            # then age out jobs that are too old to be worth rescuing.
             if job.get('interactive'):
                 created_str = job.get('created_at', '')
                 try:
@@ -145,6 +199,17 @@ def _startup_recovery():
                     age_h = 0
                 if age_h > 2:
                     failed_ids.append(job_id)
+                    print(f'⚠️  [startup] interactive job {job_id[:8]} >{age_h:.1f}h old — marking failed', flush=True)
+                    continue
+                # Attempt clip recovery: server restart may have killed mid-poll
+                n_rec, _ = _recover_interactive_clips(
+                    sb, job_id,
+                    job.get('clip_submissions') or {},
+                    job.get('clip_results')     or {},
+                    job.get('n_clips_expected'),
+                )
+                if n_rec:
+                    recovered += n_rec
                 continue
 
             # Multi-clip job — check if all clips arrived while the instance was down
@@ -282,6 +347,90 @@ def _startup_recovery():
 
     except Exception as e:
         print(f'⚠️  Startup recovery failed (non-critical): {e}')
+
+
+# ── Periodic recovery sweep ───────────────────────────────────────────────────
+
+def _do_interactive_recovery():
+    """
+    Find interactive jobs stuck in 'generating' for >5 minutes and attempt
+    clip recovery from fal.ai.  Age out jobs >2 h with no progress.
+
+    Called by _periodic_recovery_sweep() every 10 minutes and exposed as an
+    admin endpoint for manual triggering.
+    """
+    sb = _sb_service()
+
+    cutoff_recent = (datetime.now(timezone.utc) - timedelta(minutes=5)).isoformat()
+
+    rows = (
+        sb.table('reel_jobs')
+        .select('id,clip_submissions,clip_results,n_clips_expected,created_at')
+        .eq('status',      'generating')
+        .eq('interactive', True)
+        .lt('updated_at',  cutoff_recent)
+        .execute()
+        .data or []
+    )
+
+    if not rows:
+        return 0, 0   # (n_recovered, n_failed)
+
+    failed_ids  = []
+    n_recovered = 0
+
+    for job in rows:
+        job_id      = job['id']
+        created_str = job.get('created_at', '')
+        try:
+            created_dt = datetime.fromisoformat(created_str.replace('Z', '+00:00'))
+            age_h      = (datetime.now(timezone.utc) - created_dt).total_seconds() / 3600
+        except Exception:
+            age_h = 0
+
+        if age_h > 2:
+            failed_ids.append(job_id)
+            print(f'⚠️  [sweep] job={job_id[:8]} >{age_h:.1f}h — marking failed', flush=True)
+            continue
+
+        n_rec, _ = _recover_interactive_clips(
+            sb, job_id,
+            job.get('clip_submissions') or {},
+            job.get('clip_results')     or {},
+            job.get('n_clips_expected'),
+        )
+        n_recovered += n_rec
+
+    if failed_ids:
+        sb.table('reel_jobs').update({
+            'status':        'failed',
+            'error_message': 'Generation timed out. Please retry.',
+            'updated_at':    datetime.now(timezone.utc).isoformat(),
+        }).in_('id', failed_ids).execute()
+        print(f'⚠️  [sweep] {len(failed_ids)} stale interactive job(s) marked failed', flush=True)
+
+    if n_recovered:
+        print(f'🔄  [sweep] {n_recovered} clip(s) recovered from fal.ai', flush=True)
+
+    return n_recovered, len(failed_ids)
+
+
+def _periodic_recovery_sweep():
+    """
+    Daemon thread: every 10 minutes, scan interactive jobs stuck in 'generating'
+    and attempt to recover completed clips from fal.ai.
+
+    Started from app_server.py after blueprint registration (30-second initial
+    delay so startup_recovery completes first).
+    """
+    import time as _time
+    _time.sleep(30)   # let startup_recovery finish first
+    while True:
+        try:
+            _do_interactive_recovery()
+        except Exception as exc:
+            print(f'⚠️  [periodic_recovery] sweep error: {exc}', flush=True)
+        _time.sleep(600)   # 10 minutes
 
 
 # ── Generate ──────────────────────────────────────────────────────────────────
@@ -1677,6 +1826,37 @@ def clip_last_frame(job_id, idx):
 
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
+
+
+@video_bp.route('/clip/recover/<job_id>', methods=['POST'])
+@require_auth_api
+def recover_job(job_id):
+    """
+    Manual clip recovery: re-check fal.ai for all unresolved clips of a stuck
+    interactive job and persist any completed results.
+    Returns {'recovered': N, 'all_done': bool}.
+    """
+    user_id = request.current_user.id
+    try:
+        row = _sb_service().table('reel_jobs').select(
+            'user_id,clip_submissions,clip_results,n_clips_expected,status'
+        ).eq('id', job_id).single().execute().data
+    except Exception:
+        return jsonify({'error': 'not found'}), 404
+
+    if not row or row['user_id'] != user_id:
+        return jsonify({'error': 'not found'}), 404
+
+    if row.get('status') not in ('generating', 'prompt_ready'):
+        return jsonify({'error': f'job not recoverable in state: {row.get("status")}'}), 400
+
+    n_rec, all_done = _recover_interactive_clips(
+        _sb_service(), job_id,
+        row.get('clip_submissions') or {},
+        row.get('clip_results')     or {},
+        row.get('n_clips_expected'),
+    )
+    return jsonify({'recovered': n_rec, 'all_done': all_done})
 
 
 @video_bp.route('/assemble/<job_id>', methods=['POST'])
