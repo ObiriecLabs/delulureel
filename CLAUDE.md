@@ -1,5 +1,5 @@
 # DELULUREEL — CLAUDE.md
-*Ultimo aggiornamento: 2026-04-29*
+*Ultimo aggiornamento: 2026-05-06*
 *Progetto: OBIRIEC LABS — Armando Brecciaroli*
 
 ---
@@ -339,10 +339,69 @@ _run_assembly (thread breve ~120s, su istanza che ha ricevuto l'ultimo webhook):
 - `reel-uploads` bucket: PRIVATE ✅
 - `reel-outputs` bucket: PUBLIC ✅
 
+### Sessione 3 — Error pages, share page, email templates, password reset end-to-end
+
+**Punti implementati:**
+
+**Error pages 404/500 (`commit` in sessione):**
+- `templates/404.html` + `templates/500.html` — pagine branded dark, link di ritorno
+- `@app.errorhandler(404)` + `@app.errorhandler(500)` in `app_server.py`
+
+**Public share page:**
+- `templates/share.html` — player pubblico, polling `/video/public/<job_id>` senza auth
+- `GET /video/public/<job_id>` — endpoint che espone solo campi safe (`status`, `style`, `aspect_ratio`, `bpm`, `output_url` solo se `completed`)
+- `GET /share/<job_id>` in `app_server.py` — route pubblica (no `require_auth`)
+
+**Supabase email templates:**
+- `supabase/email-templates/confirm-signup.html` — email conferma account branded
+- `supabase/email-templates/reset-password.html` — email reset password branded
+- Applicati manualmente su Supabase dashboard (Auth → Email Templates)
+
+**DB-based cross-instance lock in `generate()`:**
+- Query `reel_jobs` per job `in_progress` prima di acquisire slot in-memory
+- Blocca duplicati anche su più istanze Fly.io (non solo per-thread con `_lock`)
+
+**pg_cron monthly credit reset:**
+- `cron.schedule('monthly-credit-reset', '0 0 1 * *', ...)` — run via Supabase SQL Editor
+- Reset `monthly_reel_count = 0` su tutti i profili il 1° di ogni mese
+
+**Fix critico — password reset broken end-to-end:**
+- Root cause: Supabase manda ENTRAMBI `access_token` E `refresh_token` nel fragment URL
+- `reset_password.html` catturava solo `access_token` → `set_session(token, '')` falliva in ~30s
+- Fix: campo hidden `refresh_token` aggiunto al form; IIFE aggiornata per leggere entrambi
+- `auth/routes.py`: `refresh_token = data.get('refresh_token', '')` → `sb.auth.set_session(token, refresh_token)`
+- Validazione inline mismatch password: variabile rinominata da `confirm` → `confirmInput` (conflitto con `window.confirm()` built-in); classe CSS `field-input-error` con `!important` per override `:focus`
+
+**Scoperta architetturale critica:**
+- Produzione traffico → **Fly.io** (`flyctl deploy --app delulureel`), NON Render
+- Render è secondary/staging (auto-deploy da GitHub, ma NON riceve traffico delulureel.com)
+- Identificato via response header `via: 1.1 fly.io`
+- CLAUDE.md e `fly.toml` già aggiornati
+
+**Password reset testato e confermato funzionante da Armando (2026-05-02).**
+
+### Sessione 4 — Interactive clip flow + automatic recovery
+
+**Commits sessione 4 (tutti pushati):**
+- `710ccb5` fix: startup recovery spawns assembly for multi-clip jobs with complete clip_results
+- `b32f25e` fix: per-clip prompt variation + lipsync in multi-clip assembly
+- `e5d69c9` feat: interactive clip-by-clip flow (prompt review + per-clip preview)
+- `0027436` fix: fal.ai status URL uses namespace path, not full versioned endpoint
+- `8401501` feat: automatic clip recovery from fal.ai for stuck interactive jobs
+
+**Feature aggiunte in sessione 4:**
+- **Interactive clip flow**: ogni clip viene inviata singolarmente con review del prompt utente prima della generazione. L'utente può modificare il prompt Claude prima di approvare ogni clip.
+- **Per-clip preview**: dopo la generazione di ogni clip, l'utente può visualizzare l'anteprima prima di procedere con la successiva.
+- **Lipsync in multi-clip**: aggiunto lipsync pipeline nei job multi-clip durante l'assembly.
+- **Automatic clip recovery**: sistema di recovery per job interactive bloccati — rileva clip già generate su fal.ai e le recupera senza rigenerazione.
+- **fal.ai status URL fix**: namespace path corretto (non full versioned endpoint) per la chiamata di status.
+
+**Ultimo commit**: `8401501` — feat: automatic clip recovery from fal.ai for stuck interactive jobs
+
 **Prossimi step:**
 1. **TEST end-to-end su produzione** — signup → trial → upload foto+audio → generazione 30s (3 clip via webhook) → assembly → download reel
 2. **Landing page** — quella attuale è placeholder statico; serve landing vera con pricing, demo video, CTA per traffico organico
-3. Test signup → email confirm → trial → pagamento → generazione completa
+3. Aggiungere nota in `render.yaml` che Render non è produzione (evitare confusione futura)
 
 ---
 
