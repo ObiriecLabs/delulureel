@@ -1,0 +1,30 @@
+{
+  "skill_name": "obiriec-backup-periferiche",
+  "note": "Questa skill opera su filesystem fisico reale (rsync ~2GB, git push). I test automatici non vengono eseguiti per evitare backup ripetuti inutili. La validazione è qualitativa, basata sull'esecuzione reale del workflow.",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "backup periferiche",
+      "expected_output": "Esecuzione del workflow completo: analisi struttura Desktop, check orfane, git push tutti i repo, rsync verso DockCase e Crucial X9, verifica commit allineati, report finale strutturato.",
+      "files": []
+    },
+    {
+      "id": 2,
+      "prompt": "Analizza il totale contenuto della cartella CLAUDE_Works e fai il backup su tutte le periferiche ed il dump su GitHub di tutti i progetti che sono in essa contenuti",
+      "expected_output": "Workflow identico al caso 1, più verifica struttura completa con elenco progetti e dimensioni prima di procedere.",
+      "files": []
+    },
+    {
+      "id": 3,
+      "prompt": "sincronizza i dischi, ho appena lavorato su AMPA e OBIRIEC LABS",
+      "expected_output": "Workflow completo con focus sul confronto commit git di AMPA e OBIRIEC LABS rispetto ai backup, git push, rsync, verifica allineamento.",
+      "files": []
+    },
+    {
+      "id": 4,
+      "prompt": "fai solo il push su GitHub senza toccare i dischi",
+      "expected_output": "Solo STEP 4 (git push). La skill deve riconoscere la richiesta parziale ed eseguire solo il push senza rsync.",
+      "files": []
+    }
+  ]
+}

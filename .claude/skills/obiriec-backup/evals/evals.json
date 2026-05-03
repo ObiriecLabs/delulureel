@@ -1,0 +1,73 @@
+{
+  "skill_name": "obiriec-backup",
+  "evals": [
+    {
+      "id": 0,
+      "prompt": "fai il backup completo di CLAUDE_Works",
+      "expected_output": "Il piano di backup deve: (1) identificare rsync come metodo per CLAUDE_Works, (2) chiedere esplicitamente conferma per la copia su Crucial X9, (3) includere il comando rsync corretto verso /Volumes/Crucial X9/BACKUP MAC Book Pro - Febbraio 2026/Backup CLAUDE WORKS/, (4) prevedere verifica del montaggio HD, (5) produrre un report finale con dimensioni e numero file copiati.",
+      "files": [],
+      "assertions": [
+        {
+          "name": "chiede_conferma_crucial_x9",
+          "text": "La risposta chiede esplicitamente ad Armando di confermare che il Crucial X9 è montato prima di procedere con la copia su HD esterno"
+        },
+        {
+          "name": "verifica_montaggio_hd",
+          "text": "La risposta include un comando o step per verificare che /Volumes/Crucial X9/ sia accessibile"
+        },
+        {
+          "name": "usa_rsync",
+          "text": "La risposta usa rsync (non cp, non zip) come comando di backup per CLAUDE_Works"
+        },
+        {
+          "name": "percorso_crucialx9_corretto",
+          "text": "Il percorso di destinazione su Crucial X9 contiene 'BACKUP MAC Book Pro - Febbraio 2026/Backup CLAUDE WORKS'"
+        },
+        {
+          "name": "report_finale",
+          "text": "La risposta prevede un report finale con riepilogo del backup (dimensione o numero file)"
+        }
+      ]
+    },
+    {
+      "id": 1,
+      "prompt": "ho bisogno di un dump del database di AMPA prima di fare modifiche importanti al codice",
+      "expected_output": "Il piano deve: (1) riconoscere che AMPA usa Supabase/PostgreSQL e proporre pg_dump, (2) includere il comando pg_dump con la stringa di connessione corretta o rimandare alla skill ampa-backup, (3) chiedere conferma per la copia su Crucial X9, (4) non limitarsi al solo dump DB ma includere anche l'HD esterno come step aggiuntivo.",
+      "files": [],
+      "assertions": [
+        {
+          "name": "identifica_database_ampa",
+          "text": "La risposta identifica correttamente che AMPA usa PostgreSQL/Supabase e suggerisce pg_dump o la skill ampa-backup"
+        },
+        {
+          "name": "chiede_conferma_crucial_x9",
+          "text": "La risposta chiede esplicitamente conferma per includere la copia su Crucial X9, anche se la richiesta originale non lo menziona"
+        },
+        {
+          "name": "backup_non_solo_db",
+          "text": "La risposta va oltre il solo dump DB e include il layer di ridondanza fisica su HD esterno come step separato"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "prompt": "salva una copia di sicurezza di SUNO-Projects, devo archiviare lo stato attuale prima di lavorarci",
+      "expected_output": "Il piano deve: (1) identificare SUNO-Projects come cartella da backuppare via rsync, (2) usare il percorso corretto /Users/armandobrecciaroli/Desktop/CLAUDE_Works/SUNO-Projects/, (3) chiedere conferma montaggio Crucial X9, (4) proporre una sottocartella dedicata su X9 per SUNO-Projects.",
+      "files": [],
+      "assertions": [
+        {
+          "name": "percorso_suno_corretto",
+          "text": "La risposta usa il percorso corretto per SUNO-Projects in CLAUDE_Works"
+        },
+        {
+          "name": "chiede_conferma_crucial_x9",
+          "text": "La risposta chiede conferma per la copia su Crucial X9 anche se non richiesto esplicitamente"
+        },
+        {
+          "name": "gestisce_hd_non_montato",
+          "text": "La risposta spiega cosa fare se il Crucial X9 non è montato (attesa o skip con nota pendente)"
+        }
+      ]
+    }
+  ]
+}
