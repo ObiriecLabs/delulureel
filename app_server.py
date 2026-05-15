@@ -116,14 +116,14 @@ def result_page(job_id):
         return redirect(url_for('auth.login'))
     return render_template('result.html', job_id=job_id)
 
-# Legal / contact stubs (linked from landing footer — must not 404)
+# Legal pages (served from landing/)
 @app.route('/privacy')
 def privacy():
-    return redirect('/#pricing')   # placeholder until full policy page is ready
+    return send_from_directory('landing', 'privacy.html')
 
 @app.route('/terms')
 def terms():
-    return redirect('/#pricing')   # placeholder until full terms page is ready
+    return send_from_directory('landing', 'terms.html')
 
 @app.route('/contact')
 def contact():

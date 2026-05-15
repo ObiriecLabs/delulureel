@@ -15,7 +15,7 @@ Eseguire la skill `delulureel-saas-model` per ricaricare il contesto completo de
 **DELULUREEL** — SaaS web che trasforma brano musicale + foto in videoclip sincronizzato.
 **Dominio:** delulureel.com (registrato Porkbun 2026-04-29)
 **Tagline:** *Be delulu enough to drop your reel.*
-**Working dir:** `/Users/armandobrecciaroli/Desktop/CLAUDE_Works/DELULUREEL`
+**Working dir:** `/Volumes/Crucial X9/CLAUDE_Works/DELULUREEL`
 **Stato attuale:** MVP in sviluppo — Fase 1 completata
 
 ---
