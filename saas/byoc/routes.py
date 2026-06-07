@@ -146,7 +146,8 @@ def _select_workflow(vram_gb: int, checkpoints: list, diff_models: list,
         flux_m  = _pick_model(diff_models, "flux")
         flux_cl = _pick_model(text_encoders, "clip_l")
         flux_t5 = _pick_model(text_encoders, "t5")
-        flux_v  = _pick_model(vaes, "ae")
+        # "ae.safetensors" specifico — evita AudioVAE/LTX che hanno "ae" nel path
+        flux_v  = _pick_model(vaes, "ae.safetensors") or _pick_model(vaes, "ae")
         if flux_m and flux_cl and flux_t5 and flux_v:
             return "IMAGE_FLUX", _wf_flux(flux_m, flux_cl, flux_t5, flux_v, seed)
 
