@@ -141,8 +141,12 @@ pre.src-pre     { background:rgba(0,0,0,.5); border:1px solid rgba(255,255,255,.
     <button class="copy-btn" onclick="copyRun(this)">Copia</button>
   </div>
 
-  <p class="footnote" style="margin-top:8px;margin-bottom:24px;">
-    Su Windows usa <code style="font-size:.78rem;background:rgba(255,255,255,.07);border-radius:4px;padding:1px 6px;color:#7dd3fc;">python</code> invece di <code style="font-size:.78rem;background:rgba(255,255,255,.07);border-radius:4px;padding:1px 6px;color:#7dd3fc;">python3</code>
+  <p class="footnote" style="margin-top:10px;margin-bottom:24px;line-height:1.9;">
+    Se ricevi <em>command not found</em>, prova in ordine:<br>
+    <code style="font-size:.8rem;background:rgba(255,255,255,.07);border-radius:4px;padding:2px 8px;color:#7dd3fc;">python3 byoc_test.py --email "la@tua.email"</code><br>
+    <code style="font-size:.8rem;background:rgba(255,255,255,.07);border-radius:4px;padding:2px 8px;color:#7dd3fc;">python byoc_test.py --email "la@tua.email"</code><br>
+    <code style="font-size:.8rem;background:rgba(255,255,255,.07);border-radius:4px;padding:2px 8px;color:#7dd3fc;">py byoc_test.py --email "la@tua.email"</code>
+    <span style="display:block;margin-top:4px;color:#475569;font-size:.75rem;">python3 → Mac/Linux · python → Windows/Anaconda · py → Windows alternativo</span>
   </p>
 
   <!-- Footnote + source -->
