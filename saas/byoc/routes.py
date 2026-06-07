@@ -135,7 +135,13 @@ def _select_workflow(vram_gb: int, checkpoints: list, diff_models: list,
     seed = random.randint(1, 2**31)
     vram_unknown = (vram_gb == 0)
 
-    # FLUX (16GB+ con file separati — o VRAM sconosciuta, ci proviamo)
+    # SDXL prima: CheckpointLoaderSimple è nativo ComfyUI, universalmente compatibile
+    if vram_unknown or vram_gb >= 8:
+        ckpt = _pick_model(checkpoints)
+        if ckpt:
+            return "IMAGE_SDXL", _wf_sdxl(ckpt, seed)
+
+    # FLUX come fallback: richiede nodi custom (UNETLoader, ModelSamplingFlux, ecc.)
     if vram_unknown or vram_gb >= 16:
         flux_m  = _pick_model(diff_models, "flux")
         flux_cl = _pick_model(text_encoders, "clip_l")
@@ -143,12 +149,6 @@ def _select_workflow(vram_gb: int, checkpoints: list, diff_models: list,
         flux_v  = _pick_model(vaes, "ae")
         if flux_m and flux_cl and flux_t5 and flux_v:
             return "IMAGE_FLUX", _wf_flux(flux_m, flux_cl, flux_t5, flux_v, seed)
-
-    # SDXL (8GB+ con qualsiasi checkpoint — o VRAM sconosciuta)
-    if vram_unknown or vram_gb >= 8:
-        ckpt = _pick_model(checkpoints)
-        if ckpt:
-            return "IMAGE_SDXL", _wf_sdxl(ckpt, seed)
 
     return None, None
 
