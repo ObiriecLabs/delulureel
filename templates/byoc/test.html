@@ -137,9 +137,13 @@ pre.src-pre     { background:rgba(0,0,0,.5); border:1px solid rgba(255,255,255,.
 
   <!-- Run command -->
   <div class="run-block">
-    <span class="run-code">python byoc_test.py --email "la@tua.email"</span>
+    <span class="run-code">python3 byoc_test.py --email "la@tua.email"</span>
     <button class="copy-btn" onclick="copyRun(this)">Copia</button>
   </div>
+
+  <p class="footnote" style="margin-top:8px;margin-bottom:24px;">
+    Su Windows usa <code style="font-size:.78rem;background:rgba(255,255,255,.07);border-radius:4px;padding:1px 6px;color:#7dd3fc;">python</code> invece di <code style="font-size:.78rem;background:rgba(255,255,255,.07);border-radius:4px;padding:1px 6px;color:#7dd3fc;">python3</code>
+  </p>
 
   <!-- Footnote + source -->
   <p class="footnote">
@@ -173,7 +177,7 @@ pre.src-pre     { background:rgba(0,0,0,.5); border:1px solid rgba(255,255,255,.
 {% block scripts %}
 <script>
 function copyRun(btn) {
-  navigator.clipboard.writeText('python byoc_test.py --email "la@tua.email"').then(() => {
+  navigator.clipboard.writeText('python3 byoc_test.py --email "la@tua.email"').then(() => {
     btn.textContent = 'Copiato ✓';
     setTimeout(() => { btn.textContent = 'Copia'; }, 1800);
   });

@@ -17,7 +17,8 @@ DATA that never leaves your machine
   • Anything not listed above
 
 Requirements  Python 3.8+  and  pip install requests
-Usage         python byoc_test.py --email you@example.com
+Usage         python3 byoc_test.py --email you@example.com   (Mac/Linux)
+              python  byoc_test.py --email you@example.com   (Windows)
 Source        https://github.com/ObiriecLabs/delulureel/blob/main/byoc_test.py
 """
 
