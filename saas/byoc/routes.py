@@ -21,6 +21,7 @@ import random
 import urllib.request
 import urllib.error
 import json
+from datetime import datetime, timezone, timedelta
 
 from flask import Blueprint, request, jsonify, render_template, send_file, abort
 from supabase import create_client
@@ -161,9 +162,10 @@ def _quota_ok(email: str, ip: str) -> str | None:
                 "Abbonati a BYOC per accesso illimitato.")
 
     # IP: max 1 per 24h
+    cutoff = (datetime.now(timezone.utc) - timedelta(hours=24)).isoformat()
     r2 = _sb.table("byoc_test_sessions").select("id") \
         .eq("ip", ip) \
-        .gte("created_at", "now() - interval '24 hours'") \
+        .gte("created_at", cutoff) \
         .execute()
     if len(r2.data or []) >= _MAX_PER_IP_24H:
         return "Hai già eseguito un test nelle ultime 24 ore. Riprova domani."
