@@ -129,24 +129,26 @@ pre.src-pre     { background:rgba(0,0,0,.5); border:1px solid rgba(255,255,255,.
       Apri il Terminale
       <span class="note">Mac: <code>Cmd+Spazio</code> → digita "Terminale" &nbsp;·&nbsp; Windows: <code>Win+R</code> → digita "cmd"</span>
     </div></li>
-    <li><div>
-      Spostati nella cartella dove hai salvato il file ed esegui:
-      <span class="note">Mac/Linux: <code>cd ~/</code><em style="color:#64748b;font-size:.78rem">NOME CARTELLA dove sta il file</em> &nbsp;·&nbsp; Windows: <code>cd %USERPROFILE%\</code><em style="color:#64748b;font-size:.78rem">NOME CARTELLA dove sta il file</em></span>
-    </div></li>
   </ol>
 
   <!-- Run command -->
-  <div class="run-block">
-    <span class="run-code">python3 byoc_test.py --email "la@tua.email"</span>
-    <button class="copy-btn" onclick="copyRun(this)">Copia</button>
+  <div class="run-block" style="flex-direction:column;align-items:stretch;gap:10px;">
+    <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;">
+      <span class="run-code" id="run-mac">cd ~/Downloads &amp;&amp; python3 byoc_test.py --email "la@tua.email"</span>
+      <button class="copy-btn" onclick="copyCmd('mac',this)">Copia</button>
+    </div>
+    <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;border-top:1px solid rgba(255,255,255,.07);padding-top:10px;">
+      <span class="run-code" id="run-win" style="font-size:.78rem;">cd %USERPROFILE%\Downloads &amp;&amp; python byoc_test.py --email "la@tua.email"</span>
+      <button class="copy-btn" onclick="copyCmd('win',this)">Copia</button>
+    </div>
+    <p style="margin:0;font-size:.72rem;color:#475569;">Mac/Linux in cima · Windows sotto &nbsp;—&nbsp; sostituisci <code style="color:#7dd3fc;background:rgba(255,255,255,.07);border-radius:3px;padding:1px 5px;">Downloads</code> se hai salvato il file altrove</p>
   </div>
 
   <p class="footnote" style="margin-top:10px;margin-bottom:24px;line-height:1.9;">
-    Se ricevi <em>command not found</em>, prova in ordine:<br>
-    <code style="font-size:.8rem;background:rgba(255,255,255,.07);border-radius:4px;padding:2px 8px;color:#7dd3fc;">python3 byoc_test.py --email "la@tua.email"</code><br>
-    <code style="font-size:.8rem;background:rgba(255,255,255,.07);border-radius:4px;padding:2px 8px;color:#7dd3fc;">python byoc_test.py --email "la@tua.email"</code><br>
-    <code style="font-size:.8rem;background:rgba(255,255,255,.07);border-radius:4px;padding:2px 8px;color:#7dd3fc;">py byoc_test.py --email "la@tua.email"</code>
-    <span style="display:block;margin-top:4px;color:#475569;font-size:.75rem;">python3 → Mac/Linux · python → Windows/Anaconda · py → Windows alternativo</span>
+    Se ricevi <em>command not found</em> sul comando Python, prova:<br>
+    <code style="font-size:.8rem;background:rgba(255,255,255,.07);border-radius:4px;padding:2px 8px;color:#7dd3fc;">python3</code> → Mac/Linux standard &nbsp;·&nbsp;
+    <code style="font-size:.8rem;background:rgba(255,255,255,.07);border-radius:4px;padding:2px 8px;color:#7dd3fc;">python</code> → Windows / Anaconda &nbsp;·&nbsp;
+    <code style="font-size:.8rem;background:rgba(255,255,255,.07);border-radius:4px;padding:2px 8px;color:#7dd3fc;">py</code> → Windows alternativo
   </p>
 
   <!-- Footnote + source -->
@@ -180,8 +182,11 @@ pre.src-pre     { background:rgba(0,0,0,.5); border:1px solid rgba(255,255,255,.
 
 {% block scripts %}
 <script>
-function copyRun(btn) {
-  navigator.clipboard.writeText('python3 byoc_test.py --email "la@tua.email"').then(() => {
+function copyCmd(os, btn) {
+  const text = os === 'mac'
+    ? 'cd ~/Downloads && python3 byoc_test.py --email "la@tua.email"'
+    : 'cd %USERPROFILE%\\Downloads && python byoc_test.py --email "la@tua.email"';
+  navigator.clipboard.writeText(text).then(() => {
     btn.textContent = 'Copiato ✓';
     setTimeout(() => { btn.textContent = 'Copia'; }, 1800);
   });
