@@ -1,0 +1,201 @@
+{% extends 'base.html' %}
+{% block title %}BYOC Hardware Test — DELULUREEL{% endblock %}
+
+{% block head %}
+<style>
+.byoc-pg        { max-width: 620px; margin: 0 auto; padding: 64px 24px 96px; }
+
+/* Hero */
+.byoc-badge     { display: inline-block; background: rgba(255,107,43,.13);
+                  border: 1px solid rgba(255,107,43,.35); color: #FF6B2B;
+                  border-radius: 20px; padding: 4px 14px; font-size:.7rem;
+                  font-weight:700; letter-spacing:.08em; text-transform:uppercase; }
+.byoc-h1        { font-size: clamp(2rem,6vw,3rem); font-weight:800; color:#fff;
+                  margin:16px 0 12px; line-height:1.05; }
+.byoc-lead      { color:#94a3b8; font-size:1rem; line-height:1.6; max-width:480px; }
+
+/* Why pill */
+.why-note       { background:rgba(255,255,255,.04); border:1px solid rgba(255,255,255,.08);
+                  border-radius:12px; padding:14px 18px; margin:36px 0 32px;
+                  font-size:.85rem; color:#64748b; line-height:1.6; }
+.why-note strong { color:#94a3b8; }
+
+/* Download block */
+.dl-block       { display:flex; flex-direction:column; gap:14px; }
+.dl-btn         { display:inline-flex; align-items:center; gap:10px; align-self:flex-start;
+                  background:#FF6B2B; color:#fff; border-radius:12px;
+                  padding:14px 28px; font-weight:800; font-size:1rem;
+                  text-decoration:none; transition:opacity .15s; }
+.dl-btn:hover   { opacity:.88; }
+.dl-sha         { font-family:monospace; font-size:.72rem; color:#475569;
+                  word-break:break-all; }
+.dl-sha span    { color:#64748b; }
+
+/* Code run */
+.run-block      { background:rgba(0,0,0,.5); border:1px solid rgba(255,255,255,.09);
+                  border-radius:12px; padding:16px 20px; margin:28px 0;
+                  display:flex; align-items:center; justify-content:space-between; gap:16px; }
+.run-code       { font-family:monospace; font-size:.88rem; color:#7dd3fc;
+                  white-space:nowrap; overflow-x:auto; }
+.copy-btn       { background:rgba(255,255,255,.07); border:1px solid rgba(255,255,255,.1);
+                  border-radius:7px; padding:5px 12px; color:#64748b; font-size:.75rem;
+                  cursor:pointer; white-space:nowrap; transition:background .15s;flex-shrink:0; }
+.copy-btn:hover { background:rgba(255,255,255,.13); color:#94a3b8; }
+
+/* Footnote / source toggle */
+.footnote       { font-size:.8rem; color:#475569; line-height:1.7; }
+.footnote a     { color:#64748b; text-decoration:none; border-bottom:1px solid rgba(255,255,255,.1); }
+.footnote a:hover { color:#94a3b8; }
+.src-toggle     { background:none; border:none; color:#475569; font-size:.8rem;
+                  cursor:pointer; padding:0; text-decoration:none;
+                  border-bottom:1px solid rgba(255,255,255,.1); }
+.src-toggle:hover { color:#64748b; }
+.src-pre-wrap   { display:none; margin-top:16px; }
+.src-pre-wrap.open { display:block; }
+pre.src-pre     { background:rgba(0,0,0,.5); border:1px solid rgba(255,255,255,.07);
+                  border-radius:10px; padding:16px; overflow:auto; max-height:340px;
+                  font-size:.73rem; line-height:1.55; color:#94a3b8; margin:0; }
+
+/* Steps */
+.steps-list     { list-style:none; padding:0; margin:28px 0 0; counter-reset:step; }
+.steps-list li  { counter-increment:step; display:flex; gap:14px; align-items:flex-start;
+                  padding:10px 0; border-bottom:1px solid rgba(255,255,255,.05);
+                  font-size:.88rem; color:#94a3b8; line-height:1.5; }
+.steps-list li:last-child { border-bottom:none; }
+.steps-list li::before { content:counter(step); min-width:22px; height:22px;
+                  background:rgba(255,107,43,.15); border:1px solid rgba(255,107,43,.3);
+                  border-radius:50%; color:#FF6B2B; font-size:.7rem; font-weight:800;
+                  display:flex; align-items:center; justify-content:center;
+                  flex-shrink:0; margin-top:1px; }
+.steps-list code { background:rgba(255,255,255,.07); border-radius:5px;
+                   padding:1px 7px; font-family:monospace; font-size:.82rem; color:#7dd3fc; }
+.steps-list .note { font-size:.75rem; color:#475569; display:block; margin-top:3px; }
+
+/* Divider */
+.divider        { border:none; border-top:1px solid rgba(255,255,255,.06);
+                  margin:40px 0; }
+
+/* Result */
+.result-label   { font-size:.8rem; color:#64748b; margin-bottom:10px; }
+.result-row     { display:flex; gap:10px; }
+.result-row input { flex:1; background:rgba(255,255,255,.05);
+                    border:1px solid rgba(255,255,255,.1); border-radius:10px;
+                    padding:10px 14px; color:#e2e8f0; font-size:.9rem; outline:none; }
+.result-row input:focus { border-color:rgba(255,107,43,.4); }
+.result-row button { background:rgba(255,107,43,.12); border:1px solid rgba(255,107,43,.3);
+                     color:#FF6B2B; border-radius:10px; padding:10px 18px;
+                     font-weight:700; font-size:.85rem; cursor:pointer; white-space:nowrap;
+                     transition:background .15s; }
+.result-row button:hover { background:rgba(255,107,43,.22); }
+#lookup-out     { font-size:.82rem; color:#64748b; margin-top:10px; }
+#lookup-out a   { color:#7dd3fc; }
+</style>
+{% endblock head %}
+
+{% block content %}
+<div class="container byoc-pg">
+
+  <div class="byoc-badge">BYOC — Bring Your Own ComfyUI</div>
+  <h1 class="byoc-h1">Testa il tuo hardware</h1>
+  <p class="byoc-lead">
+    Prima di abbonarti, verifica che il tuo ComfyUI sia compatibile
+    con DELULUREEL Studio. Il test genera un'immagine di prova
+    e mostra quali workflow puoi usare.
+  </p>
+
+  <div class="why-note">
+    <strong>Perché uno script Python?</strong>
+    I browser non possono contattare <code style="font-size:.8em">localhost</code>
+    da una pagina HTTPS — è una protezione standard di Chrome, Firefox e Safari.
+    Lo script gira sul tuo computer e parla con ComfyUI direttamente.
+  </div>
+
+  <!-- Download -->
+  <div class="dl-block">
+    <a href="/byoc/test/download" class="dl-btn" download="byoc_test.py">
+      ⬇&nbsp; Scarica byoc_test.py
+    </a>
+    {% if script_sha256 %}
+    <div class="dl-sha">
+      <span>SHA-256 &nbsp;</span>{{ script_sha256 }}
+    </div>
+    {% endif %}
+  </div>
+
+  <!-- Steps -->
+  <ol class="steps-list">
+    <li><div>Il file viene salvato nella cartella <strong style="color:#94a3b8">Downloads</strong> del browser</div></li>
+    <li><div>
+      Apri il Terminale
+      <span class="note">Mac: <code>Cmd+Spazio</code> → digita "Terminale" &nbsp;·&nbsp; Windows: <code>Win+R</code> → digita "cmd"</span>
+    </div></li>
+    <li><div>
+      Spostati nella cartella dove hai salvato il file ed esegui:
+      <span class="note">Mac/Linux: <code>cd ~/</code><em style="color:#64748b;font-size:.78rem">NOME CARTELLA dove sta il file</em> &nbsp;·&nbsp; Windows: <code>cd %USERPROFILE%\</code><em style="color:#64748b;font-size:.78rem">NOME CARTELLA dove sta il file</em></span>
+    </div></li>
+  </ol>
+
+  <!-- Run command -->
+  <div class="run-block">
+    <span class="run-code">python byoc_test.py --email "la@tua.email"</span>
+    <button class="copy-btn" onclick="copyRun(this)">Copia</button>
+  </div>
+
+  <!-- Footnote + source -->
+  <p class="footnote">
+    Lo script legge GPU e modelli dal tuo ComfyUI, genera un'immagine 512×512,
+    invia il risultato a noi. Nient'altro.&nbsp;
+    <button class="src-toggle" onclick="toggleSrc(this)">Leggi il sorgente ↓</button>
+    &nbsp;·&nbsp;
+    <a href="https://github.com/ObiriecLabs/delulureel/blob/main/static/byoc_test.py" target="_blank">GitHub →</a>
+  </p>
+
+  <div class="src-pre-wrap" id="src-wrap">
+    <pre class="src-pre">{{ script_source | e }}</pre>
+  </div>
+
+  <hr class="divider">
+
+  <!-- Result lookup -->
+  <p class="result-label">
+    Hai già eseguito lo script? Il terminale mostra il link diretto.
+    Oppure cerca qui:
+  </p>
+  <div class="result-row">
+    <input type="email" id="lookup-email" placeholder="la@tua.email">
+    <button onclick="lookup()">Cerca risultato</button>
+  </div>
+  <div id="lookup-out"></div>
+
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function copyRun(btn) {
+  navigator.clipboard.writeText('python byoc_test.py --email "la@tua.email"').then(() => {
+    btn.textContent = 'Copiato ✓';
+    setTimeout(() => { btn.textContent = 'Copia'; }, 1800);
+  });
+}
+
+function toggleSrc(btn) {
+  const wrap = document.getElementById('src-wrap');
+  const open = wrap.classList.toggle('open');
+  btn.textContent = open ? 'Nascondi sorgente ↑' : 'Leggi il sorgente ↓';
+}
+
+async function lookup() {
+  const email = document.getElementById('lookup-email').value.trim();
+  const out   = document.getElementById('lookup-out');
+  if (!email || !email.includes('@')) { out.textContent = 'Email non valida.'; return; }
+  out.textContent = '…';
+  try {
+    const d = await fetch('/byoc/test/latest?email=' + encodeURIComponent(email)).then(r => r.json());
+    out.innerHTML = d.found
+      ? '✓ <a href="/byoc/test/result/' + d.token + '">Visualizza il risultato →</a>'
+      : 'Nessun test completato trovato per questa email.';
+  } catch { out.textContent = 'Errore di rete — riprova.'; }
+}
+</script>
+{% endblock %}

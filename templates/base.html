@@ -18,6 +18,7 @@
       <a href="/" class="logo grad-text">DELULUREEL</a>
       <div class="nav-right">
         {% block nav_extra %}{% endblock %}
+        <a href="/studio/" class="nav-link">Studio</a>
         <form action="/set-lang" method="POST" class="lang-switcher">
           <select name="lang" onchange="this.form.submit()" aria-label="Language">
             {% for code in SUPPORTED_LANGS %}
