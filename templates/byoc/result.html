@@ -1,0 +1,100 @@
+{% extends 'base.html' %}
+{% block title %}Test risultato — DELULUREEL{% endblock %}
+
+{% block head %}
+<style>
+.byoc-result-pg {
+  min-height: 80vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 48px 24px 80px;
+  gap: 32px;
+}
+
+.byoc-result-img {
+  max-width: 520px;
+  width: 100%;
+  border-radius: 16px;
+  box-shadow: 0 8px 40px rgba(0,0,0,.6);
+  display: block;
+}
+
+.byoc-result-caption {
+  font-size: .78rem;
+  color: #475569;
+  text-align: center;
+}
+
+.byoc-result-actions {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+
+.byoc-btn-back {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  background: rgba(255,255,255,.07);
+  border: 1px solid rgba(255,255,255,.12);
+  color: #94a3b8;
+  border-radius: 10px;
+  padding: 11px 22px;
+  font-size: .9rem;
+  font-weight: 600;
+  text-decoration: none;
+  transition: background .15s, color .15s;
+}
+.byoc-btn-back:hover { background: rgba(255,255,255,.12); color: #e2e8f0; }
+
+.byoc-btn-subscribe {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  background: #FF6B2B;
+  color: #fff;
+  border-radius: 10px;
+  padding: 11px 22px;
+  font-size: .9rem;
+  font-weight: 700;
+  text-decoration: none;
+  transition: opacity .15s;
+}
+.byoc-btn-subscribe:hover { opacity: .88; }
+
+.byoc-result-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  background: rgba(34,197,94,.1);
+  border: 1px solid rgba(34,197,94,.3);
+  color: #4ade80;
+  border-radius: 20px;
+  padding: 5px 16px;
+  font-size: .75rem;
+  font-weight: 700;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+}
+</style>
+{% endblock head %}
+
+{% block content %}
+<div class="container byoc-result-pg">
+
+  <div class="byoc-result-badge">✓ Hardware compatibile</div>
+
+  <img src="{{ result_url }}" alt="Test image generata dal tuo ComfyUI" class="byoc-result-img">
+
+  <p class="byoc-result-caption">delulureel.com — solo per test</p>
+
+  <div class="byoc-result-actions">
+    <a href="/byoc/test" class="byoc-btn-back">← Torna al test</a>
+    <a href="/auth/signup?plan=byoc&email={{ email }}" class="byoc-btn-subscribe">Abbonati al piano BYOC →</a>
+  </div>
+
+</div>
+{% endblock %}

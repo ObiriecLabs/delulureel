@@ -378,9 +378,9 @@ def poll_test(token: str):
 
 @byoc_bp.route("/test/result/<token>")
 def result_test(token: str):
-    """Serve il file watermarked salvato da finish_test() su Supabase Storage."""
+    """Pagina risultato BYOC con immagine watermarked e pulsante abbonamento."""
     row = _sb.table("byoc_test_sessions") \
-        .select("status, job_id") \
+        .select("status, job_id, email") \
         .eq("token", token).maybe_single().execute()
     if not row.data:
         abort(404)
@@ -393,15 +393,6 @@ def result_test(token: str):
     if not result_url or not result_url.startswith("http"):
         abort(404)
 
-    req = urllib.request.Request(result_url)
-    with urllib.request.urlopen(req, timeout=30) as resp:
-        raw   = resp.read()
-        ctype = resp.headers.get("Content-Type", "image/png")
-
-    ext = "mp4" if "video" in ctype else "png"
-    return send_file(
-        io.BytesIO(raw),
-        mimetype=ctype,
-        as_attachment=False,
-        download_name=f"delulureel_test.{ext}",
-    )
+    return render_template("byoc/result.html",
+                           result_url=result_url,
+                           email=s.get("email", ""))
