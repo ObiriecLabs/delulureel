@@ -153,11 +153,20 @@ def main():
 
     # ── 1. Connect to ComfyUI ─────────────────────────────────────────────────
     _step(1, "Connect to ComfyUI")
-    stats = _get(f"{comfy}/system_stats", sess).json()
-    sys_  = stats.get("system", {})
-    gpu   = sys_.get("gpu_name") or sys_.get("device") or "Unknown GPU"
-    vmb   = int(sys_.get("vram_total") or 0)
-    vgb   = round(vmb / 1024, 1) if vmb else "N/A"
+    stats   = _get(f"{comfy}/system_stats", sess).json()
+    sys_    = stats.get("system", {})
+    devices = stats.get("devices", [])
+
+    # ComfyUI ≥ 0.3 reports GPU info in `devices[]` (bytes); older in `system` (MB)
+    gpu = sys_.get("gpu_name") or sys_.get("device")
+    vmb = int(sys_.get("vram_total") or 0)          # already MB if present
+    if not gpu and devices:
+        dev = devices[0]
+        gpu = dev.get("name") or dev.get("type") or None
+        vram_bytes = int(dev.get("vram_total") or 0)
+        vmb = vram_bytes // (1024 * 1024)            # bytes → MB
+    gpu = gpu or "Unknown GPU"
+    vgb = round(vmb / 1024, 1) if vmb else "N/A"
     _ok(f"GPU: {gpu}   VRAM: {vgb} GB")
 
     # ── 2. Read model list ────────────────────────────────────────────────────
