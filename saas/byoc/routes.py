@@ -303,13 +303,15 @@ def start_test():
                      "Scarica almeno un checkpoint SDXL o i file FLUX per eseguire il test."
         }), 422
 
+    comfyui_url = (data.get("comfyui_url") or "http://localhost:8188")[:200]
     row = _sb.table("byoc_test_sessions").insert({
-        "email":       email,
-        "ip":          ip,
-        "gpu_name":    gpu_name,
-        "vram_gb":     vram_gb,
-        "workflow_id": wf_id,
-        "status":      "running",
+        "email":        email,
+        "ip":           ip,
+        "gpu_name":     gpu_name,
+        "vram_gb":      vram_gb,
+        "comfyui_url":  comfyui_url,
+        "workflow_id":  wf_id,
+        "status":       "running",
     }).execute()
     token = row.data[0]["token"]
 
