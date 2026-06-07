@@ -281,7 +281,8 @@ def start_test():
     data          = request.get_json(silent=True) or {}
     email         = (data.get("email") or "").strip().lower()
     gpu_name      = (data.get("gpu_name") or "")[:120]
-    vram_gb       = int(data.get("vram_gb") or 0)
+    vram_total_mb = int(data.get("vram_total_mb") or 0)
+    vram_gb       = int(data.get("vram_gb") or 0) or (round(vram_total_mb / 1024) if vram_total_mb else 0)
     checkpoints   = list(data.get("checkpoints") or [])
     diff_models   = list(data.get("diffusion_models") or [])
     text_encoders = list(data.get("text_encoders") or [])
