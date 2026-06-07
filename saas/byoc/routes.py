@@ -133,9 +133,10 @@ def _select_workflow(vram_gb: int, checkpoints: list, diff_models: list,
     Restituisce (workflow_id, workflow_dict) oppure (None, None).
     """
     seed = random.randint(1, 2**31)
+    vram_unknown = (vram_gb == 0)
 
-    # FLUX (16GB+ con file separati)
-    if vram_gb >= 16:
+    # FLUX (16GB+ con file separati — o VRAM sconosciuta, ci proviamo)
+    if vram_unknown or vram_gb >= 16:
         flux_m  = _pick_model(diff_models, "flux")
         flux_cl = _pick_model(text_encoders, "clip_l")
         flux_t5 = _pick_model(text_encoders, "t5")
@@ -143,8 +144,8 @@ def _select_workflow(vram_gb: int, checkpoints: list, diff_models: list,
         if flux_m and flux_cl and flux_t5 and flux_v:
             return "IMAGE_FLUX", _wf_flux(flux_m, flux_cl, flux_t5, flux_v, seed)
 
-    # SDXL (8GB+ con checkpoint)
-    if vram_gb >= 8:
+    # SDXL (8GB+ con qualsiasi checkpoint — o VRAM sconosciuta)
+    if vram_unknown or vram_gb >= 8:
         ckpt = _pick_model(checkpoints)
         if ckpt:
             return "IMAGE_SDXL", _wf_sdxl(ckpt, seed)
