@@ -12,7 +12,7 @@ import threading
 import base64
 import random
 import io
-from flask import Blueprint, request, jsonify, g, render_template
+from flask import Blueprint, request, jsonify, render_template
 from supabase import create_client
 import os
 
@@ -125,14 +125,26 @@ TIER_CONFIG = {
 }
 
 
-def _get_user_tier(user_id: str) -> str:
-    row = _sb.table("profiles").select("plan_status").eq("id", user_id).single().execute()
-    plan = (row.data or {}).get("plan_status", "")
-    if "studio" in plan:
-        return "studio"
-    if "pro" in plan:
-        return "pro"
-    return "creator"
+def _get_user_config(user_id: str) -> dict:
+    """Restituisce {tier, is_admin, comfyui_mode, comfyui_local_url}."""
+    row = _sb.table("profiles") \
+        .select("plan, status, is_admin, comfyui_mode, comfyui_local_url") \
+        .eq("user_id", user_id).single().execute()
+    data = row.data or {}
+    is_admin = bool(data.get("is_admin"))
+    plan = data.get("plan", "")
+    if is_admin or "studio" in plan:
+        tier = "studio"
+    elif "pro" in plan:
+        tier = "pro"
+    else:
+        tier = "creator"
+    return {
+        "tier": tier,
+        "is_admin": is_admin,
+        "comfyui_mode": data.get("comfyui_mode") or "runpod",
+        "comfyui_local_url": data.get("comfyui_local_url") or "",
+    }
 
 
 def _active_jobs_count(user_id: str) -> int:
@@ -146,16 +158,16 @@ def _active_jobs_count(user_id: str) -> int:
     return len(rows.data or [])
 
 
-def _run_job_background(job_id: str, workflow: dict, tier: str):
-    """Thread: invia a RunPod, polling, aggiorna Supabase, salva output."""
+def _run_job_background(job_id: str, workflow: dict, tier: str, mode: str = "runpod", local_url: str = ""):
+    """Thread: invia al backend ComfyUI, polling, aggiorna Supabase, salva output."""
     try:
-        run_id = cc.submit_workflow(workflow, tier)
+        run_id = cc.submit_workflow(workflow, tier, mode=mode, local_url=local_url or None)
         _sb.table("studio_jobs").update({"runpod_id": run_id, "status": "running"}).eq("id", job_id).execute()
 
         while True:
             import time
             time.sleep(4)
-            status_dict = cc.get_status(run_id, tier)
+            status_dict = cc.get_status(run_id, tier, mode=mode, local_url=local_url or None)
             runpod_status = status_dict.get("status", "IN_QUEUE")
 
             if runpod_status == "COMPLETED":
@@ -211,7 +223,7 @@ def generate():
     POST /studio/generate
     Body: { "workflow": {...}, "workflow_name": "LTX_720P" }
     """
-    user_id = g.user_id
+    user_id = request.current_user.id
     data = request.get_json(force=True) or {}
     workflow = data.get("workflow")
     workflow_name = data.get("workflow_name", "custom")
@@ -219,44 +231,46 @@ def generate():
     if not workflow:
         return jsonify({"error": "Missing workflow"}), 400
 
-    tier = _get_user_tier(user_id)
-    cfg = TIER_CONFIG.get(tier, TIER_CONFIG["creator"])
+    ucfg = _get_user_config(user_id)
+    tier  = ucfg["tier"]
+    mode  = ucfg["comfyui_mode"]
+    lurl  = ucfg["comfyui_local_url"]
+    cfg   = TIER_CONFIG.get(tier, TIER_CONFIG["creator"])
 
-    # Check concurrent limit
     if _active_jobs_count(user_id) >= cfg["max_concurrent"]:
         return jsonify({"error": "Max concurrent jobs reached for your plan"}), 429
 
-    # Verifica workflow ammesso per tier
     allowed = cfg["allowed_workflows"]
     if allowed != ["*"] and workflow_name not in allowed:
         return jsonify({"error": f"Workflow {workflow_name} not available on {tier} plan"}), 403
 
-    # Crea job in Supabase
     row = _sb.table("studio_jobs").insert({
         "user_id": user_id,
         "tier": tier,
         "workflow_name": workflow_name,
         "status": "queued",
         "credits_used": 1,
+        "backend_mode": mode,
+        "backend_url": lurl or None,
     }).execute()
     job_id = row.data[0]["id"]
 
-    # Lancia thread background
     t = threading.Thread(
         target=_run_job_background,
-        args=(job_id, workflow, tier),
+        args=(job_id, workflow, tier, mode, lurl),
         daemon=True,
     )
     t.start()
 
-    queue_pos = cc.queue_depth(tier)
-    wait_sec = cc.estimate_wait_seconds(tier)
+    queue_pos = cc.queue_depth(tier, mode=mode, local_url=lurl or None)
+    wait_sec  = cc.estimate_wait_seconds(tier, mode=mode, local_url=lurl or None)
 
     return jsonify({
         "job_id": job_id,
         "status": "queued",
         "queue_position": queue_pos,
         "estimated_wait_seconds": wait_sec,
+        "backend": mode,
     }), 202
 
 
@@ -264,7 +278,7 @@ def generate():
 @require_auth
 def status(job_id):
     """GET /studio/status/<job_id> — polling status + output quando completato."""
-    user_id = g.user_id
+    user_id = request.current_user.id
     row = (
         _sb.table("studio_jobs")
         .select("*")
@@ -301,7 +315,7 @@ def status(job_id):
 @require_auth
 def list_jobs():
     """GET /studio/jobs — ultimi 50 job dell'utente."""
-    user_id = g.user_id
+    user_id = request.current_user.id
     rows = (
         _sb.table("studio_jobs")
         .select("id, status, workflow_name, created_at, gpu_seconds, output_urls")
@@ -316,15 +330,67 @@ def list_jobs():
 @studio_bp.route("/queue", methods=["GET"])
 @require_auth
 def queue_info():
-    """GET /studio/queue — stato della coda per il tier dell'utente."""
-    user_id = g.user_id
-    tier = _get_user_tier(user_id)
+    user_id = request.current_user.id
+    ucfg = _get_user_config(user_id)
+    tier, mode, lurl = ucfg["tier"], ucfg["comfyui_mode"], ucfg["comfyui_local_url"]
     return jsonify({
         "tier": tier,
         "gpu": TIER_CONFIG[tier]["gpu"],
-        "queue_depth": cc.queue_depth(tier),
-        "estimated_wait_seconds": cc.estimate_wait_seconds(tier),
+        "queue_depth": cc.queue_depth(tier, mode=mode, local_url=lurl or None),
+        "estimated_wait_seconds": cc.estimate_wait_seconds(tier, mode=mode, local_url=lurl or None),
+        "backend": mode,
     })
+
+
+# ── ComfyUI local settings (per-utente) ──────────────────────────────────────
+
+@studio_bp.route("/settings/local", methods=["GET"])
+@require_auth
+def get_local_settings():
+    """GET /studio/settings/local — legge mode e local_url dell'utente."""
+    user_id = request.current_user.id
+    ucfg = _get_user_config(user_id)
+    return jsonify({
+        "comfyui_mode": ucfg["comfyui_mode"],
+        "comfyui_local_url": ucfg["comfyui_local_url"],
+    })
+
+
+@studio_bp.route("/settings/local", methods=["POST"])
+@require_auth
+def save_local_settings():
+    """
+    POST /studio/settings/local
+    Body: { "comfyui_mode": "local"|"runpod", "comfyui_local_url": "https://..." }
+    """
+    user_id = request.current_user.id
+    data = request.get_json(force=True) or {}
+    mode = data.get("comfyui_mode", "runpod")
+    lurl = (data.get("comfyui_local_url") or "").strip().rstrip("/")
+
+    if mode not in ("runpod", "local"):
+        return jsonify({"error": "Mode non valido"}), 400
+    if mode == "local" and not lurl:
+        return jsonify({"error": "Inserisci l'URL del tuo ComfyUI locale"}), 400
+
+    _sb.table("profiles").update({
+        "comfyui_mode": mode,
+        "comfyui_local_url": lurl or None,
+    }).eq("user_id", user_id).execute()
+
+    return jsonify({"comfyui_mode": mode, "comfyui_local_url": lurl})
+
+
+@studio_bp.route("/settings/ping", methods=["POST"])
+@require_auth
+def ping_local():
+    """POST /studio/settings/ping — verifica che l'URL ComfyUI locale risponda."""
+    data = request.get_json(force=True) or {}
+    lurl = (data.get("url") or "").strip().rstrip("/")
+    if not lurl:
+        return jsonify({"ok": False, "error": "URL mancante"}), 400
+    ok = cc.ping_local(lurl)
+    return jsonify({"ok": ok, "url": lurl})
 
 
 # ── Page routes ───────────────────────────────────────────────────────────────
@@ -332,10 +398,16 @@ def queue_info():
 @studio_bp.route("/", methods=["GET"])
 @require_auth
 def studio_index():
-    """GET /studio/ — pagina principale Studio con workflow catalog."""
-    user_id = g.user_id
-    tier = _get_user_tier(user_id)
-    return render_template("studio/index.html", user_tier=tier, workflows=WORKFLOW_CATALOG)
+    user_id = request.current_user.id
+    ucfg = _get_user_config(user_id)
+    return render_template(
+        "studio/index.html",
+        user_tier=ucfg["tier"],
+        workflows=WORKFLOW_CATALOG,
+        is_admin=ucfg["is_admin"],
+        comfyui_mode=ucfg["comfyui_mode"],
+        comfyui_local_url=ucfg["comfyui_local_url"],
+    )
 
 
 @studio_bp.route("/job/<job_id>", methods=["GET"])
@@ -355,7 +427,7 @@ def submit():
     Body: { "workflow_name": "LTX_720P", "prompt": "...", "seed": 42 }
     Carica il template server-side, inietta prompt/seed, invia a RunPod.
     """
-    user_id = g.user_id
+    user_id = request.current_user.id
     data = request.get_json(force=True) or {}
     workflow_name = data.get("workflow_name", "").strip()
     prompt = data.get("prompt", "").strip()
@@ -368,7 +440,11 @@ def submit():
     if not catalog_entry:
         return jsonify({"error": "Workflow sconosciuto"}), 400
 
-    tier = _get_user_tier(user_id)
+    ucfg = _get_user_config(user_id)
+    tier  = ucfg["tier"]
+    mode  = ucfg["comfyui_mode"]
+    lurl  = ucfg["comfyui_local_url"]
+
     if not _tier_accessible(tier, catalog_entry["tier_min"]):
         return jsonify({
             "error": f"Questo workflow richiede il piano {catalog_entry['tier_min'].capitalize()}."
@@ -378,7 +454,6 @@ def submit():
     if _active_jobs_count(user_id) >= cfg["max_concurrent"]:
         return jsonify({"error": "Limite job simultanei raggiunto per il tuo piano."}), 429
 
-    # Load template (raises FileNotFoundError if not yet configured)
     try:
         workflow = sw.load_template(workflow_name)
     except FileNotFoundError:
@@ -392,28 +467,120 @@ def submit():
     if not sw.is_api_format(workflow):
         return jsonify({"error": "Il template non è in formato API ComfyUI."}), 500
 
-    # Apply overrides
     if prompt:
         workflow = sw.apply_prompt(workflow, prompt)
-
     actual_seed = int(seed) if seed is not None else random.randint(1, 2 ** 31 - 1)
     workflow = sw.randomize_seeds(workflow, actual_seed)
 
-    # Create job record
+    # ── Advanced overrides (optional — sent by Custom workflow UI) ──────────
+    adv_steps     = data.get("steps")
+    adv_cfg       = data.get("cfg")
+    adv_sampler   = (data.get("sampler_name") or "").strip()
+    adv_scheduler = (data.get("scheduler")    or "").strip()
+    adv_negative  = (data.get("negative_prompt") or "").strip()
+    adv_width     = data.get("width")
+    adv_height    = data.get("height")
+
+    # KSampler overrides
+    ksampler_ovr = {}
+    if adv_steps  is not None: ksampler_ovr["steps"]        = max(1, min(int(adv_steps), 150))
+    if adv_cfg    is not None: ksampler_ovr["cfg"]          = max(0.0, min(float(adv_cfg), 20.0))
+    if adv_sampler:            ksampler_ovr["sampler_name"] = adv_sampler
+    if adv_scheduler:          ksampler_ovr["scheduler"]    = adv_scheduler
+    if ksampler_ovr:
+        for cls in ("KSampler", "KSamplerAdvanced", "LTXVSampler", "WanVideoSampler"):
+            for nid in sw.find_nodes_by_class(workflow, cls):
+                try: workflow = sw.substitute(workflow, {nid: ksampler_ovr})
+                except KeyError: pass
+
+    # Negative prompt
+    _NEG = frozenset({"blurry", "ugly", "low quality", "bad", "worst", "nsfw", "watermark", "deformed"})
+    if adv_negative:
+        for nid, node in workflow.items():
+            if not isinstance(node, dict): continue
+            if node.get("class_type") not in ("CLIPTextEncode", "CLIPTextEncodeFlux", "WanTextEncode"):
+                continue
+            inp = node.get("inputs", {})
+            existing = (inp.get("text") or inp.get("clip_l") or inp.get("t5xxl") or "").lower()
+            if any(h in existing for h in _NEG):
+                try: workflow = sw.substitute(workflow, {nid: {"text": adv_negative}})
+                except KeyError: pass
+
+    # Resolution
+    if adv_width and adv_height:
+        w = max(64, min(int(adv_width), 2048))
+        h = max(64, min(int(adv_height), 2048))
+        for cls in ("EmptyLatentImage", "EmptySD3LatentImage"):
+            for nid in sw.find_nodes_by_class(workflow, cls):
+                try: workflow = sw.substitute(workflow, {nid: {"width": w, "height": h}})
+                except KeyError: pass
+
     row = _sb.table("studio_jobs").insert({
         "user_id": user_id,
         "tier": tier,
         "workflow_name": workflow_name,
         "status": "queued",
         "credits_used": 1,
+        "backend_mode": mode,
+        "backend_url": lurl or None,
     }).execute()
     job_id = row.data[0]["id"]
 
+    if mode == "local":
+        # Workflow eseguito lato browser: restituiamo il JSON compilato
+        return jsonify({"job_id": job_id, "mode": "local", "workflow": workflow}), 202
+
     t = threading.Thread(
         target=_run_job_background,
-        args=(job_id, workflow, tier),
+        args=(job_id, workflow, tier, mode, lurl),
         daemon=True,
     )
     t.start()
 
-    return jsonify({"job_id": job_id, "status": "queued"}), 202
+    return jsonify({"job_id": job_id, "status": "queued", "backend": mode}), 202
+
+
+@studio_bp.route("/job/save", methods=["POST"])
+@require_auth
+def save_job():
+    """
+    POST /studio/job/save — riceve i file output dal browser (local BYOC mode),
+    li carica su Supabase Storage e marca il job come completato.
+    FormData: job_id + uno o più file con chiave 'files'.
+    """
+    user_id = request.current_user.id
+    job_id  = request.form.get("job_id", "").strip()
+    if not job_id:
+        return jsonify({"error": "job_id mancante"}), 400
+
+    row = (
+        _sb.table("studio_jobs")
+        .select("id, user_id, workflow_name")
+        .eq("id", job_id)
+        .eq("user_id", user_id)
+        .single()
+        .execute()
+    )
+    if not row.data:
+        return jsonify({"error": "Job non trovato"}), 404
+
+    saved_urls = []
+    for f in request.files.getlist("files"):
+        fname = f.filename or "output"
+        ext   = fname.rsplit(".", 1)[-1].lower() if "." in fname else "png"
+        ctype = f.content_type or ("video/mp4" if ext in ("mp4", "webm") else "image/png")
+        ftype = "video" if ext in ("mp4", "webm", "webp") else "image"
+        path  = f"studio/{job_id}/{fname}"
+        data  = f.read()
+        _sb.storage.from_("reel-outputs").upload(
+            path, data, file_options={"content-type": ctype}
+        )
+        url = _sb.storage.from_("reel-outputs").get_public_url(path)
+        saved_urls.append({"filename": fname, "url": url, "type": ftype})
+
+    _sb.table("studio_jobs").update({
+        "status":      "completed",
+        "output_urls": saved_urls,
+    }).eq("id", job_id).execute()
+
+    return jsonify({"job_id": job_id, "outputs": saved_urls})
