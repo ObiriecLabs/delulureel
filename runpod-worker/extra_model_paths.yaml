@@ -1,0 +1,20 @@
+# Punta ComfyUI ai modelli sul RunPod Network Volume (/runpod-volume)
+# Il volume viene montato automaticamente su ogni worker al boot.
+comfyui:
+    base_path: /runpod-volume/
+    checkpoints: models/checkpoints/
+    clip: models/clip/
+    clip_vision: models/clip_vision/
+    vae: models/vae/
+    diffusion_models: models/diffusion_models/
+    text_encoders: models/text_encoders/
+    unet: models/unet/
+    loras: models/loras/
+    upscale_models: models/upscale_models/
+    controlnet: models/controlnet/
+    ipadapter: models/ipadapter/
+    embeddings: models/embeddings/
+    hypernetworks: models/hypernetworks/
+    animatediff_models: models/animatediff_models/
+    animatediff_motion_lora: models/animatediff_motion_lora/
+    gguf: models/gguf/
