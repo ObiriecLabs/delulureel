@@ -77,10 +77,12 @@ def set_lang():
 from saas.auth.routes import auth_bp
 from saas.billing.routes import billing_bp
 from saas.video.routes import video_bp
+from saas.byoc.routes import byoc_bp
 
 app.register_blueprint(auth_bp,    url_prefix='/auth')
 app.register_blueprint(billing_bp, url_prefix='/billing')
 app.register_blueprint(video_bp,   url_prefix='/video')
+app.register_blueprint(byoc_bp,    url_prefix='/byoc')
 
 # ── Landing page (static HTML, no Jinja) ──
 @app.route('/')
@@ -137,7 +139,7 @@ def share_page(job_id):
 # Error handlers
 @app.errorhandler(404)
 def not_found(e):
-    return render_template('404.html', lang=get_lang()), 404
+    return render_template('404.html', lang=get_lang(session, request)), 404
 
 @app.errorhandler(500)
 def server_error(e):
