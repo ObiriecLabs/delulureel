@@ -99,7 +99,7 @@ if (urlParams.get('welcome') === '1') {
 fetch('/video/profile')
   .then(r => r.json())
   .then(p => {
-    const PLAN_NAMES    = { creator: 'Creator', pro: 'Pro', studio: 'Studio' };
+    const PLAN_NAMES    = { byoc: 'BYOC', creator: 'Creator', pro: 'Pro', studio: 'Studio' };
     const STATUS_LABELS = {
       trial: I18N.statusTrial, active: I18N.statusActive,
       suspended: I18N.statusSuspended, cancelled: I18N.statusCancelled,
@@ -109,20 +109,23 @@ fetch('/video/profile')
     document.getElementById('plan-name').textContent   = PLAN_NAMES[p.plan] || '–';
     document.getElementById('plan-status').textContent = STATUS_LABELS[p.status] || p.status;
 
-    const used  = p.credits_used_this_month || 0;
-    const limit = p.credits_limit || 10;
+    const used     = p.credits_used_this_month || 0;
+    const isUnlim  = p.credits_limit === null || p.credits_limit === undefined;
+    const limit    = isUnlim ? '∞' : (p.credits_limit || 10);
     document.getElementById('plan-usage').textContent  =
       I18N.creditsCounter.replace('{used}', used).replace('{limit}', limit);
 
-    // Usage bar
-    const pct = Math.min(100, Math.round((used / limit) * 100));
+    // Usage bar — hidden for BYOC (unlimited local, no credit tracking)
     const bar = document.getElementById('usage-bar-wrap');
-    bar.style.display = 'flex';
-    document.getElementById('usage-bar-fill').style.width = pct + '%';
-    document.getElementById('usage-bar-fill').className   =
-      'usage-bar-fill' + (pct >= 90 ? ' danger' : pct >= 70 ? ' warn' : '');
-    document.getElementById('usage-bar-label').textContent =
-      I18N.pctUsed.replace('{pct}', pct);
+    if (!isUnlim) {
+      const pct = Math.min(100, Math.round((used / p.credits_limit) * 100));
+      bar.style.display = 'flex';
+      document.getElementById('usage-bar-fill').style.width = pct + '%';
+      document.getElementById('usage-bar-fill').className   =
+        'usage-bar-fill' + (pct >= 90 ? ' danger' : pct >= 70 ? ' warn' : '');
+      document.getElementById('usage-bar-label').textContent =
+        I18N.pctUsed.replace('{pct}', pct);
+    }
   })
   .catch(() => {});
 

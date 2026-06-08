@@ -78,11 +78,13 @@ from saas.auth.routes import auth_bp
 from saas.billing.routes import billing_bp
 from saas.video.routes import video_bp
 from saas.byoc.routes import byoc_bp
+from saas.studio.routes import studio_bp
 
 app.register_blueprint(auth_bp,    url_prefix='/auth')
 app.register_blueprint(billing_bp, url_prefix='/billing')
 app.register_blueprint(video_bp,   url_prefix='/video')
 app.register_blueprint(byoc_bp,    url_prefix='/byoc')
+app.register_blueprint(studio_bp,  url_prefix='/studio')
 
 # ── Landing page (static HTML, no Jinja) ──
 @app.route('/')

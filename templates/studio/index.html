@@ -1,0 +1,746 @@
+{% extends 'base.html' %}
+{% block title %}Studio — DELULUREEL{% endblock %}
+
+{% block nav_extra %}
+<div class="studio-tier-chip tier-{{ user_tier }}">
+  <span class="tier-dot"></span>{{ user_tier|capitalize }}
+</div>
+<div class="studio-queue-chip" id="queue-chip">
+  <span class="queue-pulse"></span>
+  <span id="queue-chip-text">0 in esecuzione</span>
+</div>
+<div class="mode-toggle" id="mode-toggle">
+  <button class="mode-btn {% if comfyui_mode == 'runpod' %}active{% endif %}"
+          data-mode="runpod" onclick="setComfyMode('runpod')">☁ Cloud</button>
+  <button class="mode-btn {% if comfyui_mode == 'local' %}active{% endif %}"
+          data-mode="local" onclick="setComfyMode('local')">⌂ Locale</button>
+</div>
+{% endblock %}
+
+{% block content %}
+<div class="container studio-pg">
+
+  <div class="studio-header">
+    <div>
+      <h1 class="studio-title">Studio</h1>
+      <p class="studio-sub">ComfyUI cloud su GPU dedicata &middot; piano <strong>{{ user_tier|capitalize }}</strong></p>
+    </div>
+    <a href="/dashboard" class="btn btn-outline btn-sm">&larr; Dashboard</a>
+  </div>
+
+  <!-- Category tabs -->
+  <div class="cat-tabs" role="tablist" aria-label="Categoria workflow">
+    <button class="cat-tab active" data-cat="all"    role="tab" aria-selected="true">Tutti</button>
+    <button class="cat-tab"        data-cat="video"  role="tab">Video</button>
+    <button class="cat-tab"        data-cat="image"  role="tab">Immagine</button>
+    <button class="cat-tab"        data-cat="avatar" role="tab">Avatar</button>
+  </div>
+
+  <!-- Workflow grid -->
+  {% set tier_rank = {'creator': 0, 'pro': 1, 'studio': 2, 'byoc': 99} %}
+  <div class="workflow-grid" id="workflow-grid">
+    {% for wf in workflows %}
+    {% set locked = tier_rank[user_tier] < tier_rank[wf.tier_min] %}
+    <div class="workflow-card{% if locked %} wf-locked{% endif %}"
+         data-cat="{{ wf.category }}"
+         data-id="{{ wf.id }}">
+
+      <div class="wf-top">
+        <div class="wf-icon">{{ wf.icon }}</div>
+        {% if locked %}
+        <span class="wf-tier-lock">{{ wf.tier_min|capitalize }}+</span>
+        {% endif %}
+      </div>
+
+      <div class="wf-body">
+        <p class="wf-name">{{ wf.name }}</p>
+        <p class="wf-desc">{{ wf.description }}</p>
+        <div class="wf-chips">
+          <span class="wf-chip">{{ wf.resolution }}</span>
+          <span class="wf-chip wf-chip-gpu">{{ wf.gpu }}</span>
+        </div>
+      </div>
+
+      <div class="wf-footer">
+        {% if locked %}
+        <a href="/billing/portal" class="btn btn-outline btn-sm btn-full">
+          Upgrade a {{ wf.tier_min|capitalize }}
+        </a>
+        {% else %}
+        <button class="btn btn-primary btn-sm btn-full wf-btn"
+                data-id="{{ wf.id }}"
+                data-name="{{ wf.name }}"
+                data-category="{{ wf.category }}">
+          Genera
+        </button>
+        {% endif %}
+      </div>
+    </div>
+    {% endfor %}
+
+    <!-- Custom card — sempre visibile, non locked -->
+    <div class="workflow-card wf-custom-card" data-cat="all" data-id="CUSTOM">
+      <div class="wf-top">
+        <div class="wf-icon">⚙</div>
+      </div>
+      <div class="wf-body">
+        <p class="wf-name">Custom</p>
+        <p class="wf-desc">Controllo completo: steps, CFG, sampler, scheduler, risoluzione, prompt negativo.</p>
+        <div class="wf-chips">
+          <span class="wf-chip">Tutti i workflow</span>
+          <span class="wf-chip wf-chip-gpu">Avanzato</span>
+        </div>
+      </div>
+      <div class="wf-footer">
+        <button class="btn btn-primary btn-sm btn-full" onclick="openCustomModal()">Configura</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Recent jobs -->
+  <div class="studio-jobs-section">
+    <h2 class="section-title-sm">Generazioni recenti</h2>
+    <div id="jobs-loading" class="reels-loading"><div class="spinner"></div></div>
+    <div class="studio-jobs-grid" id="jobs-grid"></div>
+    <div class="jobs-empty" id="jobs-empty" style="display:none">
+      <div class="jobs-empty-icon">&#128421;</div>
+      <p class="jobs-empty-title">Nessuna generazione ancora</p>
+      <p class="jobs-empty-sub">Seleziona un workflow e avvia la prima generazione.</p>
+    </div>
+  </div>
+
+</div>
+
+<!-- Submit modal -->
+<div class="s-modal-overlay" id="s-modal" role="dialog" aria-modal="true" aria-labelledby="modal-wf-name">
+  <div class="s-modal-card">
+    <div class="s-modal-head">
+      <div>
+        <p class="s-modal-title" id="modal-wf-name">Genera</p>
+        <p class="s-modal-wf-sub" id="modal-wf-sub"></p>
+      </div>
+      <button class="s-modal-close" id="modal-close" aria-label="Chiudi">&times;</button>
+    </div>
+    <div class="s-modal-body">
+      <div id="modal-error" class="alert alert-error" style="display:none"></div>
+      <div class="field">
+        <label class="field-label" for="modal-prompt">Prompt</label>
+        <textarea class="field-input" id="modal-prompt" rows="4"
+                  placeholder="Descrivi il soggetto, stile, atmosfera&hellip;" maxlength="1000"></textarea>
+      </div>
+      <div class="field">
+        <label class="field-label" for="modal-seed">Seed <span style="font-weight:400;color:var(--muted)">(opzionale)</span></label>
+        <input type="number" class="field-input" id="modal-seed"
+               placeholder="Lascia vuoto per risultato diverso ad ogni run" min="0" max="2147483647">
+      </div>
+      <div class="s-modal-queue" id="modal-queue-info">Caricamento info coda&hellip;</div>
+    </div>
+    <div class="s-modal-foot">
+      <button class="btn btn-outline" id="modal-cancel">Annulla</button>
+      <button class="btn btn-primary" id="modal-submit">
+        <span id="modal-submit-label">Avvia generazione</span>
+      </button>
+    </div>
+  </div>
+</div>
+<!-- Custom workflow modal -->
+<div class="s-modal-overlay" id="custom-modal" role="dialog" aria-modal="true" aria-labelledby="custom-modal-title">
+  <div class="s-modal-card" style="max-width:680px;width:100%">
+    <div class="s-modal-head">
+      <div>
+        <p class="s-modal-title" id="custom-modal-title">⚙ Custom</p>
+        <p class="s-modal-wf-sub">Parametri completi — il workflow gira su ComfyUI cloud o locale</p>
+      </div>
+      <button class="s-modal-close" onclick="closeCustomModal()" aria-label="Chiudi">&times;</button>
+    </div>
+    <div class="s-modal-body" style="gap:16px">
+      <div id="custom-modal-error" class="alert alert-error" style="display:none"></div>
+
+      <div class="field">
+        <label class="field-label" for="custom-base-wf">Workflow base</label>
+        <select class="field-input" id="custom-base-wf">
+          <option value="">— seleziona —</option>
+          {% for wf in workflows %}
+          <option value="{{ wf.id }}">{{ wf.icon }} {{ wf.name }} ({{ wf.resolution }})</option>
+          {% endfor %}
+        </select>
+      </div>
+
+      <div class="field">
+        <label class="field-label" for="custom-prompt">Prompt positivo</label>
+        <textarea class="field-input" id="custom-prompt" rows="3"
+                  placeholder="Descrivi soggetto, stile, atmosfera, movimento…" maxlength="1000"></textarea>
+      </div>
+      <div class="field">
+        <label class="field-label" for="custom-neg-prompt">Prompt negativo</label>
+        <textarea class="field-input" id="custom-neg-prompt" rows="2"
+                  placeholder="blurry, low quality, watermark, deformed…" maxlength="500"></textarea>
+      </div>
+
+      <div class="custom-grid-2">
+        <div class="field">
+          <label class="field-label" for="custom-steps">Steps</label>
+          <input type="number" class="field-input" id="custom-steps" value="30" min="1" max="150">
+        </div>
+        <div class="field">
+          <label class="field-label" for="custom-cfg">CFG scale</label>
+          <input type="number" class="field-input" id="custom-cfg" value="7.0" min="0" max="20" step="0.5">
+        </div>
+        <div class="field">
+          <label class="field-label" for="custom-sampler">Sampler</label>
+          <select class="field-input" id="custom-sampler">
+            <option value="">— default —</option>
+            <option value="euler">euler</option>
+            <option value="euler_ancestral">euler_ancestral</option>
+            <option value="dpmpp_2m">dpmpp_2m</option>
+            <option value="dpmpp_2m_sde">dpmpp_2m_sde</option>
+            <option value="dpmpp_3m_sde">dpmpp_3m_sde</option>
+            <option value="dpmpp_sde">dpmpp_sde</option>
+            <option value="dpm_2">dpm_2</option>
+            <option value="dpm_2_ancestral">dpm_2_ancestral</option>
+            <option value="heun">heun</option>
+            <option value="lms">lms</option>
+            <option value="ddim">ddim</option>
+            <option value="uni_pc">uni_pc</option>
+          </select>
+        </div>
+        <div class="field">
+          <label class="field-label" for="custom-scheduler">Scheduler</label>
+          <select class="field-input" id="custom-scheduler">
+            <option value="">— default —</option>
+            <option value="normal">normal</option>
+            <option value="karras">karras</option>
+            <option value="exponential">exponential</option>
+            <option value="beta">beta</option>
+            <option value="sgm_uniform">sgm_uniform</option>
+            <option value="simple">simple</option>
+            <option value="ddim_uniform">ddim_uniform</option>
+          </select>
+        </div>
+        <div class="field">
+          <label class="field-label" for="custom-width">Larghezza (px)</label>
+          <input type="number" class="field-input" id="custom-width" placeholder="es. 768" min="64" max="2048" step="64">
+        </div>
+        <div class="field">
+          <label class="field-label" for="custom-height">Altezza (px)</label>
+          <input type="number" class="field-input" id="custom-height" placeholder="es. 1344" min="64" max="2048" step="64">
+        </div>
+      </div>
+
+      <div class="field">
+        <label class="field-label" for="custom-seed">Seed <span style="font-weight:400;color:var(--muted)">(opzionale)</span></label>
+        <input type="number" class="field-input" id="custom-seed"
+               placeholder="Lascia vuoto per seed casuale" min="0" max="2147483647">
+      </div>
+    </div>
+    <div class="s-modal-foot">
+      <button class="btn btn-outline" onclick="closeCustomModal()">Annulla</button>
+      <button class="btn btn-primary" id="custom-modal-submit">
+        <span id="custom-modal-submit-label">Avvia generazione</span>
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- Local ComfyUI settings modal -->
+<div class="s-modal-overlay" id="local-modal" role="dialog" aria-modal="true" aria-labelledby="local-modal-title">
+  <div class="s-modal-card">
+    <div class="s-modal-head">
+      <div>
+        <p class="s-modal-title" id="local-modal-title">ComfyUI locale</p>
+        <p class="s-modal-wf-sub">Connetti il tuo ComfyUI locale — nessun tunnel necessario</p>
+      </div>
+      <button class="s-modal-close" onclick="closeLocalModal()" aria-label="Chiudi">&times;</button>
+    </div>
+    <div class="s-modal-body">
+      <div id="local-modal-error" class="alert alert-error" style="display:none"></div>
+      <div class="field">
+        <label class="field-label" for="local-url-input">URL del tuo ComfyUI</label>
+        <input type="url" class="field-input" id="local-url-input"
+               placeholder="http://localhost:8188"
+               value="{{ comfyui_local_url or '' }}">
+        <p class="field-hint">ComfyUI gira di default su <code>http://localhost:8188</code> — nessun tunnel richiesto</p>
+      </div>
+      <div style="display:flex;gap:8px;align-items:center;margin-top:4px">
+        <button class="btn btn-outline btn-sm" id="ping-btn" onclick="pingLocal()">Testa connessione</button>
+        <span id="ping-result" style="font-size:12px;color:var(--muted)"></span>
+      </div>
+    </div>
+    <div class="s-modal-foot">
+      <button class="btn btn-outline" onclick="closeLocalModal()">Annulla</button>
+      <button class="btn btn-primary" id="local-save-btn" onclick="saveLocalSettings()">Salva e attiva</button>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+let activeWfId = null;
+
+// ── Category tabs ─────────────────────────────────────────────────────────
+document.querySelectorAll('.cat-tab').forEach(tab => {
+  tab.addEventListener('click', () => {
+    document.querySelectorAll('.cat-tab').forEach(t => {
+      t.classList.remove('active');
+      t.setAttribute('aria-selected', 'false');
+    });
+    tab.classList.add('active');
+    tab.setAttribute('aria-selected', 'true');
+    const cat = tab.dataset.cat;
+    document.querySelectorAll('.workflow-card').forEach(card => {
+      card.classList.toggle('wf-hidden', cat !== 'all' && card.dataset.cat !== cat);
+    });
+  });
+});
+
+// ── Modal ─────────────────────────────────────────────────────────────────
+function openModal(id, name, category) {
+  activeWfId = id;
+  const catLabel  = { video: 'Video', image: 'Immagine', avatar: 'Avatar' }[category] || category;
+  const modeLabel = _currentMode === 'local' ? 'ComfyUI locale' : 'ComfyUI cloud';
+  document.getElementById('modal-wf-name').textContent = name;
+  document.getElementById('modal-wf-sub').textContent  = catLabel + ' · ' + modeLabel;
+  document.getElementById('modal-error').style.display = 'none';
+  document.getElementById('modal-prompt').value = '';
+  document.getElementById('modal-seed').value   = '';
+  document.getElementById('modal-submit-label').textContent = 'Avvia generazione';
+  document.getElementById('modal-submit').disabled = false;
+
+  if (_currentMode === 'local') {
+    document.getElementById('modal-queue-info').textContent =
+      'ComfyUI locale · generazione diretta, senza coda';
+  } else {
+    document.getElementById('modal-queue-info').textContent = 'Caricamento info coda…';
+    fetch('/studio/queue')
+      .then(r => r.json())
+      .then(q => {
+        const wait = q.estimated_wait_seconds || 0;
+        const gpu  = (q.gpu || '').toUpperCase();
+        const waitStr = wait < 60 ? wait + 's' : Math.round(wait / 60) + ' min';
+        document.getElementById('modal-queue-info').textContent =
+          'GPU: ' + gpu + '  ·  Attesa stimata: ' + waitStr;
+      })
+      .catch(() => {
+        document.getElementById('modal-queue-info').textContent = 'Info coda non disponibili.';
+      });
+  }
+
+  document.getElementById('s-modal').classList.add('open');
+  setTimeout(() => document.getElementById('modal-prompt').focus(), 80);
+}
+
+function closeModal() {
+  document.getElementById('s-modal').classList.remove('open');
+  activeWfId = null;
+}
+
+document.querySelectorAll('.wf-btn').forEach(btn => {
+  btn.addEventListener('click', () => openModal(btn.dataset.id, btn.dataset.name, btn.dataset.category));
+});
+document.getElementById('modal-close').addEventListener('click',  closeModal);
+document.getElementById('modal-cancel').addEventListener('click', closeModal);
+document.getElementById('s-modal').addEventListener('click', e => {
+  if (e.target === document.getElementById('s-modal')) closeModal();
+});
+
+// ── Submit ────────────────────────────────────────────────────────────────
+document.getElementById('modal-submit').addEventListener('click', async () => {
+  if (!activeWfId) return;
+  const prompt    = document.getElementById('modal-prompt').value.trim();
+  const seedVal   = document.getElementById('modal-seed').value.trim();
+  const errEl     = document.getElementById('modal-error');
+  const submitBtn = document.getElementById('modal-submit');
+
+  errEl.style.display = 'none';
+  submitBtn.disabled  = true;
+
+  const body = { workflow_name: activeWfId };
+  if (prompt)  body.prompt = prompt;
+  if (seedVal) body.seed   = parseInt(seedVal, 10);
+
+  if (_currentMode === 'local') {
+    await _submitLocal(body, errEl, submitBtn);
+    return;
+  }
+
+  document.getElementById('modal-submit-label').textContent = 'Invio…';
+  try {
+    const resp = await fetch('/studio/submit', {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body:    JSON.stringify(body),
+    });
+    const data = await resp.json();
+    if (!resp.ok) {
+      errEl.textContent   = data.error || 'Errore durante l\'invio.';
+      errEl.style.display = 'block';
+      submitBtn.disabled  = false;
+      document.getElementById('modal-submit-label').textContent = 'Avvia generazione';
+      return;
+    }
+    window.location.href = '/studio/job/' + data.job_id;
+  } catch {
+    errEl.textContent   = 'Errore di rete — riprova.';
+    errEl.style.display = 'block';
+    submitBtn.disabled  = false;
+    document.getElementById('modal-submit-label').textContent = 'Avvia generazione';
+  }
+});
+
+async function _submitLocal(body, errEl, submitBtn) {
+  const comfyUrl = (_savedLocalUrl || 'http://localhost:8188').replace(/\/+$/, '');
+  const labelEl  = document.getElementById('modal-submit-label');
+
+  const _err = (msg) => {
+    errEl.textContent   = msg;
+    errEl.style.display = 'block';
+    submitBtn.disabled  = false;
+    labelEl.textContent = 'Avvia generazione';
+  };
+
+  try {
+    // 1. Crea job su server + ottieni workflow compilato
+    labelEl.textContent = 'Preparazione workflow…';
+    const buildResp = await fetch('/studio/submit', {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body:    JSON.stringify(body),
+    });
+    const buildData = await buildResp.json();
+    if (!buildResp.ok || buildData.error) {
+      return _err(buildData.error || 'Errore preparazione workflow.');
+    }
+    const jobId    = buildData.job_id;
+    const workflow = buildData.workflow;
+
+    // 2. Invia workflow al ComfyUI locale (browser → localhost, nessun tunnel)
+    labelEl.textContent = 'Invio a ComfyUI…';
+    const submitResp = await fetch(comfyUrl + '/prompt', {
+      method:  'POST',
+      headers: {
+        'Content-Type':              'application/json',
+        'ngrok-skip-browser-warning': 'true',
+      },
+      body: JSON.stringify({ prompt: workflow }),
+    });
+    if (!submitResp.ok) {
+      const txt = await submitResp.text().catch(() => '');
+      return _err('ComfyUI ha rifiutato il workflow: ' + txt.slice(0, 200));
+    }
+    const { prompt_id } = await submitResp.json();
+
+    // 3. Polling /history/{prompt_id} ogni 2s, max 10 min
+    labelEl.textContent = 'Generazione in corso…';
+    let outputs = null;
+    for (let i = 0; i < 300; i++) {
+      await new Promise(r => setTimeout(r, 2000));
+      try {
+        const histResp = await fetch(comfyUrl + '/history/' + prompt_id, {
+          headers: { 'ngrok-skip-browser-warning': 'true' },
+        });
+        const history = await histResp.json();
+        const entry   = history[prompt_id];
+        if (!entry) continue;
+        const st = entry.status || {};
+        if (st.status_str === 'error') {
+          const msgs = st.messages || [];
+          return _err('ComfyUI: errore di esecuzione. ' + (msgs.length ? String(msgs[msgs.length - 1]) : ''));
+        }
+        if (st.completed) { outputs = entry.outputs; break; }
+      } catch { /* flap di rete — riprova */ }
+    }
+    if (!outputs) return _err('Timeout — generazione troppo lunga (> 10 min).');
+
+    // 4. Raccolta file output dal ComfyUI locale
+    labelEl.textContent = 'Recupero output…';
+    const files = [];
+    for (const nodeOut of Object.values(outputs)) {
+      for (const img of nodeOut.images || []) {
+        const p = 'filename=' + encodeURIComponent(img.filename) + '&type=output' +
+                  (img.subfolder ? '&subfolder=' + encodeURIComponent(img.subfolder) : '');
+        const blob = await (await fetch(comfyUrl + '/view?' + p, {
+          headers: { 'ngrok-skip-browser-warning': 'true' },
+        })).blob();
+        files.push({ blob, filename: img.filename });
+      }
+      for (const vid of nodeOut.videos || []) {
+        const p = 'filename=' + encodeURIComponent(vid.filename) + '&type=output' +
+                  (vid.subfolder ? '&subfolder=' + encodeURIComponent(vid.subfolder) : '');
+        const blob = await (await fetch(comfyUrl + '/view?' + p, {
+          headers: { 'ngrok-skip-browser-warning': 'true' },
+        })).blob();
+        files.push({ blob, filename: vid.filename });
+      }
+    }
+    if (!files.length) return _err('Nessun output trovato nella risposta ComfyUI.');
+
+    // 5. Upload al server → Supabase Storage
+    labelEl.textContent = 'Salvataggio…';
+    const fd = new FormData();
+    fd.append('job_id', jobId);
+    files.forEach(f => fd.append('files', f.blob, f.filename));
+
+    const saveResp = await fetch('/studio/job/save', { method: 'POST', body: fd });
+    const saveData = await saveResp.json();
+    if (!saveResp.ok || saveData.error) {
+      return _err(saveData.error || 'Errore nel salvataggio del risultato.');
+    }
+
+    window.location.href = '/studio/job/' + jobId;
+
+  } catch (e) {
+    _err('Errore imprevisto: ' + String(e));
+  }
+}
+
+// ── Recent jobs ───────────────────────────────────────────────────────────
+const STATUS_CHIP = {
+  queued:    ['chip-queued',   'In coda'],
+  running:   ['chip-running',  'In esecuzione'],
+  completed: ['chip-done',     'Completato'],
+  failed:    ['chip-failed',   'Errore'],
+};
+const WF_ICONS = {
+  IMAGE_FLUX: '✶', IMAGE_SDXL: '🎨',
+  LTX_480P:   '🎦', LTX_720P:   '🎦',
+  WAN_480P:   '🎞️', WAN_720P: '🎞️',
+  AVATAR_INFINITETALK: '🗣️',
+};
+
+fetch('/studio/jobs')
+  .then(r => r.json())
+  .then(data => {
+    document.getElementById('jobs-loading').style.display = 'none';
+    const grid  = document.getElementById('jobs-grid');
+    const empty = document.getElementById('jobs-empty');
+    const jobs  = data.jobs || [];
+
+    if (!jobs.length) { empty.style.display = 'flex'; return; }
+
+    let running = 0;
+    jobs.forEach(job => {
+      const [chipClass, chipLabel] = STATUS_CHIP[job.status] || ['chip-queued', job.status];
+      const icon = WF_ICONS[job.workflow_name] || '💻';
+      const date = new Date(job.created_at).toLocaleString('it-IT', {
+        day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit',
+      });
+      const gpuInfo = job.gpu_seconds ? Math.round(job.gpu_seconds) + 's GPU' : '';
+
+      const firstOut = (job.output_urls || [])[0];
+      let thumbHtml  = '<span>' + icon + '</span>';
+      if (firstOut && firstOut.url) {
+        if (firstOut.type === 'image') {
+          thumbHtml = '<img src="' + firstOut.url + '" alt="output">';
+        } else if (firstOut.type === 'video') {
+          thumbHtml = '<video src="' + firstOut.url + '" muted playsinline></video>';
+        }
+      }
+
+      const row = document.createElement('a');
+      row.href      = '/studio/job/' + job.id;
+      row.className = 'studio-job-row';
+      row.innerHTML =
+        '<div class="job-thumb">' + thumbHtml + '</div>' +
+        '<div class="job-info">' +
+          '<div class="job-wf">' + job.workflow_name + '</div>' +
+          '<div class="job-date">' + date + (gpuInfo ? ' · ' + gpuInfo : '') + '</div>' +
+        '</div>' +
+        '<div class="job-status-chip ' + chipClass + '">' + chipLabel + '</div>' +
+        '<div class="job-actions-cell">' +
+          '<span class="btn btn-outline btn-sm">Apri &rarr;</span>' +
+        '</div>';
+      grid.appendChild(row);
+
+      if (job.status === 'queued' || job.status === 'running') running++;
+    });
+
+    if (running > 0) {
+      document.getElementById('queue-chip-text').textContent = running + ' in esecuzione';
+      document.getElementById('queue-chip').classList.add('visible');
+    }
+  })
+  .catch(() => { document.getElementById('jobs-loading').style.display = 'none'; });
+
+// ── ComfyUI mode toggle ───────────────────────────────────────────────────
+let _savedLocalUrl = {{ (comfyui_local_url or '')|tojson }};
+let _currentMode   = {{ (comfyui_mode or 'runpod')|tojson }};
+
+function setComfyMode(mode) {
+  if (mode === 'local' && !_savedLocalUrl) {
+    openLocalModal();
+    return;
+  }
+  _applyMode(mode, _savedLocalUrl);
+}
+
+function _applyMode(mode, local_url) {
+  fetch('/studio/settings/local', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({comfyui_mode: mode, comfyui_local_url: local_url || ''})
+  })
+  .then(r => r.json())
+  .then(data => {
+    if (data.error) { alert(data.error); return; }
+    _savedLocalUrl = data.comfyui_local_url || '';
+    _currentMode   = data.comfyui_mode;
+    document.querySelectorAll('.mode-btn').forEach(btn => {
+      btn.classList.toggle('active', btn.dataset.mode === data.comfyui_mode);
+    });
+  })
+  .catch(() => alert('Errore nel cambio modalità.'));
+}
+
+function openLocalModal() {
+  document.getElementById('local-url-input').value = _savedLocalUrl || '';
+  document.getElementById('local-modal-error').style.display = 'none';
+  document.getElementById('ping-result').textContent = '';
+  document.getElementById('local-modal').classList.add('open');
+  setTimeout(() => document.getElementById('local-url-input').focus(), 80);
+}
+
+function closeLocalModal() {
+  document.getElementById('local-modal').classList.remove('open');
+}
+
+async function pingLocal() {
+  const url = document.getElementById('local-url-input').value.trim().replace(/\/+$/, '');
+  const btn = document.getElementById('ping-btn');
+  const res = document.getElementById('ping-result');
+  if (!url) { res.textContent = 'Inserisci prima un URL.'; res.style.color = 'var(--error)'; return; }
+  btn.disabled = true;
+  res.textContent = 'Test in corso…';
+  res.style.color = 'var(--muted)';
+  try {
+    const r = await fetch(url + '/system_stats', {
+      signal:  AbortSignal.timeout(5000),
+      headers: { 'ngrok-skip-browser-warning': 'true' },
+    });
+    if (r.ok) {
+      res.textContent = '✓ ComfyUI raggiungibile';
+      res.style.color = 'oklch(72% 0.17 145)';
+    } else {
+      res.textContent = '✗ Risposta ' + r.status;
+      res.style.color = 'var(--error)';
+    }
+  } catch {
+    res.textContent = '✗ Non raggiungibile — verifica che ComfyUI sia avviato';
+    res.style.color = 'var(--error)';
+  }
+  btn.disabled = false;
+}
+
+async function saveLocalSettings() {
+  const url     = document.getElementById('local-url-input').value.trim();
+  const errEl   = document.getElementById('local-modal-error');
+  const saveBtn = document.getElementById('local-save-btn');
+  errEl.style.display = 'none';
+  if (!url) { errEl.textContent = 'Inserisci un URL valido.'; errEl.style.display = 'block'; return; }
+  saveBtn.disabled = true;
+  saveBtn.textContent = 'Salvataggio…';
+  try {
+    const r = await fetch('/studio/settings/local', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({comfyui_mode: 'local', comfyui_local_url: url})
+    });
+    const data = await r.json();
+    if (!r.ok || data.error) {
+      errEl.textContent = data.error || 'Errore durante il salvataggio.';
+      errEl.style.display = 'block';
+      saveBtn.disabled = false;
+      saveBtn.textContent = 'Salva e attiva';
+      return;
+    }
+    _savedLocalUrl = data.comfyui_local_url || url;
+    document.querySelectorAll('.mode-btn').forEach(btn => {
+      btn.classList.toggle('active', btn.dataset.mode === 'local');
+    });
+    closeLocalModal();
+  } catch {
+    errEl.textContent = 'Errore di rete — riprova.';
+    errEl.style.display = 'block';
+    saveBtn.disabled = false;
+    saveBtn.textContent = 'Salva e attiva';
+  }
+}
+
+document.getElementById('local-modal').addEventListener('click', e => {
+  if (e.target === document.getElementById('local-modal')) closeLocalModal();
+});
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape') { closeModal(); closeLocalModal(); closeCustomModal(); }
+});
+
+// ── Custom modal ──────────────────────────────────────────────────────────
+function openCustomModal() {
+  document.getElementById('custom-modal-error').style.display = 'none';
+  document.getElementById('custom-modal-submit-label').textContent = 'Avvia generazione';
+  document.getElementById('custom-modal-submit').disabled = false;
+  document.getElementById('custom-modal').classList.add('open');
+  setTimeout(() => document.getElementById('custom-prompt').focus(), 80);
+}
+function closeCustomModal() {
+  document.getElementById('custom-modal').classList.remove('open');
+}
+document.getElementById('custom-modal').addEventListener('click', e => {
+  if (e.target === document.getElementById('custom-modal')) closeCustomModal();
+});
+
+document.getElementById('custom-modal-submit').addEventListener('click', async () => {
+  const errEl  = document.getElementById('custom-modal-error');
+  const submitBtn = document.getElementById('custom-modal-submit');
+  const labelEl   = document.getElementById('custom-modal-submit-label');
+  errEl.style.display = 'none';
+
+  const wfName = document.getElementById('custom-base-wf').value;
+  if (!wfName) { errEl.textContent = 'Seleziona un workflow base.'; errEl.style.display = 'block'; return; }
+
+  const body = {
+    workflow_name:   wfName,
+    prompt:          document.getElementById('custom-prompt').value.trim(),
+    negative_prompt: document.getElementById('custom-neg-prompt').value.trim(),
+    steps:           parseInt(document.getElementById('custom-steps').value) || undefined,
+    cfg:             parseFloat(document.getElementById('custom-cfg').value) || undefined,
+    sampler_name:    document.getElementById('custom-sampler').value || undefined,
+    scheduler:       document.getElementById('custom-scheduler').value || undefined,
+    width:           parseInt(document.getElementById('custom-width').value) || undefined,
+    height:          parseInt(document.getElementById('custom-height').value) || undefined,
+    seed:            document.getElementById('custom-seed').value
+                       ? parseInt(document.getElementById('custom-seed').value) : undefined,
+  };
+  // strip undefined
+  Object.keys(body).forEach(k => body[k] === undefined && delete body[k]);
+
+  submitBtn.disabled = true;
+  labelEl.textContent = 'Invio…';
+
+  if (_currentMode === 'local') {
+    await _submitLocal(body, errEl, submitBtn);
+    labelEl.textContent = 'Avvia generazione';
+    return;
+  }
+
+  try {
+    const resp = await fetch('/studio/submit', {
+      method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body),
+    });
+    const data = await resp.json();
+    if (!resp.ok) {
+      errEl.textContent = data.error || 'Errore durante l\'invio.';
+      errEl.style.display = 'block';
+      submitBtn.disabled = false;
+      labelEl.textContent = 'Avvia generazione';
+      return;
+    }
+    window.location.href = '/studio/job/' + data.job_id;
+  } catch {
+    errEl.textContent = 'Errore di rete — riprova.';
+    errEl.style.display = 'block';
+    submitBtn.disabled = false;
+    labelEl.textContent = 'Avvia generazione';
+  }
+});
+</script>
+{% endblock %}

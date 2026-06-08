@@ -12,6 +12,8 @@ stripe.api_key = os.getenv('STRIPE_SECRET_KEY', '')
 WEBHOOK_SECRET = os.getenv('STRIPE_WEBHOOK_SECRET', '')
 
 PRICE_IDS = {
+    'byoc_monthly':    os.getenv('STRIPE_PRICE_BYOC_MONTHLY',    ''),
+    'byoc_annual':     os.getenv('STRIPE_PRICE_BYOC_ANNUAL',     ''),
     'creator_monthly': os.getenv('STRIPE_PRICE_CREATOR_MONTHLY', ''),
     'creator_annual':  os.getenv('STRIPE_PRICE_CREATOR_ANNUAL',  ''),
     'pro_monthly':     os.getenv('STRIPE_PRICE_PRO_MONTHLY',     ''),
@@ -21,7 +23,8 @@ PRICE_IDS = {
 }
 
 # Credits per month per plan (1 credit = 5 seconds of generated video)
-CREDIT_LIMITS = {'creator': 10, 'pro': 30, 'studio': 80}
+# byoc = None → unlimited local, no cloud credits consumed
+CREDIT_LIMITS = {'byoc': None, 'creator': 10, 'pro': 30, 'studio': 80}
 TRIAL_MAX_CREDITS = int(os.getenv('TRIAL_MAX_CREDITS', 6))  # ~1 reel 30s o 3 reel 10s
 
 
