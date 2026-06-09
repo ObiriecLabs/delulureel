@@ -18,7 +18,7 @@ from core.video_generator import (
     CLIP_LEN_MULTI, MAX_AUDIO_SEC,
 )
 from core.audio_analyzer import analyze_audio, beat_cut_durations
-from core.scene_director import generate_scene_prompt
+from core.prompt_builder import generate_scene_prompt
 from core.lipsync import apply_lipsync
 from core.assembler import assemble_reel, create_loop_variants
 
