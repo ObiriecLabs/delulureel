@@ -12,11 +12,10 @@ from flask import Blueprint, request, session, jsonify, Response, stream_with_co
 from supabase import create_client, ClientOptions
 
 from core.video_generator import (
-    submit_reel,
-    fal_result, fal_status_check, transcribe_audio_fal,
+    generate_clip,
+    transcribe_audio_fal,
     estimate_cost, endpoint_for_duration, n_clips_for_duration,
     CLIP_LEN_MULTI, MAX_AUDIO_SEC,
-    ENDPOINT_PRO, ENDPOINT_TURBO,
 )
 from core.audio_analyzer import analyze_audio, beat_cut_durations
 from core.scene_director import generate_scene_prompt
@@ -36,22 +35,11 @@ def _credits_for_duration(target_secs: int) -> int:
     """Calcola i crediti da scalare: 1 credito = 5 secondi di video generato (minimo 1)."""
     return max(1, math.ceil(target_secs / 5))
 
-# Base URL for webhook (must be externally reachable — set APP_BASE_URL in Render env)
-APP_BASE_URL = os.getenv('APP_BASE_URL', 'https://delulureel.com').rstrip('/')
-
 # In-memory rate-limit state (replace with Redis in production)
 _active_user_jobs: dict[str, str] = {}   # user_id → job_id
 _global_active    = 0
 _daily: dict      = {'date': str(date.today()), 'usd': 0.0}
 _lock             = threading.Lock()
-
-# Webhook tracking: fal request_id → job_id (single-clip, same-instance fast path)
-# enable_lipsync / is_admin / target_secs are read from DB in the webhook handler
-# so they work correctly even when the webhook arrives on a different Render instance.
-_fal_req_to_job: dict[str, str] = {}
-_webhook_lock = threading.Lock()
-
-# (multi-clip state is now tracked entirely in Supabase via add_clip_result RPC)
 
 
 # Per-thread Supabase service client — same thread-safety rationale as auth/routes.py.
@@ -97,256 +85,38 @@ def _record_spend(cost: float):
 
 def _recover_interactive_clips(sb, job_id, clip_submissions, clip_results, n_clips_expected):
     """
-    Query fal.ai for every unresolved clip of an interactive job and persist
-    any completed results via the add_clip_result RPC.
-
-    Returns (n_newly_recovered: int, all_clips_done: bool).
-    Safe to call from any thread; never raises.
+    Stub — fal.ai clip recovery rimossa. RunPod è fire-and-forget.
+    Il background thread di clip_submit() aggiorna il DB direttamente.
     """
-    if isinstance(clip_submissions, str):
-        try:
-            clip_submissions = json.loads(clip_submissions)
-        except Exception:
-            clip_submissions = {}
-    if isinstance(clip_results, str):
-        try:
-            clip_results = json.loads(clip_results)
-        except Exception:
-            clip_results = {}
-
-    clip_submissions = clip_submissions or {}
-    clip_results     = dict(clip_results or {})   # local copy — we mutate it
-    n_recovered      = 0
-
-    for idx_str, sub in clip_submissions.items():
-        if idx_str in clip_results:
-            continue  # already have this result
-        req_id       = sub.get('request_id', '')
-        endpoint     = sub.get('endpoint', ENDPOINT_PRO)
-        status_url   = sub.get('status_url', '')
-        response_url = sub.get('response_url', '')
-        if not req_id:
-            continue
-        try:
-            st = fal_status_check(
-                endpoint, req_id,
-                status_url=status_url, response_url=response_url,
-            )
-            if st['status'] == 'COMPLETED' and st.get('url'):
-                sb.rpc('add_clip_result', {
-                    'p_job_id':   job_id,
-                    'p_clip_idx': idx_str,
-                    'p_clip_url': st['url'],
-                }).execute()
-                clip_results[idx_str] = st['url']
-                n_recovered += 1
-                print(f'🔄  [recovery] job={job_id[:8]} clip={idx_str} recovered from fal.ai', flush=True)
-        except Exception as exc:
-            print(f'⚠️  [recovery] job={job_id[:8]} clip={idx_str}: {exc}', flush=True)
-
-    n_total  = int(n_clips_expected) if n_clips_expected else len(clip_submissions)
-    all_done = n_total > 0 and all(str(i) in clip_results for i in range(n_total))
-    return n_recovered, all_done
+    return 0, False
 
 
 def _startup_recovery():
-    """On startup: recover jobs where fal.ai completed but post-gen was killed.
-
-    For each job stuck in processing/queued/analyzing/generating:
-    - Multi-clip (fal_request_id='multi:N'): if all N clip_results are in DB, spawn
-      _run_assembly immediately (clips already delivered, assembly never ran).
-      If clips are still in-flight, leave in processing for up to 60 min.
-    - Single-clip with a valid fal_request_id: fetch the completed result from
-      fal.ai and restart _run_post_generation.
-    - No req_id / 'pending': unrecoverable — mark failed.
-
-    Called from app_server.py after blueprint registration.
     """
-    global _global_active
+    Al boot: segna tutti i job bloccati in stati di elaborazione come failed.
+    I job RunPod sono fire-and-forget — non c'è meccanismo di recovery.
+    Evita di lasciare slot occupati da job zombie dopo un restart.
+    """
     try:
         sb = _sb_service()
-
-        # Only recover jobs older than 60 s — prevents killing brand-new jobs
-        # submitted right after a deploy while startup_recovery is still running.
         cutoff = (datetime.now(timezone.utc) - timedelta(seconds=60)).isoformat()
-
-        result = sb.table('reel_jobs').select(
-            'id,user_id,fal_request_id,fal_endpoint,aspect_ratio,estimated_cost,'
-            'enable_lipsync,target_secs_requested,clip_results,n_clips_expected,bpm,created_at,interactive'
-        ).in_('status', ['processing', 'queued', 'analyzing', 'generating', 'lipsyncing']).lt('created_at', cutoff).execute()
+        result = sb.table('reel_jobs').select('id').in_(
+            'status', ['processing', 'queued', 'analyzing', 'generating', 'lipsyncing']
+        ).lt('created_at', cutoff).execute()
 
         rows = result.data or []
         if not rows:
             return
 
-        failed_ids = []
-        recovered  = 0
-
-        for job in rows:
-            req_id   = (job.get('fal_request_id') or '').strip()
-            endpoint = (job.get('fal_endpoint') or 'fal-ai/kling-video/v2.6/pro/image-to-video')
-            job_id   = job['id']
-            user_id  = job['user_id']
-
-            # Interactive jobs — try to recover completed clips from fal.ai,
-            # then age out jobs that are too old to be worth rescuing.
-            if job.get('interactive'):
-                created_str = job.get('created_at', '')
-                try:
-                    created_dt = datetime.fromisoformat(created_str.replace('Z', '+00:00'))
-                    age_h = (datetime.now(timezone.utc) - created_dt).total_seconds() / 3600
-                except Exception:
-                    age_h = 0
-                if age_h > 2:
-                    failed_ids.append(job_id)
-                    print(f'⚠️  [startup] interactive job {job_id[:8]} >{age_h:.1f}h old — marking failed', flush=True)
-                    continue
-                # Attempt clip recovery: server restart may have killed mid-poll
-                n_rec, _ = _recover_interactive_clips(
-                    sb, job_id,
-                    job.get('clip_submissions') or {},
-                    job.get('clip_results')     or {},
-                    job.get('n_clips_expected'),
-                )
-                if n_rec:
-                    recovered += n_rec
-                continue
-
-            # Multi-clip job — check if all clips arrived while the instance was down
-            if req_id.startswith('multi:'):
-                n_clips_exp   = int(job.get('n_clips_expected') or 0)
-                clip_results  = job.get('clip_results') or {}
-                # Normalize legacy JSONB-array corruption (string '{}' init bug)
-                if isinstance(clip_results, list):
-                    merged = {}
-                    for item in clip_results:
-                        if isinstance(item, dict):
-                            merged.update(item)
-                    clip_results = merged
-                n_done = len(clip_results) if isinstance(clip_results, dict) else 0
-
-                if n_clips_exp > 0 and n_done >= n_clips_exp:
-                    # All clips are in the DB — fal.ai already delivered everything.
-                    # The assembly thread just never started because the instance restarted.
-                    ordered_urls = [clip_results.get(str(i)) for i in range(n_clips_exp)]
-                    if all(ordered_urls):
-                        try:
-                            prof_r     = sb.table('profiles').select('is_admin').eq('user_id', user_id).single().execute().data
-                            is_admin_r = bool((prof_r or {}).get('is_admin', False))
-                        except Exception:
-                            is_admin_r = False
-                        real_target = int(job.get('target_secs_requested') or n_clips_exp * CLIP_LEN_MULTI)
-                        job_data_r  = {
-                            'user_id':        user_id,
-                            'aspect_ratio':   job.get('aspect_ratio', '9:16'),
-                            'est_cost':       float(job.get('estimated_cost') or 0),
-                            'target_secs':    real_target,
-                            'bpm':            float(job.get('bpm') or 128),
-                            'is_admin':       is_admin_r,
-                            'n_clips':        n_clips_exp,
-                            'enable_lipsync': bool(job.get('enable_lipsync', False)),
-                        }
-                        threading.Thread(
-                            target=_run_assembly,
-                            args=(job_id, ordered_urls, job_data_r),
-                            daemon=True,
-                        ).start()
-                        recovered += 1
-                        print(f'🔄  Recovering multi-clip job {job_id[:8]}... ({n_done}/{n_clips_exp} clips ready — spawning assembly)', flush=True)
-                    else:
-                        failed_ids.append(job_id)
-                        print(f'⚠️  Job {job_id[:8]} multi-clip: clip_results has gaps — marking failed', flush=True)
-                else:
-                    # Not all webhooks arrived yet; only give up after 60 min
-                    created_str = job.get('created_at', '')
-                    try:
-                        created_dt  = datetime.fromisoformat(created_str.replace('Z', '+00:00'))
-                        age_minutes = (datetime.now(timezone.utc) - created_dt).total_seconds() / 60
-                    except Exception:
-                        age_minutes = 0
-                    if age_minutes > 60:
-                        failed_ids.append(job_id)
-                        print(f'⚠️  Job {job_id[:8]} multi-clip: only {n_done}/{n_clips_exp} clips after {age_minutes:.0f} min — marking failed', flush=True)
-                    else:
-                        print(f'⏳  Job {job_id[:8]} multi-clip: {n_done}/{n_clips_exp} clips — webhook(s) still in-flight ({age_minutes:.1f} min)', flush=True)
-                continue
-
-            # Pre-gen killed (no req_id yet) or 'pending' sentinel — unrecoverable
-            if not req_id or req_id == 'pending':
-                failed_ids.append(job_id)
-                continue
-
-            # Try to fetch the completed result from fal.ai
-            try:
-                result_data = fal_result(endpoint, req_id)
-                video_url   = ((result_data.get('video') or {}).get('url')
-                               or result_data.get('video_url') or '')
-                if not video_url:
-                    # fal.ai returned something but no URL — genuine failure
-                    failed_ids.append(job_id)
-                    continue
-
-                # fal.ai job was already done — restart post-generation.
-                # Fetch enable_lipsync, target_secs, is_admin from DB so the
-                # recovered job behaves identically to the original run.
-                enable_lipsync_r = bool(job.get('enable_lipsync', False))
-                target_secs_r    = int(job.get('target_secs_requested') or 10)
-                try:
-                    prof_r       = sb.table('profiles').select('is_admin').eq('user_id', user_id).single().execute().data
-                    is_admin_r   = bool((prof_r or {}).get('is_admin', False))
-                except Exception:
-                    is_admin_r   = False
-
-                with _lock:
-                    _active_user_jobs[user_id] = job_id
-                    _global_active += 1
-
-                threading.Thread(
-                    target=_run_post_generation,
-                    args=(job_id, user_id, video_url,
-                          job.get('aspect_ratio', '9:16'),
-                          float(job.get('estimated_cost') or 0)),
-                    kwargs={
-                        'enable_lipsync': enable_lipsync_r,
-                        'target_secs':    target_secs_r,
-                        'is_admin':       is_admin_r,
-                    },
-                    daemon=True,
-                ).start()
-                recovered += 1
-                print(f'🔄  Recovering job {job_id[:8]}... (fal.ai result retrieved)')
-
-            except Exception:
-                # fal_result() raised — two cases:
-                # a) Job still running on fal.ai (<15 min old): leave in 'processing',
-                #    the webhook will arrive and _run_post_generation will handle it.
-                # b) Job very old (>15 min) and fal.ai has no result: genuine failure.
-                created_str = job.get('created_at', '')
-                try:
-                    created_dt = datetime.fromisoformat(created_str.replace('Z', '+00:00'))
-                    age_minutes = (datetime.now(timezone.utc) - created_dt).total_seconds() / 60
-                except Exception:
-                    age_minutes = 0
-
-                if age_minutes > 15:
-                    failed_ids.append(job_id)
-                    print(f'⚠️  Job {job_id[:8]} has fal_request_id but is >{age_minutes:.0f} min old — marking failed')
-                else:
-                    # Leave in processing — webhook will rescue it
-                    print(f'⏳  Job {job_id[:8]} still in-flight on fal.ai ({age_minutes:.1f} min old) — keeping processing, waiting for webhook')
-
-        if failed_ids:
-            sb.table('reel_jobs').update({
-                'status':        'failed',
-                'error_message': 'Server restarted during processing. Please retry.',
-            }).in_('id', failed_ids).execute()
-            print(f'⚠️  Marked {len(failed_ids)} unrecoverable orphaned job(s) as failed')
-
-        if recovered:
-            print(f'🔄  Recovered {recovered} orphaned job(s) — post-generation resumed')
+        failed_ids = [r['id'] for r in rows]
+        sb.table('reel_jobs').update({
+            'status':        'failed',
+            'error_message': 'Server riavviato durante l\'elaborazione. Riprova.',
+        }).in_('id', failed_ids).execute()
+        print(f'⚠️  Startup: {len(failed_ids)} job orfani marcati come failed', flush=True)
 
     except Exception as e:
-        print(f'⚠️  Startup recovery failed (non-critical): {e}')
+        print(f'⚠️  Startup recovery fallita (non critico): {e}')
 
 
 # ── Periodic recovery sweep ───────────────────────────────────────────────────
@@ -576,8 +346,8 @@ def generate():
             _active_user_jobs[user_id] = job_id
 
         # ── Dispatch ─────────────────────────────────────────────────────────────
-        # Single clip → webhook-based (fal.ai generates, notifies us when done)
-        # Multi-clip  → polling (N parallel jobs, harder to webhook-aggregate)
+        # Single clip → _run_pre_generation (blocking RunPod generate_clip)
+        # Multi-clip  → _run_pipeline (N generate_clip in parallelo via ThreadPoolExecutor)
         if n_clips == 1:
             thread = threading.Thread(
                 target=_run_pre_generation,
@@ -614,20 +384,23 @@ def generate():
                 shutil.rmtree(tmp_dir, ignore_errors=True)
 
 
-# ── Phase 1: Pre-generation (single clip, webhook mode) ───────────────────────
-# Short-lived thread (~30s): audio analysis + Claude + uploads + fal.ai submit
-# Thread ends as soon as fal.ai acknowledges the job. Generation happens on
-# fal.ai servers — our server is idle until the webhook fires.
+# ── Phase 1: Pre-generation (single clip, RunPod blocking) ───────────────────
+# Thread: analisi audio + Claude + upload + generate_clip() BLOCKING (~2-10 min)
+# Al termine chiama _run_post_generation() inline — niente webhook.
 
 def _run_pre_generation(job_id, user_id, photo_path, audio_path, style,
                         aspect_ratio, est_cost, tmp_dir, target_secs, ext_audio,
                         enable_lipsync=False, custom_prompt='', is_admin=False):
+    """
+    Pre-generation (single clip, RunPod blocking):
+    analisi audio → prompt Claude → generate_clip() → _run_post_generation() inline.
+    Niente webhook — tutto gira nello stesso thread.
+    """
     import time as _time
     _t0 = _time.time()
     global _global_active
     _jid = job_id[:8]
 
-    # Defensive init — any failure here must still mark the job failed
     try:
         sb = _sb_service()
     except Exception as _e:
@@ -647,10 +420,9 @@ def _run_pre_generation(job_id, user_id, photo_path, audio_path, style,
     def _log(msg):
         print(f'[pregen/{_jid}] {msg} ({_time.time()-_t0:.1f}s)', flush=True)
 
-    # True once fal.ai accepted the job and the webhook will fire.
-    # On the success path the slot is owned by _run_post_generation;
-    # on failure it must be released here.
-    _submitted = False
+    # True una volta che _run_post_generation gestirà il rilascio dello slot.
+    # Se rimane False, il finally di qui si occupa del cleanup.
+    _post_started = False
 
     try:
         # 1 — Audio analysis
@@ -660,7 +432,7 @@ def _run_pre_generation(job_id, user_id, photo_path, audio_path, style,
         gc.collect()
         _log(f'audio analysis DONE bpm={analysis.get("bpm",0):.0f}')
 
-        # 2 — Upload audio to Supabase Storage early (needed for transcription URL)
+        # 2 — Upload audio a Supabase (necessario per post_generation assembly)
         audio_key = f'jobs/{job_id}/audio.{ext_audio}'
         _log(f'supabase audio upload START key={audio_key}')
         try:
@@ -675,17 +447,13 @@ def _run_pre_generation(job_id, user_id, photo_path, audio_path, style,
         except Exception as exc:
             raise RuntimeError(f'Audio upload to Supabase failed: {exc}') from exc
 
-        # 3 — Transcribe audio → extract lyrics (fal-ai/whisper, graceful degradation)
+        # 3 — Transcription (rimossa fal-ai/whisper — restituisce sempre None)
         lyrics: str | None = None
         if not custom_prompt and audio_signed_url:
-            _log('whisper transcription START')
-            lyrics = transcribe_audio_fal(audio_signed_url)
-            if lyrics:
-                _log(f'whisper transcription DONE ({len(lyrics)} chars)')
-            else:
-                _log('whisper: no lyrics detected (instrumental) — melody-based prompt')
+            _log('transcription skipped (melody-based prompt, Whisper rimosso)')
+            lyrics = transcribe_audio_fal(audio_signed_url)  # sempre None
 
-        # 4 — Scene prompt: custom (user) or auto (Claude Vision + lyrics)
+        # 4 — Scene prompt
         update('generating', bpm=analysis['bpm'])
         if custom_prompt:
             prompt = custom_prompt
@@ -696,8 +464,7 @@ def _run_pre_generation(job_id, user_id, photo_path, audio_path, style,
                                            lyrics=lyrics, aspect_ratio=aspect_ratio)
             _log(f'claude scene prompt DONE len={len(prompt)}')
 
-        # 5 — Upload photo to Supabase Storage → get signed URL for fal.ai
-        # (Avoids fal_client.upload_file() which has no timeout and hangs on slow networks)
+        # 5 — Upload photo a Supabase (per audit e futura lipsync)
         ext_photo = (photo_path.rsplit('.', 1)[-1].lower()) or 'jpg'
         photo_key = f'jobs/{job_id}/source.{ext_photo}'
         _log(f'supabase photo upload START key={photo_key}')
@@ -707,70 +474,42 @@ def _run_pre_generation(job_id, user_id, photo_path, audio_path, style,
                     photo_key, fh.read(),
                     file_options={'content-type': f'image/{ext_photo}'},
                 )
-            signed_photo = sb.storage.from_('reel-uploads').create_signed_url(photo_key, 3600)
-            photo_url = signed_photo.get('signedURL') or signed_photo.get('signedUrl') or ''
-            if not photo_url:
-                raise RuntimeError(f'Could not get signed URL for photo: {signed_photo}')
-            _log(f'supabase photo upload DONE url={photo_url[:80]}')
+            _log('supabase photo upload DONE')
         except Exception as exc:
             raise RuntimeError(f'Photo upload to Supabase failed: {exc}') from exc
 
-        # 6 — Submit to fal.ai WITH webhook URL
-        clip_len    = min(target_secs, 10)
-        webhook_url = f'{APP_BASE_URL}/video/webhook/fal'
-        _log(f'fal submit START dur={clip_len} webhook={webhook_url}')
+        # 6 — Genera clip via RunPod+ComfyUI (BLOCKING ~2-10 min)
+        update('processing', prompt=prompt)
+        _log(f'generate_clip START ar={aspect_ratio}')
+        raw_video_url = generate_clip(
+            photo_path, prompt,
+            aspect_ratio=aspect_ratio,
+        )
+        _log(f'generate_clip DONE url={raw_video_url[:60]}')
 
-        try:
-            fal = submit_reel(
-                photo_url, prompt,
-                duration=clip_len, aspect_ratio=aspect_ratio,
-                endpoint=ENDPOINT_PRO, webhook_url=webhook_url,
-            )
-        except Exception as exc:
-            raise RuntimeError(
-                f'fal submit failed [ep={ENDPOINT_PRO}, dur={clip_len}]: {exc}'
-            ) from exc
-        _log(f'fal submit DONE req_id={fal["request_id"]}')
-
-        # CRITICAL ORDER: persist fal_request_id to DB FIRST.
-        # If the server crashes after submit_reel() but before this update,
-        # the req_id would be lost and startup_recovery could never find it.
-        # Writing to DB first ensures the req_id survives any subsequent crash.
-        update('processing',
-               fal_request_id=fal['request_id'],
-               fal_endpoint=fal['endpoint'],
-               prompt=prompt)
-
-        # Register req_id → job_id in-memory (fast path for same-instance webhook).
-        # enable_lipsync / target_secs / is_admin are read from DB in fal_webhook()
-        # so cross-instance webhooks always get the correct values.
-        with _webhook_lock:
-            _fal_req_to_job[fal['request_id']] = job_id
-
-        # Slot ownership transfers to _run_post_generation from this point.
-        # The finally block must NOT release it — _run_post_generation will.
-        _submitted = True
-
-        # Thread ends here. fal.ai is generating the video on their servers.
-        # Execution resumes in _run_post_generation when the webhook fires.
+        # 7 — Post-generation inline (download + FFmpeg + Supabase + mark completed)
+        # Da qui il rilascio del slot è responsabilità di _run_post_generation.
+        _post_started = True
+        _run_post_generation(
+            job_id, user_id, raw_video_url, aspect_ratio, est_cost,
+            enable_lipsync=enable_lipsync,
+            target_secs=target_secs,
+            is_admin=is_admin,
+        )
 
     except Exception as exc:
-        # Wrap update() in its own try so a Supabase error here doesn't
-        # prevent the finally-block cleanup (slot release).
         try:
             update('failed', error_message=str(exc)[:500])
         except Exception as _ue:
             print(f'[pregen/{_jid}] WARNING: could not mark job failed: {_ue}', flush=True)
 
     finally:
-        # Release slot only on failure: if _submitted is True, ownership passed to
-        # _run_post_generation (webhook path) or fal_webhook ERROR handler.
-        # Releasing here on the success path would double-decrement _global_active.
-        if not _submitted:
+        # Rilascia slot solo se _run_post_generation NON è stata chiamata.
+        # (_run_post_generation ha il proprio finally che gestisce il rilascio.)
+        if not _post_started:
             with _lock:
                 _active_user_jobs.pop(user_id, None)
                 _global_active = max(0, _global_active - 1)
-        # Local files no longer needed — audio is now on Supabase
         try:
             shutil.rmtree(tmp_dir, ignore_errors=True)
         except Exception:
@@ -781,107 +520,8 @@ def _run_pre_generation(job_id, user_id, photo_path, audio_path, style,
 
 @video_bp.route('/webhook/fal', methods=['POST'])
 def fal_webhook():
-    """
-    fal.ai calls this endpoint when a submitted job finishes (OK or ERROR).
-    We must return 200 quickly — fal.ai retries on non-200.
-    Heavy work (download, FFmpeg, upload) is offloaded to _run_post_generation.
-    """
-    data = request.get_json(silent=True) or {}
-
-    # fal.ai payload shape: {"request_id": "...", "status": "OK"|"ERROR", "payload": {...}}
-    req_id = data.get('request_id') or (data.get('request') or {}).get('id') or ''
-    status = data.get('status', '')
-
-    if not req_id:
-        return jsonify({'ok': False, 'reason': 'missing request_id'}), 400
-
-    # Look up job_id from in-memory (fast path: same instance that submitted).
-    # All other flags are read from DB — the only cross-instance-safe source.
-    with _webhook_lock:
-        job_id = _fal_req_to_job.pop(req_id, None)
-
-    if not job_id:
-        # Cross-instance or post-restart: look up by fal_request_id in DB
-        try:
-            sb = _sb_service()
-            rows = sb.table('reel_jobs').select('id') \
-                     .eq('fal_request_id', req_id).limit(1).execute()
-            if rows.data:
-                job_id = rows.data[0]['id']
-            else:
-                return jsonify({'ok': True, 'note': 'unknown request_id'}), 200
-        except Exception:
-            return jsonify({'ok': True, 'note': 'db lookup failed'}), 200
-
-    sb = _sb_service()
-    try:
-        job = sb.table('reel_jobs').select(
-            'id,user_id,status,aspect_ratio,estimated_cost,fal_endpoint,'
-            'enable_lipsync,target_secs_requested'
-        ).eq('id', job_id).single().execute().data
-    except Exception:
-        return jsonify({'ok': True, 'note': 'job not found'}), 200
-
-    # Idempotency guard — only skip truly completed jobs.
-    # Do NOT skip 'failed' jobs: startup_recovery may have marked the job failed
-    # while fal.ai was still generating (server restart mid-job). When fal.ai
-    # fires the webhook we must still process it to save the video.
-    if job.get('status') == 'completed':
-        return jsonify({'ok': True}), 200
-
-    user_id        = job['user_id']
-    est_cost       = float(job.get('estimated_cost') or 0)
-    ar             = job.get('aspect_ratio', '9:16')
-    endpoint       = job.get('fal_endpoint', '')
-    # Read from DB — always correct regardless of which Render instance handles the webhook
-    enable_lipsync = bool(job.get('enable_lipsync', False))
-    target_secs    = int(job.get('target_secs_requested') or 10)
-
-    # is_admin from profiles (needed to decide whether to deduct credits)
-    try:
-        prof     = sb.table('profiles').select('is_admin').eq('user_id', user_id).single().execute().data
-        is_admin = bool((prof or {}).get('is_admin', False))
-    except Exception:
-        is_admin = False
-
-    if status == 'ERROR':
-        err_msg = str(data.get('error', 'fal.ai generation failed'))[:500]
-        sb.table('reel_jobs').update({'status': 'failed', 'error_message': err_msg}) \
-          .eq('id', job_id).execute()
-        with _lock:
-            _active_user_jobs.pop(user_id, None)
-            _global_active = max(0, _global_active - 1)
-        return jsonify({'ok': True}), 200
-
-    if status == 'OK':
-        payload   = data.get('payload') or {}
-        video_obj = payload.get('video') or {}
-        video_url = video_obj.get('url') or payload.get('video_url') or ''
-
-        if not video_url:
-            sb.table('reel_jobs').update({
-                'status': 'failed',
-                'error_message': 'Webhook: no video URL in fal.ai payload',
-            }).eq('id', job_id).execute()
-            with _lock:
-                _active_user_jobs.pop(user_id, None)
-                _global_active = max(0, _global_active - 1)
-            return jsonify({'ok': True}), 200
-
-        # Spawn post-generation thread (download + lipsync + FFmpeg + Supabase upload)
-        thread = threading.Thread(
-            target=_run_post_generation,
-            args=(job_id, user_id, video_url, ar, est_cost),
-            kwargs={'enable_lipsync': enable_lipsync,
-                    'target_secs': target_secs,
-                    'is_admin': is_admin},
-            daemon=True,
-        )
-        thread.start()
-        return jsonify({'ok': True}), 200
-
-    # Unknown status — return 200 to avoid fal.ai retrying indefinitely
-    return jsonify({'ok': True, 'note': f'unrecognised status: {status}'}), 200
+    """Stub — fal.ai rimosso. RunPod usa polling, niente webhook entrante."""
+    return jsonify({'ok': True, 'note': 'fal.ai removed — RunPod polling only'}), 200
 
 
 # ── Phase 2: Post-generation (single clip, after webhook) ─────────────────────
@@ -1013,13 +653,13 @@ def _run_pipeline(job_id, user_id, photo_path, audio_path, style, aspect_ratio,
                   est_cost, tmp_dir, target_secs=10, n_clips=1, enable_lipsync=False,
                   custom_prompt='', is_admin=False):
     """
-    Multi-clip Phase 1 (short thread ~60s):
-    analysis + transcription + scene prompt + uploads + submit N clips.
+    Multi-clip pipeline RunPod (blocking):
+    analisi → prompt Claude → N generate_clip() in parallelo → assembly inline.
 
-    All state needed by Phase 2 (_run_assembly) is stored in Supabase so that
-    any Render instance can handle the per-clip webhooks. The local tmp_dir is
-    cleaned up here; _run_assembly downloads audio from Supabase Storage.
+    Tutto gira nello stesso thread — niente webhook.
+    Wall-clock ≈ durata del clip più lento (ThreadPoolExecutor).
     """
+    from concurrent.futures import ThreadPoolExecutor, as_completed
     global _global_active
     _jid = job_id[:8]
     sb = _sb_service()
@@ -1038,46 +678,36 @@ def _run_pipeline(job_id, user_id, photo_path, audio_path, style, aspect_ratio,
             n_clips=n_clips,
             max_clip_sec=float(CLIP_LEN_MULTI),
         )
-        clip_len = min(max((int(max(clip_durations)) if clip_durations else CLIP_LEN_MULTI), 5), 10)
-        print(f'[pipeline/{_jid}] BPM={analysis["bpm"]:.0f} cuts={clip_durations} clip_len={clip_len}s', flush=True)
+        print(f'[pipeline/{_jid}] BPM={analysis["bpm"]:.0f} cuts={clip_durations} n_clips={n_clips}', flush=True)
 
-        # 2 — Upload audio to Supabase → signed URL → transcribe
-        ext_audio        = (audio_path.rsplit('.', 1)[-1].lower()) or 'mp3'
-        audio_key        = f'jobs/{job_id}/audio.{ext_audio}'
-        audio_signed_url = ''
+        # 2 — Upload audio a Supabase (necessario per assembly)
+        ext_audio = (audio_path.rsplit('.', 1)[-1].lower()) or 'mp3'
+        audio_key = f'jobs/{job_id}/audio.{ext_audio}'
         try:
             with open(audio_path, 'rb') as fh:
                 sb.storage.from_('reel-uploads').upload(
                     audio_key, fh,
                     file_options={'content-type': f'audio/{ext_audio}'},
                 )
-            sig = sb.storage.from_('reel-uploads').create_signed_url(audio_key, 7200)
-            audio_signed_url = sig.get('signedURL') or sig.get('signedUrl') or ''
             print(f'[pipeline/{_jid}] audio uploaded', flush=True)
         except Exception as exc:
             print(f'[pipeline/{_jid}] audio upload FAILED: {exc}', flush=True)
 
-        lyrics: str | None = None
-        if not custom_prompt and audio_signed_url:
-            print(f'[pipeline/{_jid}] whisper START', flush=True)
-            lyrics = transcribe_audio_fal(audio_signed_url)
-            print(f'[pipeline/{_jid}] whisper {"DONE " + str(len(lyrics)) + " chars" if lyrics else "instrumental"}', flush=True)
-
-        # 3 — Scene prompts: one per clip with shot-type variation
+        # 3 — Scene prompts (Whisper rimosso → lyrics sempre None)
         update('generating', bpm=analysis['bpm'])
         if custom_prompt:
             prompts = [custom_prompt] * n_clips
         else:
             prompts = [
                 generate_scene_prompt(
-                    analysis, style, photo_path=photo_path, lyrics=lyrics,
+                    analysis, style, photo_path=photo_path, lyrics=None,
                     aspect_ratio=aspect_ratio, clip_index=i, n_clips=n_clips,
                 )
                 for i in range(n_clips)
             ]
         print(f'[pipeline/{_jid}] {len(prompts)} prompt(s) generated', flush=True)
 
-        # 4 — Upload photo → signed URL for fal.ai
+        # 4 — Upload photo (per audit e futura lipsync)
         ext_photo = (photo_path.rsplit('.', 1)[-1].lower()) or 'jpg'
         photo_key = f'jobs/{job_id}/source.{ext_photo}'
         try:
@@ -1086,36 +716,44 @@ def _run_pipeline(job_id, user_id, photo_path, audio_path, style, aspect_ratio,
                     photo_key, fh.read(),
                     file_options={'content-type': f'image/{ext_photo}'},
                 )
-            sig_photo = sb.storage.from_('reel-uploads').create_signed_url(photo_key, 3600)
-            photo_url = sig_photo.get('signedURL') or sig_photo.get('signedUrl') or ''
-            if not photo_url:
-                raise RuntimeError(f'No signed URL for photo: {sig_photo}')
         except Exception as exc:
             raise RuntimeError(f'Photo upload failed: {exc}') from exc
 
-        # 5 — Persist clip-tracking state in DB (cross-instance safe)
+        # 5 — Inizializza tracking in DB
         update('processing',
-               fal_request_id=f'multi:{n_clips}',
-               fal_endpoint=ENDPOINT_TURBO,
+               fal_request_id=f'runpod:{n_clips}',
                prompt=prompts[0],
                n_clips_expected=n_clips,
                target_secs_requested=int(target_secs),
-               clip_results={})     # must be dict not string — string '{}' becomes JSONB scalar and breaks || merge
+               clip_results={})
 
-        # 6 — Submit N clips, each with its own webhook URL and distinct prompt
-        for i in range(n_clips):
-            wh = f'{APP_BASE_URL}/video/webhook/fal/multi/{job_id}/{i}/{n_clips}'
-            try:
-                h = submit_reel(
-                    photo_url, prompts[i],
-                    duration=clip_len, aspect_ratio=aspect_ratio,
-                    endpoint=ENDPOINT_TURBO, webhook_url=wh,
-                )
-                print(f'[pipeline/{_jid}] clip {i}/{n_clips} req={h["request_id"]}', flush=True)
-            except Exception as exc:
-                raise RuntimeError(f'fal submit clip {i} failed: {exc}') from exc
+        # 6 — Genera N clip in parallelo (RunPod, blocking)
+        clip_urls: list = [None] * n_clips
 
-        print(f'[pipeline/{_jid}] all {n_clips} clips submitted — waiting for webhooks', flush=True)
+        def _gen_one(idx, prompt_text):
+            print(f'[pipeline/{_jid}] clip {idx}/{n_clips} START', flush=True)
+            url = generate_clip(photo_path, prompt_text, aspect_ratio=aspect_ratio)
+            print(f'[pipeline/{_jid}] clip {idx}/{n_clips} DONE url={url[:60]}', flush=True)
+            return idx, url
+
+        with ThreadPoolExecutor(max_workers=min(n_clips, 4)) as ex:
+            futs = {ex.submit(_gen_one, i, prompts[i]): i for i in range(n_clips)}
+            for fut in as_completed(futs):
+                idx, url = fut.result()  # propaga eccezione al try esterno
+                clip_urls[idx] = url
+
+        # 7 — Assembly inline (download + FFmpeg + Supabase + mark completed)
+        job_data = {
+            'user_id':        user_id,
+            'aspect_ratio':   aspect_ratio,
+            'est_cost':       float(est_cost),
+            'target_secs':    int(target_secs),
+            'bpm':            float(analysis['bpm']),
+            'is_admin':       is_admin,
+            'n_clips':        n_clips,
+            'enable_lipsync': enable_lipsync,
+        }
+        _run_assembly(job_id, clip_urls, job_data)
 
     except Exception as exc:
         try:
@@ -1125,9 +763,7 @@ def _run_pipeline(job_id, user_id, photo_path, audio_path, style, aspect_ratio,
         print(f'[pipeline/{_jid}] FAILED: {exc}', flush=True)
 
     finally:
-        # Always release slots and clean local files.
-        # _run_assembly runs on whichever instance receives the last webhook;
-        # it downloads audio fresh from Supabase Storage, so the local tmp_dir is safe to remove.
+        # Slot sempre rilasciato qui — assembly è inline, non via webhook.
         with _lock:
             _active_user_jobs.pop(user_id, None)
             _global_active = max(0, _global_active - 1)
@@ -1141,107 +777,8 @@ def _run_pipeline(job_id, user_id, photo_path, audio_path, style, aspect_ratio,
 
 @video_bp.route('/webhook/fal/multi/<job_id>/<int:clip_idx>/<int:n_clips>', methods=['POST'])
 def fal_webhook_multi(job_id, clip_idx, n_clips):
-    """
-    fal.ai fires this for each clip in a multi-clip job (any Render instance).
-    Uses the add_clip_result RPC for atomic JSONB update so concurrent webhooks
-    on different instances don't race. Spawns _run_assembly when all N clips arrive.
-    Always returns 200 — fal.ai retries on non-200.
-    """
-    data      = request.get_json(silent=True) or {}
-    status    = data.get('status', '')
-    payload   = data.get('payload') or {}
-    video_obj = payload.get('video') or {}
-    video_url = video_obj.get('url') or payload.get('video_url') or ''
-    sb        = _sb_service()
-
-    # Handle fal.ai error
-    # NOTE: do NOT release the in-memory slot here — _run_pipeline already released
-    # it in its finally block (multi-clip always releases after Phase 1).
-    if status == 'ERROR' or not video_url:
-        err = str(data.get('error', 'fal.ai clip error'))[:300]
-        print(f'[webhook_multi/{job_id[:8]}] clip {clip_idx} ERROR: {err}', flush=True)
-        try:
-            sb.table('reel_jobs').update({
-                'status':        'failed',
-                'error_message': f'Clip {clip_idx + 1}/{n_clips} failed: {err}',
-            }).eq('id', job_id).execute()
-        except Exception:
-            pass
-        return jsonify({'ok': True}), 200
-
-    # Atomic JSONB update — works correctly across all Render instances
-    try:
-        result = sb.rpc('add_clip_result', {
-            'p_job_id':   job_id,
-            'p_clip_idx': str(clip_idx),
-            'p_clip_url': video_url,
-        }).execute()
-        # supabase-py wraps RETURNS JSONB as [{"add_clip_result": {...}}] (list)
-        # rather than a plain dict — unpack correctly regardless of SDK version.
-        raw = result.data
-        if isinstance(raw, list) and raw:
-            first = raw[0]
-            clip_results = (first.get('add_clip_result') if isinstance(first, dict) else None) or {}
-        elif isinstance(raw, dict):
-            clip_results = raw
-        else:
-            clip_results = {}
-        # Always re-read from DB — avoids any RPC return format ambiguity
-        fb = sb.table('reel_jobs').select('clip_results').eq('id', job_id).single().execute()
-        clip_results = (fb.data or {}).get('clip_results') or {}
-        # Normalise: broken jobs have clip_results as a JSON array (legacy bug where
-        # clip_results was initialised as the string '{}' → JSONB scalar, then ||
-        # produces an array instead of an object merge).
-        if isinstance(clip_results, list):
-            merged = {}
-            for item in clip_results:
-                if isinstance(item, dict):
-                    merged.update(item)
-            clip_results = merged
-    except Exception as exc:
-        print(f'[webhook_multi/{job_id[:8]}] DB update failed: {exc}', flush=True)
-        return jsonify({'ok': True}), 200
-
-    n_done = len(clip_results) if isinstance(clip_results, dict) else 0
-    print(f'[webhook_multi/{job_id[:8]}] clip {clip_idx} ok — {n_done}/{n_clips} done', flush=True)
-
-    if n_done < n_clips:
-        return jsonify({'ok': True}), 200
-
-    # All N clips collected — fetch job and spawn assembly
-    try:
-        job = sb.table('reel_jobs').select(
-            'user_id,aspect_ratio,estimated_cost,n_clips_expected,target_secs_requested,bpm,enable_lipsync'
-        ).eq('id', job_id).single().execute().data
-        prof = sb.table('profiles').select('is_admin').eq('user_id', job['user_id']).single().execute().data
-    except Exception as exc:
-        print(f'[webhook_multi/{job_id[:8]}] job fetch failed: {exc}', flush=True)
-        return jsonify({'ok': True}), 200
-
-    # Order clip URLs by index (0, 1, 2, ...)
-    ordered_urls = [clip_results.get(str(i)) for i in range(n_clips)]
-    if not all(ordered_urls):
-        print(f'[webhook_multi/{job_id[:8]}] missing clip URL in: {list(clip_results.keys())}', flush=True)
-        return jsonify({'ok': True}), 200
-
-    real_target = int(job.get('target_secs_requested') or n_clips * CLIP_LEN_MULTI)
-    job_data = {
-        'user_id':        job['user_id'],
-        'aspect_ratio':   job.get('aspect_ratio', '9:16'),
-        'est_cost':       float(job.get('estimated_cost') or 0),
-        'target_secs':    real_target,
-        'bpm':            float(job.get('bpm') or 128),
-        'is_admin':       bool((prof or {}).get('is_admin', False)),
-        'n_clips':        n_clips,
-        'enable_lipsync': bool(job.get('enable_lipsync', False)),
-    }
-
-    threading.Thread(
-        target=_run_assembly,
-        args=(job_id, ordered_urls, job_data),
-        daemon=True,
-    ).start()
-    return jsonify({'ok': True}), 200
+    """Stub — fal.ai rimosso. RunPod usa polling, niente webhook entrante."""
+    return jsonify({'ok': True, 'note': 'fal.ai removed — RunPod polling only'}), 200
 
 
 # ── Assembly: download + FFmpeg + upload (any instance) ───────────────────────
@@ -1636,16 +1173,17 @@ def get_prompts(job_id):
 @require_auth_api
 def clip_submit():
     """
-    Submit a single clip to fal.ai for the interactive flow.
-    Stores the request_id in clip_submissions JSONB.
-    No webhook — the frontend polls /clip/status/<job_id>/<idx> directly.
+    Avvia la generazione di un singolo clip via RunPod (interactive flow).
+    Spawna un thread background che chiama generate_clip() blocking,
+    poi salva il risultato in DB tramite add_clip_result RPC.
+    Il frontend fa polling su /clip/status/<job_id>/<idx>.
     """
     user_id = request.current_user.id
     data    = request.get_json(silent=True) or {}
     job_id     = (data.get('job_id') or '').strip()
     clip_index = int(data.get('clip_idx', data.get('clip_index', 0)))
     prompt     = (data.get('prompt') or '').strip()
-    photo_url  = (data.get('photo_url') or '').strip()  # empty → use DB's photo_url
+    photo_url  = (data.get('photo_url') or '').strip()
 
     if not job_id or not prompt:
         return jsonify({'error': 'job_id and prompt are required'}), 400
@@ -1653,7 +1191,7 @@ def clip_submit():
     try:
         row = _sb_service().table('reel_jobs').select(
             'user_id,aspect_ratio,target_secs_requested,n_clips_expected,'
-            'clip_submissions,clip_results,status,photo_url'
+            'clip_results,status,photo_url'
         ).eq('id', job_id).single().execute().data
     except Exception:
         return jsonify({'error': 'job not found'}), 404
@@ -1663,60 +1201,59 @@ def clip_submit():
     if row.get('status') not in ('prompt_ready', 'generating'):
         return jsonify({'error': f'invalid state: {row.get("status")}'}), 400
 
-    # Clip 0: frontend sends null photo_url → fall back to source photo stored in DB
     if not photo_url:
         photo_url = (row.get('photo_url') or '').strip()
     if not photo_url:
         return jsonify({'error': 'photo_url not available'}), 400
 
-    n_clips     = int(row.get('n_clips_expected') or 1)
-    target_secs = int(row.get('target_secs_requested') or 10)
-    clip_dur    = 10 if n_clips > 1 else target_secs
+    aspect_ratio = row['aspect_ratio']
 
-    try:
-        fal = submit_reel(
-            photo_url, prompt,
-            duration=clip_dur,
-            aspect_ratio=row['aspect_ratio'],
-            endpoint=ENDPOINT_PRO,
-        )
-    except Exception as exc:
-        return jsonify({'error': f'fal.ai submit failed: {exc}'}), 502
+    # Segna subito come generating in modo che il frontend veda il cambio stato
+    _sb_service().table('reel_jobs').update({'status': 'generating'}).eq('id', job_id).execute()
 
-    # Update clip_submissions, clear any stale clip_results entry for this index
-    subs = row.get('clip_submissions') or {}
-    if isinstance(subs, str):
-        subs = json.loads(subs)
-    subs[str(clip_index)] = {
-        'request_id':   fal['request_id'],
-        'endpoint':     ENDPOINT_PRO,
-        'status_url':   fal.get('status_url', ''),
-        'response_url': fal.get('response_url', ''),
-    }
+    # Cattura le variabili per il thread (evita chiusure su variabili mutabili)
+    _job_id      = job_id
+    _clip_index  = clip_index
+    _photo_url   = photo_url
+    _prompt      = prompt
+    _aspect      = aspect_ratio
 
-    clip_results = row.get('clip_results') or {}
-    if isinstance(clip_results, str):
-        clip_results = json.loads(clip_results)
-    cleaned_results = {k: v for k, v in clip_results.items() if k != str(clip_index)}
+    def _gen_thread():
+        try:
+            url = generate_clip(_photo_url, _prompt, aspect_ratio=_aspect)
+            _sb_service().rpc('add_clip_result', {
+                'p_job_id':   _job_id,
+                'p_clip_idx': str(_clip_index),
+                'p_clip_url': url,
+            }).execute()
+            print(f'[clip_submit] job={_job_id[:8]} clip={_clip_index} DONE url={url[:60]}', flush=True)
+        except Exception as exc:
+            print(f'[clip_submit] job={_job_id[:8]} clip={_clip_index} FAILED: {exc}', flush=True)
+            try:
+                _sb_service().table('reel_jobs').update({
+                    'status':        'failed',
+                    'error_message': f'Clip {_clip_index} generation failed: {str(exc)[:300]}',
+                }).eq('id', _job_id).execute()
+            except Exception:
+                pass
 
-    _sb_service().table('reel_jobs').update({
-        'status':           'generating',
-        'clip_submissions': subs,
-        'clip_results':     cleaned_results,
-    }).eq('id', job_id).execute()
-
-    print(f'[clip_submit] job={job_id[:8]} clip={clip_index} req={fal["request_id"][:8]}', flush=True)
+    threading.Thread(target=_gen_thread, daemon=True).start()
+    print(f'[clip_submit] job={job_id[:8]} clip={clip_index} RunPod thread spawned', flush=True)
     return jsonify({'ok': True, 'clip_index': clip_index})
 
 
 @video_bp.route('/clip/status/<job_id>/<int:idx>')
 @require_auth_api
 def clip_status_interactive(job_id, idx):
-    """Non-blocking status check for a single interactive clip."""
+    """
+    Status check per un singolo clip interattivo.
+    Il risultato viene scritto in DB dal thread generate_clip() — leggiamo da lì.
+    Nessuna chiamata diretta a RunPod.
+    """
     user_id = request.current_user.id
     try:
         row = _sb_service().table('reel_jobs').select(
-            'user_id,clip_submissions,clip_results'
+            'user_id,clip_results,status'
         ).eq('id', job_id).single().execute().data
     except Exception:
         return jsonify({'error': 'not found'}), 404
@@ -1724,37 +1261,15 @@ def clip_status_interactive(job_id, idx):
     if not row or row['user_id'] != user_id:
         return jsonify({'error': 'not found'}), 404
 
-    # Check if already persisted from a previous poll
+    if row.get('status') == 'failed':
+        return jsonify({'status': 'failed'})
+
     clip_results = row.get('clip_results') or {}
     if isinstance(clip_results, str):
         clip_results = json.loads(clip_results)
+
     if str(idx) in clip_results:
         return jsonify({'status': 'completed', 'clip_url': clip_results[str(idx)]})
-
-    subs = row.get('clip_submissions') or {}
-    if isinstance(subs, str):
-        subs = json.loads(subs)
-    sub = subs.get(str(idx))
-    if not sub:
-        return jsonify({'status': 'not_submitted'}), 400
-
-    req_id       = sub['request_id']
-    endpoint     = sub['endpoint']
-    status_url   = sub.get('status_url', '')
-    response_url = sub.get('response_url', '')
-
-    st = fal_status_check(endpoint, req_id, status_url=status_url, response_url=response_url)
-
-    if st['status'] == 'COMPLETED' and st.get('url'):
-        _sb_service().rpc('add_clip_result', {
-            'p_job_id':   job_id,
-            'p_clip_idx': str(idx),
-            'p_clip_url': st['url'],
-        }).execute()
-        return jsonify({'status': 'completed', 'clip_url': st['url']})
-
-    if st['status'] == 'FAILED':
-        return jsonify({'status': 'failed'})
 
     return jsonify({'status': 'generating'})
 
