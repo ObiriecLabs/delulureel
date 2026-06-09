@@ -20,7 +20,7 @@ from core.video_generator import (
 from core.audio_analyzer import analyze_audio, beat_cut_durations
 from core.scene_director import generate_scene_prompt
 from core.lipsync import apply_lipsync
-from core.assembler import assemble_reel
+from core.assembler import assemble_reel, create_loop_variants
 
 from saas.auth.routes import require_auth_api
 
@@ -346,8 +346,8 @@ def generate():
             _active_user_jobs[user_id] = job_id
 
         # ── Dispatch ─────────────────────────────────────────────────────────────
-        # Single clip → _run_pre_generation (blocking RunPod generate_clip)
-        # Multi-clip  → _run_pipeline (N generate_clip in parallelo via ThreadPoolExecutor)
+        # Single clip → _run_pre_generation (1 RunPod call, blocking)
+        # Multi-clip  → _run_pipeline (1 RunPod + N-1 FFmpeg loop variants)
         if n_clips == 1:
             thread = threading.Thread(
                 target=_run_pre_generation,
@@ -653,13 +653,16 @@ def _run_pipeline(job_id, user_id, photo_path, audio_path, style, aspect_ratio,
                   est_cost, tmp_dir, target_secs=10, n_clips=1, enable_lipsync=False,
                   custom_prompt='', is_admin=False):
     """
-    Multi-clip pipeline RunPod (blocking):
-    analisi → prompt Claude → N generate_clip() in parallelo → assembly inline.
+    Multi-clip pipeline (RunPod × 1 + FFmpeg × N-1):
 
-    Tutto gira nello stesso thread — niente webhook.
-    Wall-clock ≈ durata del clip più lento (ThreadPoolExecutor).
+    1. Genera 1 solo clip via RunPod (~2-10 min, costo GPU una tantum)
+    2. Crea N varianti ping-pong dal clip base via FFmpeg (0 costo GPU)
+    3. Upload varianti su Supabase → _run_assembly scarica e assembla beat-sync
+
+    Risparmio rispetto all'approccio N×RunPod:
+      30s (3 clip) → 3× meno costo
+      60s (6 clip) → 6× meno costo
     """
-    from concurrent.futures import ThreadPoolExecutor, as_completed
     global _global_active
     _jid = job_id[:8]
     sb = _sb_service()
@@ -693,19 +696,16 @@ def _run_pipeline(job_id, user_id, photo_path, audio_path, style, aspect_ratio,
         except Exception as exc:
             print(f'[pipeline/{_jid}] audio upload FAILED: {exc}', flush=True)
 
-        # 3 — Scene prompts (Whisper rimosso → lyrics sempre None)
+        # 3 — Un solo prompt Claude (basta per il clip base RunPod)
         update('generating', bpm=analysis['bpm'])
         if custom_prompt:
-            prompts = [custom_prompt] * n_clips
+            base_prompt = custom_prompt
         else:
-            prompts = [
-                generate_scene_prompt(
-                    analysis, style, photo_path=photo_path, lyrics=None,
-                    aspect_ratio=aspect_ratio, clip_index=i, n_clips=n_clips,
-                )
-                for i in range(n_clips)
-            ]
-        print(f'[pipeline/{_jid}] {len(prompts)} prompt(s) generated', flush=True)
+            base_prompt = generate_scene_prompt(
+                analysis, style, photo_path=photo_path, lyrics=None,
+                aspect_ratio=aspect_ratio, clip_index=0, n_clips=n_clips,
+            )
+        print(f'[pipeline/{_jid}] prompt generated len={len(base_prompt)}', flush=True)
 
         # 4 — Upload photo (per audit e futura lipsync)
         ext_photo = (photo_path.rsplit('.', 1)[-1].lower()) or 'jpg'
@@ -721,28 +721,47 @@ def _run_pipeline(job_id, user_id, photo_path, audio_path, style, aspect_ratio,
 
         # 5 — Inizializza tracking in DB
         update('processing',
-               fal_request_id=f'runpod:{n_clips}',
-               prompt=prompts[0],
+               fal_request_id=f'runpod:ffmpeg:{n_clips}',
+               prompt=base_prompt,
                n_clips_expected=n_clips,
                target_secs_requested=int(target_secs),
                clip_results={})
 
-        # 6 — Genera N clip in parallelo (RunPod, blocking)
-        clip_urls: list = [None] * n_clips
+        # 6 — 1 sola chiamata RunPod (invece di N)
+        print(f'[pipeline/{_jid}] RunPod clip START (1 clip, {n_clips-1} via FFmpeg)', flush=True)
+        base_url = generate_clip(photo_path, base_prompt, aspect_ratio=aspect_ratio)
+        print(f'[pipeline/{_jid}] RunPod DONE url={base_url[:60]}', flush=True)
 
-        def _gen_one(idx, prompt_text):
-            print(f'[pipeline/{_jid}] clip {idx}/{n_clips} START', flush=True)
-            url = generate_clip(photo_path, prompt_text, aspect_ratio=aspect_ratio)
-            print(f'[pipeline/{_jid}] clip {idx}/{n_clips} DONE url={url[:60]}', flush=True)
-            return idx, url
+        # 7 — Download clip base in tmp locale
+        base_clip_path = os.path.join(tmp_dir, 'base_clip.mp4')
+        resp_b = _requests.get(base_url, stream=True, timeout=180)
+        resp_b.raise_for_status()
+        with open(base_clip_path, 'wb') as fh:
+            for chunk in resp_b.iter_content(chunk_size=65536):
+                fh.write(chunk)
+        print(f'[pipeline/{_jid}] base clip downloaded', flush=True)
 
-        with ThreadPoolExecutor(max_workers=min(n_clips, 4)) as ex:
-            futs = {ex.submit(_gen_one, i, prompts[i]): i for i in range(n_clips)}
-            for fut in as_completed(futs):
-                idx, url = fut.result()  # propaga eccezione al try esterno
-                clip_urls[idx] = url
+        # 8 — Crea N varianti ping-pong via FFmpeg (gratuito, nessuna GPU)
+        loop_vars = create_loop_variants(base_clip_path, n_clips, tmp_dir)
+        print(f'[pipeline/{_jid}] {len(loop_vars)} FFmpeg variants created', flush=True)
 
-        # 7 — Assembly inline (download + FFmpeg + Supabase + mark completed)
+        # 9 — Upload varianti su Supabase → signed URLs per _run_assembly
+        clip_urls: list = []
+        for i, var_path in enumerate(loop_vars):
+            var_key = f'jobs/{job_id}/var_{i}.mp4'
+            with open(var_path, 'rb') as fh:
+                sb.storage.from_('reel-uploads').upload(
+                    var_key, fh,
+                    file_options={'content-type': 'video/mp4'},
+                )
+            sig = sb.storage.from_('reel-uploads').create_signed_url(var_key, 3600)
+            var_url = sig.get('signedURL') or sig.get('signedUrl') or ''
+            if not var_url:
+                raise RuntimeError(f'Cannot get signed URL for variant {i}: {sig}')
+            clip_urls.append(var_url)
+            print(f'[pipeline/{_jid}] variant {i} uploaded', flush=True)
+
+        # 10 — Assembly inline (download varianti + FFmpeg beat-sync + Supabase + mark completed)
         job_data = {
             'user_id':        user_id,
             'aspect_ratio':   aspect_ratio,

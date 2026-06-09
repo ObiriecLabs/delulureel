@@ -1,4 +1,5 @@
 import os
+import shutil
 import ffmpeg
 from typing import List, Optional, Sequence
 
@@ -15,6 +16,51 @@ SCALE_MAP = {
 # Reasonable encode settings for social media delivery
 _VIDEO_OPTS = dict(vcodec='libx264', crf=20, preset='fast', pix_fmt='yuv420p')
 _AUDIO_OPTS  = dict(acodec='aac', audio_bitrate='192k')
+
+
+def create_loop_variants(
+    base_clip: str,
+    n_variants: int,
+    tmp_dir: str,
+) -> List[str]:
+    """
+    Crea N varianti da un singolo clip base senza ulteriori chiamate GPU.
+
+    Strategia ping-pong per video musicali:
+      - Indici pari  → copia forward (stream-copy, istantaneo)
+      - Indici dispari → reverse via FFmpeg (bufferizza ~50MB per clip 10s @ 24fps)
+
+    assemble_reel() usa solo la stream video dei clip — l'audio nei file variante
+    è irrilevante e non viene incluso per risparmiare spazio e tempo.
+
+    Risparmio RunPod: (n_variants - 1) chiamate GPU evitate.
+    """
+    variants: List[str] = []
+    for i in range(n_variants):
+        out = os.path.join(tmp_dir, f'loop_var_{i}.mp4')
+        if i % 2 == 0:
+            # Forward: copia diretta, nessun re-encode
+            shutil.copy(base_clip, out)
+        else:
+            # Reverse: video invertito (ping-pong), solo stream video
+            try:
+                (
+                    ffmpeg
+                    .input(base_clip)
+                    .video
+                    .filter('reverse')
+                    .output(
+                        out,
+                        vcodec='libx264', crf=20, preset='fast', pix_fmt='yuv420p',
+                    )
+                    .overwrite_output()
+                    .run(quiet=True, capture_stderr=True, cmd=_FFMPEG_CMD)
+                )
+            except Exception:
+                # Fallback: se reverse fallisce (es. clip troppo lungo), usa forward
+                shutil.copy(base_clip, out)
+        variants.append(out)
+    return variants
 
 
 def _trim_clips_to_beats(
