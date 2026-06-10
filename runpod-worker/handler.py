@@ -1,19 +1,18 @@
-"""
-# DIAGNOSTIC: stampa immediatamente prima di qualsiasi import — visibile anche se tutto crasha
-import sys, os
-print(f"[STARTUP] Python {sys.version} | pid={os.getpid()}", flush=True)
+# DIAGNOSTIC: codice REALE — eseguito PRIMA di qualsiasi altro import
+import sys as _sys, os as _os
+print(f"[STARTUP] Python {_sys.version} | pid={_os.getpid()}", flush=True)
 
-# CUDA DIAGNOSTIC: verifica esatta SM 12.x compatibility prima di qualsiasi altro import
+# CUDA DIAGNOSTIC: verifica SM 12.x compatibility prima di qualsiasi altro import
 try:
-    import torch
-    print(f"[CUDA] torch={torch.__version__} cuda_compiled={torch.version.cuda}", flush=True)
-    if torch.cuda.is_available():
-        dev = torch.cuda.get_device_name(0)
-        cap = torch.cuda.get_device_capability(0)
-        print(f"[CUDA] device={dev} SM={cap[0]}.{cap[1]}", flush=True)
+    import torch as _torch
+    print(f"[CUDA] torch={_torch.__version__} cuda_compiled={_torch.version.cuda}", flush=True)
+    if _torch.cuda.is_available():
+        _dev = _torch.cuda.get_device_name(0)
+        _cap = _torch.cuda.get_device_capability(0)
+        print(f"[CUDA] device={_dev} SM={_cap[0]}.{_cap[1]}", flush=True)
         # Stesso kernel test usato da start.sh — se crasha qui vediamo l'errore esatto
-        result = (torch.zeros(8, device='cuda') + 1).sum().item()
-        print(f"[CUDA] kernel test OK result={result}", flush=True)
+        _result = (_torch.zeros(8, device='cuda') + 1).sum().item()
+        print(f"[CUDA] kernel test OK result={_result}", flush=True)
     else:
         print("[CUDA] torch.cuda.is_available() = False", flush=True)
 except Exception as _cuda_e:
