@@ -23,7 +23,7 @@ git clone --depth=1 https://github.com/cubiq/ComfyUI_IPAdapter_plus.git
 git clone --depth=1 https://github.com/cubiq/ComfyUI_FaceAnalysis.git
 
 # ── Pipeline & logic nodes ───────────────────────────────────────────────────
-git clone --depth=1 https://github.com/WASasquatch/ComfyUI-Logic.git
+git clone --depth=1 https://github.com/WASasquatch/ComfyUI-Logic.git || true  # repo spesso privato/rimosso
 git clone --depth=1 https://github.com/M1kep/ComfyLiterals.git
 git clone --depth=1 https://github.com/theUpsider/ComfyUI-Logic.git || true
 git clone --depth=1 https://github.com/Trung0246/ComfyUI-PromptRelay.git
