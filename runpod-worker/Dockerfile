@@ -8,6 +8,9 @@ ENV DEBIAN_FRONTEND=noninteractive
 ENV PYTHONUNBUFFERED=1
 ENV COMFYUI_PATH=/comfyui
 ENV RUNPOD_VOLUME=/runpod-volume
+# Disabilita TorchDynamo — causa crash silenzioso su Blackwell SM 10.x
+ENV TORCHDYNAMO_DISABLE=1
+ENV TORCH_COMPILE_DISABLE=1
 
 # ── Python 3.11 stabile (deadsnakes) + system deps ───────────────────────────
 RUN apt-get update && apt-get install -y software-properties-common curl && \

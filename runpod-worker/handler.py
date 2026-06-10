@@ -12,6 +12,7 @@ IMPORTANTE:
 import runpod
 import subprocess
 import sys
+import threading
 import time
 import json
 import urllib.request
@@ -179,23 +180,45 @@ def _save_input_images(images: list) -> list:
         saved.append(name)
     return saved
 
-# ── Avvio ComfyUI al boot del container ──────────────────────────────────────
+# ── Avvio ComfyUI in background — non blocca RunPod health check ─────────────
+# runpod.serverless.start() viene chiamato subito; ComfyUI carica in parallelo.
+# Senza questo, RunPod's container startup timeout uccide il worker prima che
+# ComfyUI sia pronto (5-10 min), causando throttle immediato.
 
-print(f"[BOOT] Python: {sys.executable} {sys.version}")
-print(f"[BOOT] Starting ComfyUI...")
-try:
-    _proc = _start_comfyui()
-except Exception as e:
-    print(f"[BOOT] FATAL: failed to launch ComfyUI process: {e}", flush=True)
-    raise
+_comfyui_ready = threading.Event()
+_comfyui_error = None
+_proc = None
 
-if not _wait_for_comfyui():
-    raise RuntimeError("ComfyUI failed to start within 10 minutes")
-print("[BOOT] ComfyUI ready.")
+def _boot_comfyui():
+    global _proc, _comfyui_error
+    print(f"[BOOT] Python: {sys.executable} {sys.version}", flush=True)
+    print("[BOOT] Starting ComfyUI (background thread)...", flush=True)
+    try:
+        _proc = _start_comfyui()
+    except Exception as e:
+        _comfyui_error = f"Failed to launch ComfyUI: {e}"
+        print(f"[BOOT] FATAL: {_comfyui_error}", flush=True)
+        _comfyui_ready.set()
+        return
+    if _wait_for_comfyui():
+        print("[BOOT] ComfyUI ready.", flush=True)
+    else:
+        _comfyui_error = "ComfyUI failed to start within 10 minutes"
+        print(f"[BOOT] ERROR: {_comfyui_error}", flush=True)
+    _comfyui_ready.set()
+
+threading.Thread(target=_boot_comfyui, daemon=True).start()
+print("[BOOT] ComfyUI boot started in background — registering RunPod handler.", flush=True)
 
 # ── Handler ───────────────────────────────────────────────────────────────────
 
 def handler(job):
+    # Aspetta ComfyUI se ancora in avvio (background thread)
+    if not _comfyui_ready.wait(timeout=600):
+        return {"error": "ComfyUI startup timeout (600s)"}
+    if _comfyui_error:
+        return {"error": f"ComfyUI boot failed: {_comfyui_error}"}
+
     job_input = job.get("input", {})
     workflow = job_input.get("workflow")
     job_id = job.get("id", uuid.uuid4().hex[:12])
