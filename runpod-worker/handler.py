@@ -20,8 +20,10 @@ import uuid
 import shutil
 import mimetypes
 
-COMFYUI_HOST = "127.0.0.1"
-COMFYUI_PORT = 8188
+# COMFYUI_LISTEN=0.0.0.0 per pod dedicato RunPod con porta 8188 esposta
+# (necessario per comfyui-mcp remote mode — mai impostare su worker serverless)
+COMFYUI_HOST = os.environ.get("COMFYUI_LISTEN", "127.0.0.1")
+COMFYUI_PORT = int(os.environ.get("COMFYUI_PORT", "8188"))
 COMFYUI_URL = f"http://{COMFYUI_HOST}:{COMFYUI_PORT}"
 INPUT_DIR = "/comfyui/input"
 OUTPUT_DIR = "/comfyui/output"

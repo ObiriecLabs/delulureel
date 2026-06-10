@@ -14,17 +14,19 @@
 # ─────────────────────────────────────────────────────────────────────────────
 set -e
 
-VOL="${VOL:-/workspace}"          # sui Pod il volume è /workspace ; sui worker serverless sarà /runpod-volume
+VOL="${VOL:-/workspace}"
 M="$VOL/models"
-
-pip install -q -U "huggingface_hub[hf_transfer]"
-export HF_HUB_ENABLE_HF_TRANSFER=1
 
 mkdir -p "$M"/{diffusion_models,vae,text_encoders,clip_vision,loras,checkpoints,upscale_models,controlnet,ipadapter,vae_approx,sams,ultralytics/bbox}
 
 dl () {  # dl <repo> <file_in_repo> <dest_subfolder>
-  echo "▶ $2"
-  huggingface-cli download "$1" "$2" --local-dir "$M/$3" --local-dir-use-symlinks False
+  local fname
+  fname=$(basename "$2")
+  echo "▶ $fname"
+  wget -q --show-progress -c \
+    --header="Authorization: Bearer ${HF_TOKEN}" \
+    -O "$M/$3/$fname" \
+    "https://huggingface.co/$1/resolve/main/$2"
 }
 
 echo "═══ VIDEO — LTX 2.3 ═══"
