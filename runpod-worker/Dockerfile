@@ -1,7 +1,7 @@
-# pytorch/pytorch ha Python 3.11 stabile + PyTorch pre-installato.
-# Evita il crash di Ubuntu 22.04 python3.11.0rc1 (manca sys.get_int_max_str_digits)
-# che colpisce torch._dynamo/polyfills/sys.py via comfy/quant_ops.py → comfy_kitchen.
-FROM pytorch/pytorch:2.5.1-cuda12.4-cudnn9-runtime
+# PyTorch 2.6.0 + CUDA 12.6: primo release con supporto nativo Blackwell SM 10.x.
+# pytorch/pytorch:2.5.1 crashava su RTX PRO 6000 Blackwell (EUR-IS-1) — SM 10.x
+# non supportato in 2.5.x (kernel PTX mancanti → crash silenzioso all'import).
+FROM pytorch/pytorch:2.6.0-cuda12.6-cudnn9-runtime
 
 ENV DEBIAN_FRONTEND=noninteractive
 ENV PYTHONUNBUFFERED=1
