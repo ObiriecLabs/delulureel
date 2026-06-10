@@ -893,6 +893,177 @@
       .hero-actions   { flex-direction: column; align-items: center; }
       .final-actions  { flex-direction: column; align-items: center; }
     }
+
+    /* ═══ AUTH MODAL ═══════════════════════════════════════════════════════ */
+    #auth-overlay {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,.76);
+      backdrop-filter: blur(18px);
+      -webkit-backdrop-filter: blur(18px);
+      z-index: 10000;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+    }
+    #auth-overlay.open { display: flex; }
+
+    #auth-modal {
+      background: var(--surface);
+      border: 1px solid rgba(180,94,255,.22);
+      border-radius: 22px;
+      padding: 38px 34px 34px;
+      width: 100%;
+      max-width: 420px;
+      position: relative;
+      box-shadow: 0 32px 80px rgba(0,0,0,.6), 0 0 0 1px rgba(180,94,255,.08);
+      animation: authModalIn .2s cubic-bezier(.16,1,.3,1);
+    }
+    @keyframes authModalIn {
+      from { transform: translateY(20px) scale(.96); opacity: 0; }
+      to   { transform: none; opacity: 1; }
+    }
+
+    .auth-close {
+      position: absolute;
+      top: 14px; right: 16px;
+      background: none; border: none;
+      color: var(--muted); font-size: 24px; line-height: 1;
+      cursor: pointer; padding: 4px 8px;
+      transition: color .15s;
+    }
+    .auth-close:hover { color: var(--text); }
+
+    .auth-brand {
+      text-align: center;
+      font-size: 12px;
+      font-weight: 800;
+      letter-spacing: .14em;
+      text-transform: uppercase;
+      background: var(--grad);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+      margin-bottom: 3px;
+    }
+    .auth-tagline {
+      text-align: center;
+      font-size: 12px;
+      color: var(--muted);
+      margin-bottom: 22px;
+    }
+
+    .auth-tabs {
+      display: flex;
+      border-bottom: 1px solid rgba(180,94,255,.18);
+      margin-bottom: 22px;
+      gap: 0;
+    }
+    .auth-tab {
+      flex: 1;
+      background: none; border: none;
+      padding: 9px 8px;
+      font-size: 14px; font-weight: 600;
+      color: var(--muted);
+      cursor: pointer;
+      border-bottom: 2px solid transparent;
+      margin-bottom: -1px;
+      transition: color .18s, border-color .18s;
+      font-family: inherit;
+    }
+    .auth-tab.active { color: var(--text); border-bottom-color: var(--primary); }
+
+    .auth-panel { display: none; }
+    .auth-panel.active { display: block; }
+
+    .auth-field { margin-bottom: 13px; }
+    .auth-field label {
+      display: block;
+      font-size: 11px; font-weight: 700;
+      color: var(--muted);
+      margin-bottom: 6px;
+      letter-spacing: .06em;
+      text-transform: uppercase;
+    }
+    .auth-field input,
+    .auth-field select {
+      width: 100%; box-sizing: border-box;
+      background: rgba(180,94,255,.07);
+      border: 1px solid rgba(180,94,255,.22);
+      border-radius: 10px;
+      padding: 11px 14px;
+      color: var(--text);
+      font-size: 15px;
+      font-family: inherit;
+      outline: none;
+      transition: border-color .15s, background .15s;
+      -webkit-appearance: none;
+    }
+    .auth-field input:focus,
+    .auth-field select:focus {
+      border-color: var(--primary);
+      background: rgba(180,94,255,.11);
+    }
+    .auth-field select option { background: #130b22; }
+
+    .auth-btn {
+      width: 100%; box-sizing: border-box;
+      padding: 13px;
+      background: var(--grad);
+      border: none; border-radius: 12px;
+      color: #fff;
+      font-size: 15px; font-weight: 700;
+      cursor: pointer; margin-top: 6px;
+      transition: opacity .18s, transform .12s;
+      font-family: inherit;
+      letter-spacing: .01em;
+    }
+    .auth-btn:disabled  { opacity: .45; cursor: not-allowed; }
+    .auth-btn:not(:disabled):hover  { opacity: .88; }
+    .auth-btn:not(:disabled):active { transform: scale(.98); }
+
+    .auth-forgot {
+      text-align: right;
+      margin-top: -7px;
+      margin-bottom: 11px;
+    }
+    .auth-forgot a {
+      font-size: 12px; color: var(--muted); text-decoration: none;
+    }
+    .auth-forgot a:hover { color: var(--primary); }
+
+    .auth-error {
+      background: rgba(255,60,60,.1);
+      border: 1px solid rgba(255,60,60,.28);
+      border-radius: 8px;
+      color: #ff7575;
+      font-size: 13px;
+      padding: 10px 13px;
+      margin-bottom: 13px;
+      display: none;
+      line-height: 1.45;
+    }
+    .auth-error.show { display: block; }
+
+    .auth-confirm {
+      text-align: center;
+      padding: 12px 0 4px;
+    }
+    .auth-confirm-icon { font-size: 42px; margin-bottom: 12px; }
+    .auth-confirm p {
+      color: var(--muted); font-size: 14px; line-height: 1.6;
+    }
+    .auth-confirm strong { color: var(--text); }
+
+    .auth-switch {
+      text-align: center;
+      font-size: 13px;
+      color: var(--muted);
+      margin-top: 18px;
+    }
+    .auth-switch a { color: var(--primary); text-decoration: none; font-weight: 600; }
+    .auth-switch a:hover { opacity: .8; }
   </style>
 </head>
 <body>
@@ -908,8 +1079,8 @@
         <li><a href="#pricing">Pricing</a></li>
       </ul>
       <div class="nav-cta">
-        <a href="/login" class="nav-login">Log in</a>
-        <a href="/trial" class="btn btn-primary">Start Free Trial</a>
+        <a href="#" class="nav-login" data-auth-open="login">Log in</a>
+        <a href="#" class="btn btn-primary" data-auth-open="register">Start Free Trial</a>
       </div>
     </div>
   </div>
@@ -1329,10 +1500,237 @@
   // ── Smooth scroll ──
   document.querySelectorAll('a[href^="#"]').forEach(a => {
     a.addEventListener('click', e => {
-      const target = document.querySelector(a.getAttribute('href'));
+      const href = a.getAttribute('href');
+      if (!href || href === '#') return;   // guard: skip bare-hash links (e.g. modal triggers)
+      const target = document.querySelector(href);
       if (target) { e.preventDefault(); target.scrollIntoView({ behavior: 'smooth' }); }
     });
   });
+</script>
+
+<!-- ═══ AUTH MODAL ═══════════════════════════════════════════════════════════ -->
+<div id="auth-overlay" role="dialog" aria-modal="true" aria-label="Sign in or create account">
+  <div id="auth-modal">
+    <button class="auth-close" id="js-auth-close" aria-label="Close">&times;</button>
+
+    <div class="auth-brand">DELULUREEL</div>
+    <div class="auth-tagline">Be delulu enough to drop your reel.</div>
+
+    <!-- tabs -->
+    <div class="auth-tabs">
+      <button class="auth-tab active" data-tab="login">Log in</button>
+      <button class="auth-tab" data-tab="register">Create account</button>
+    </div>
+
+    <!-- ── LOGIN panel ── -->
+    <div class="auth-panel active" id="panel-login">
+      <div class="auth-error" id="login-error"></div>
+      <form id="login-form" novalidate>
+        <div class="auth-field">
+          <label for="li-email">Email</label>
+          <input type="email" id="li-email" name="email" placeholder="you@example.com" autocomplete="email" required>
+        </div>
+        <div class="auth-field">
+          <label for="li-password">Password</label>
+          <input type="password" id="li-password" name="password" placeholder="••••••••" autocomplete="current-password" required>
+        </div>
+        <div class="auth-forgot">
+          <a href="/auth/forgot-password">Forgot password?</a>
+        </div>
+        <button type="submit" class="auth-btn" id="login-btn">Log in</button>
+      </form>
+      <div class="auth-switch">No account? <a href="#" data-switch="register">Create one free →</a></div>
+    </div>
+
+    <!-- ── REGISTER panel ── -->
+    <div class="auth-panel" id="panel-register">
+      <div class="auth-error" id="register-error"></div>
+      <div id="register-form-wrap">
+        <form id="register-form" novalidate>
+          <div class="auth-field">
+            <label for="re-email">Email</label>
+            <input type="email" id="re-email" name="email" placeholder="you@example.com" autocomplete="email" required>
+          </div>
+          <div class="auth-field">
+            <label for="re-password">Password</label>
+            <input type="password" id="re-password" name="password" placeholder="min 8 characters" autocomplete="new-password" required>
+          </div>
+          <div class="auth-field">
+            <label for="re-plan">Plan</label>
+            <select id="re-plan" name="plan">
+              <option value="creator">Creator — €16.99/mo · 7 days free</option>
+              <option value="pro" selected>Pro — €39.99/mo · 7 days free</option>
+              <option value="studio">Studio — €89.99/mo · 7 days free</option>
+            </select>
+          </div>
+          <button type="submit" class="auth-btn" id="register-btn">Start Free Trial</button>
+        </form>
+      </div>
+      <div id="register-confirm" class="auth-confirm" style="display:none">
+        <div class="auth-confirm-icon">✉️</div>
+        <p>Check your inbox!<br>We sent a confirmation link to <strong id="confirm-addr"></strong>.<br>
+        <span style="font-size:12px;opacity:.65">Check spam if you don't see it in a minute.</span></p>
+      </div>
+      <div class="auth-switch">Already have an account? <a href="#" data-switch="login">Log in →</a></div>
+    </div>
+  </div>
+</div>
+
+<script>
+// ═══ AUTH MODAL LOGIC ════════════════════════════════════════════════════════
+(function () {
+  'use strict';
+  var overlay  = document.getElementById('auth-overlay');
+  var tabs     = document.querySelectorAll('.auth-tab');
+  var panels   = document.querySelectorAll('.auth-panel');
+
+  // ── open / close ──────────────────────────────────────────────────────────
+  function openModal(tab) {
+    overlay.classList.add('open');
+    document.body.style.overflow = 'hidden';
+    if (tab) switchTab(tab);
+  }
+  function closeModal() {
+    overlay.classList.remove('open');
+    document.body.style.overflow = '';
+  }
+  window.openAuthModal = openModal;
+
+  // ── switch tab ────────────────────────────────────────────────────────────
+  function switchTab(name) {
+    tabs.forEach(function (t) { t.classList.toggle('active', t.dataset.tab === name); });
+    panels.forEach(function (p) { p.classList.toggle('active', p.id === 'panel-' + name); });
+  }
+
+  // ── next URL (where to go after login) ───────────────────────────────────
+  function getNext() {
+    return new URLSearchParams(location.search).get('next') || '/dashboard';
+  }
+
+  // ── event: close ─────────────────────────────────────────────────────────
+  document.getElementById('js-auth-close').addEventListener('click', closeModal);
+  overlay.addEventListener('click', function (e) { if (e.target === overlay) closeModal(); });
+  document.addEventListener('keydown', function (e) { if (e.key === 'Escape') closeModal(); });
+
+  // ── event: tabs ──────────────────────────────────────────────────────────
+  tabs.forEach(function (t) {
+    t.addEventListener('click', function () { switchTab(t.dataset.tab); });
+  });
+
+  // ── event: switch links ([data-switch]) ──────────────────────────────────
+  document.querySelectorAll('[data-switch]').forEach(function (a) {
+    a.addEventListener('click', function (e) { e.preventDefault(); switchTab(a.dataset.switch); });
+  });
+
+  // ── event: [data-auth-open] (nav + hero CTAs) ─────────────────────────────
+  document.querySelectorAll('[data-auth-open]').forEach(function (el) {
+    el.addEventListener('click', function (e) {
+      e.preventDefault();
+      var tab  = el.dataset.authOpen;           // "login" | "register"
+      var plan = el.dataset.plan || 'pro';
+      if (tab === 'register' && plan) {
+        document.getElementById('re-plan').value = plan;
+      }
+      openModal(tab);
+    });
+  });
+
+  // ── LOGIN form ────────────────────────────────────────────────────────────
+  document.getElementById('login-form').addEventListener('submit', function (e) {
+    e.preventDefault();
+    var btn = document.getElementById('login-btn');
+    var err = document.getElementById('login-error');
+    var fd  = new FormData(this);
+    err.classList.remove('show');
+    btn.disabled    = true;
+    btn.textContent = 'Logging in…';
+
+    fetch('/auth/login', {
+      method: 'POST',
+      headers: { 'X-Requested-With': 'XMLHttpRequest' },
+      body: fd,
+    })
+    .then(function (r) { return r.json(); })
+    .then(function (data) {
+      if (data.ok) {
+        btn.textContent = '✓';
+        window.location.href = getNext();
+      } else {
+        err.textContent = data.error || 'Login failed. Try again.';
+        err.classList.add('show');
+        btn.disabled    = false;
+        btn.textContent = 'Log in';
+      }
+    })
+    .catch(function () {
+      err.textContent = 'Network error. Please try again.';
+      err.classList.add('show');
+      btn.disabled    = false;
+      btn.textContent = 'Log in';
+    });
+  });
+
+  // ── REGISTER form ─────────────────────────────────────────────────────────
+  document.getElementById('register-form').addEventListener('submit', function (e) {
+    e.preventDefault();
+    var btn  = document.getElementById('register-btn');
+    var err  = document.getElementById('register-error');
+    var wrap = document.getElementById('register-form-wrap');
+    var conf = document.getElementById('register-confirm');
+    var fd   = new FormData(this);
+    err.classList.remove('show');
+    btn.disabled    = true;
+    btn.textContent = 'Creating account…';
+
+    fetch('/auth/signup?plan=' + encodeURIComponent(fd.get('plan') || 'pro'), {
+      method: 'POST',
+      headers: { 'X-Requested-With': 'XMLHttpRequest' },
+      body: fd,
+    })
+    .then(function (r) { return r.json(); })
+    .then(function (data) {
+      if (data.ok) {
+        if (data.redirect) {
+          window.location.href = data.redirect;
+        } else if (data.confirm) {
+          document.getElementById('confirm-addr').textContent = fd.get('email');
+          wrap.style.display = 'none';
+          conf.style.display = 'block';
+        }
+      } else {
+        err.textContent = data.error || 'Registration failed. Try again.';
+        err.classList.add('show');
+        btn.disabled    = false;
+        btn.textContent = 'Start Free Trial';
+      }
+    })
+    .catch(function () {
+      err.textContent = 'Network error. Please try again.';
+      err.classList.add('show');
+      btn.disabled    = false;
+      btn.textContent = 'Start Free Trial';
+    });
+  });
+
+  // ── Auto-open on ?popup=auth (triggered by require_auth redirect) ─────────
+  var params = new URLSearchParams(location.search);
+  if (params.get('popup') === 'auth') {
+    openModal('login');
+  }
+
+  // ── Wire up "Start Free Trial" CTAs (any a[href^="/trial"]) ───────────────
+  document.querySelectorAll('a[href^="/trial"]').forEach(function (a) {
+    a.addEventListener('click', function (e) {
+      e.preventDefault();
+      try {
+        var plan = new URL(a.href, location.origin).searchParams.get('plan') || 'pro';
+        document.getElementById('re-plan').value = plan;
+      } catch (_) {}
+      openModal('register');
+    });
+  });
+
+}());
 </script>
 </body>
 </html>

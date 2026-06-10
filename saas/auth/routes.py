@@ -1,6 +1,7 @@
 import os
 import threading
 from functools import wraps
+from urllib.parse import quote as _urlquote
 from flask import Blueprint, request, session, redirect, url_for, render_template, jsonify
 from supabase import create_client, Client, ClientOptions
 
@@ -44,13 +45,15 @@ def _try_refresh() -> bool:
 
 
 def require_auth(f):
-    """Decorator: redirect to login if no valid session.
+    """Decorator: open auth modal if no valid session.
+    Redirects to /?popup=auth&next=<path> so the landing page shows the
+    login/signup modal directly instead of navigating to a separate page.
     Auto-refreshes expired tokens before giving up."""
     @wraps(f)
     def decorated(*args, **kwargs):
         token = session.get('access_token')
         if not token:
-            return redirect(url_for('auth.login'))
+            return redirect('/?popup=auth&next=' + _urlquote(request.path, safe=''))
         try:
             user = _get_sb().auth.get_user(token)
             request.current_user = user.user
@@ -62,10 +65,10 @@ def require_auth(f):
                     request.current_user = user.user
                 except Exception:
                     session.clear()
-                    return redirect(url_for('auth.login'))
+                    return redirect('/?popup=auth&next=' + _urlquote(request.path, safe=''))
             else:
                 session.clear()
-                return redirect(url_for('auth.login'))
+                return redirect('/?popup=auth&next=' + _urlquote(request.path, safe=''))
         return f(*args, **kwargs)
     return decorated
 
@@ -108,7 +111,11 @@ def login():
     email    = (data.get('email', '') or '').strip().lower()
     password = data.get('password', '') or ''
 
+    is_xhr = request.headers.get('X-Requested-With') == 'XMLHttpRequest'
+
     if not email or not password:
+        if is_xhr:
+            return jsonify({'ok': False, 'error': 'Email and password are required'}), 400
         return render_template('auth/login.html', error='Email and password are required')
 
     try:
@@ -116,9 +123,13 @@ def login():
         session['access_token']  = result.session.access_token
         session['refresh_token'] = result.session.refresh_token
         session['user_id']       = result.user.id
+        if is_xhr:
+            return jsonify({'ok': True, 'redirect': url_for('dashboard')})
         return redirect(url_for('dashboard'))
     except Exception as e:
         print(f'[login] FAILED email={email} error={type(e).__name__}: {e}', flush=True)
+        if is_xhr:
+            return jsonify({'ok': False, 'error': 'Invalid email or password'}), 401
         return render_template('auth/login.html', error='Invalid email or password')
 
 
@@ -136,10 +147,16 @@ def signup():
     password = data.get('password', '') or ''
     plan     = data.get('plan', plan)
 
+    is_xhr = request.headers.get('X-Requested-With') == 'XMLHttpRequest'
+
     if not email or not password:
+        if is_xhr:
+            return jsonify({'ok': False, 'error': 'Email and password are required'}), 400
         return render_template('auth/signup.html', plan=plan, error='Email and password are required')
 
     if len(password) < 8:
+        if is_xhr:
+            return jsonify({'ok': False, 'error': 'Password must be at least 8 characters'}), 400
         return render_template('auth/signup.html', plan=plan, error='Password must be at least 8 characters')
 
     try:
@@ -156,15 +173,21 @@ def signup():
             session['access_token']  = result.session.access_token
             session['refresh_token'] = result.session.refresh_token
             session['user_id']       = result.user.id
+            if is_xhr:
+                return jsonify({'ok': True, 'redirect': url_for('billing.setup_trial') + f'?plan={plan}'})
             return redirect(url_for('billing.setup_trial') + f'?plan={plan}')
         else:
             # Email confirmation required → show "check your inbox" page
             session['pending_email'] = email
+            if is_xhr:
+                return jsonify({'ok': True, 'confirm': True, 'email': email})
             return render_template('auth/confirm_email.html', email=email)
     except Exception as e:
         err = str(e)
         if 'already registered' in err.lower() or 'already exists' in err.lower():
             err = 'An account with this email already exists. Please log in.'
+        if is_xhr:
+            return jsonify({'ok': False, 'error': err}), 400
         return render_template('auth/signup.html', plan=plan, error=err)
 
 

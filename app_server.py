@@ -131,7 +131,90 @@ def terms():
 
 @app.route('/contact')
 def contact():
-    return redirect('/')           # placeholder until contact form / email page is ready
+    return send_from_directory('landing', 'contact.html')
+
+
+# ── Contact form submission ──────────────────────────────────────────────────
+import time as _time
+_contact_rate: dict = {}   # ip → list[timestamp]
+_CONTACT_MAX = 5           # max submissions per window
+_CONTACT_WIN = 3600        # window in seconds (1 hour)
+
+@app.route('/contact/send', methods=['POST'])
+def contact_send():
+    import re
+    import requests as _req
+
+    # ── Honeypot check ──
+    if request.form.get('hp', '').strip():
+        return jsonify({'ok': True})   # silent discard for bots
+
+    # ── Rate limit (per IP) ──
+    ip  = request.headers.get('X-Forwarded-For', request.remote_addr or 'unknown').split(',')[0].strip()
+    now = _time.time()
+    hits = [t for t in _contact_rate.get(ip, []) if now - t < _CONTACT_WIN]
+    if len(hits) >= _CONTACT_MAX:
+        return jsonify({'ok': False, 'error': 'Too many messages. Please try again later.'}), 429
+    hits.append(now)
+    _contact_rate[ip] = hits
+
+    # ── Fields ──
+    name    = (request.form.get('name',    '') or '').strip()[:120]
+    email   = (request.form.get('email',   '') or '').strip()[:200]
+    subject = (request.form.get('subject', '') or '').strip()[:200]
+    message = (request.form.get('message', '') or '').strip()[:4000]
+
+    if not name or not email or not subject or not message:
+        return jsonify({'ok': False, 'error': 'All fields are required.'}), 400
+    if not re.match(r'^[^\s@]+@[^\s@]+\.[^\s@]+$', email):
+        return jsonify({'ok': False, 'error': 'Invalid email address.'}), 400
+
+    # ── Send via Resend REST API ──
+    resend_key = os.getenv('RESEND_API_KEY', '')
+    if not resend_key:
+        print('[contact] RESEND_API_KEY not set — email not sent', flush=True)
+        return jsonify({'ok': True})   # silent success in dev
+
+    html_body = f"""
+<div style="font-family:sans-serif;max-width:600px;color:#1a1a1a">
+  <h2 style="margin:0 0 16px;font-size:20px">New contact message — DELULUREEL</h2>
+  <table style="width:100%;border-collapse:collapse;font-size:14px">
+    <tr><td style="padding:8px 12px;background:#f5f5f5;font-weight:600;width:100px">Name</td>
+        <td style="padding:8px 12px;border-bottom:1px solid #e5e5e5">{name}</td></tr>
+    <tr><td style="padding:8px 12px;background:#f5f5f5;font-weight:600">Email</td>
+        <td style="padding:8px 12px;border-bottom:1px solid #e5e5e5"><a href="mailto:{email}">{email}</a></td></tr>
+    <tr><td style="padding:8px 12px;background:#f5f5f5;font-weight:600">Subject</td>
+        <td style="padding:8px 12px;border-bottom:1px solid #e5e5e5">{subject}</td></tr>
+    <tr><td style="padding:8px 12px;background:#f5f5f5;font-weight:600;vertical-align:top">Message</td>
+        <td style="padding:8px 12px;white-space:pre-wrap">{message}</td></tr>
+  </table>
+  <p style="margin-top:20px;font-size:12px;color:#888">Sent from delulureel.com/contact — IP: {ip}</p>
+</div>"""
+
+    try:
+        resp = _req.post(
+            'https://api.resend.com/emails',
+            headers={
+                'Authorization': f'Bearer {resend_key}',
+                'Content-Type':  'application/json',
+            },
+            json={
+                'from':     'DELULUREEL Contact <noreply@delulureel.com>',
+                'to':       ['obiriec@gmail.com'],
+                'reply_to': email,
+                'subject':  f'[DELULUREEL] {subject} — from {name}',
+                'html':     html_body,
+            },
+            timeout=10,
+        )
+        if resp.status_code not in (200, 201):
+            print(f'[contact] Resend error {resp.status_code}: {resp.text}', flush=True)
+            return jsonify({'ok': False, 'error': 'Could not send your message. Please email us directly at support@delulureel.com.'}), 502
+        print(f'[contact] message sent — from={email} subject={subject!r}', flush=True)
+        return jsonify({'ok': True})
+    except Exception as exc:
+        print(f'[contact] send exception: {exc}', flush=True)
+        return jsonify({'ok': False, 'error': 'Network error. Please email us directly at support@delulureel.com.'}), 502
 
 # Public share page (no auth required)
 @app.route('/share/<job_id>')
