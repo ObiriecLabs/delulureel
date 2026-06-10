@@ -88,6 +88,7 @@ const I18N = {
   view:            {{ t('dashboard.view')             | tojson }},
   checkStatus:     {{ t('dashboard.check_status')     | tojson }},
   deleteFailed:    {{ t('dashboard.delete_failed')    | tojson }},
+  cancelJob:       {{ t('dashboard.cancel_job')       | tojson }},
 };
 
 const urlParams = new URLSearchParams(window.location.search);
@@ -189,7 +190,10 @@ fetch('/video/history')
           </div>` : ''
         }
         ${job.status !== 'completed' && job.status !== 'failed'
-          ? `<div class="reel-actions"><a href="/result/${job.id}" class="btn btn-sm btn-ghost">${I18N.checkStatus}</a></div>`
+          ? `<div class="reel-actions">
+               <a href="/result/${job.id}" class="btn btn-sm btn-ghost">${I18N.checkStatus}</a>
+               <button class="btn btn-sm btn-ghost btn-delete-failed" data-job-id="${job.id}" style="opacity:0.5;font-size:0.75rem">${I18N.cancelJob}</button>
+             </div>`
           : job.status === 'failed'
             ? `<div class="reel-actions"><button class="btn btn-sm btn-ghost btn-delete-failed" data-job-id="${job.id}">${I18N.deleteFailed}</button></div>`
             : ''

@@ -34,6 +34,7 @@
     "view": "Ansehen",
     "check_status": "Status prüfen",
     "delete_failed": "Löschen",
+    "cancel_job": "Abbrechen & löschen",
     "date_locale": "de-DE"
   },
   "upload": {

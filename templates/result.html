@@ -27,6 +27,9 @@
         <div class="pstep" id="rs-4">{{ t('result.step_lipsync') }}</div>
         <div class="pstep" id="rs-5">{{ t('result.step_assembly') }}</div>
       </div>
+      <button id="cancel-job-btn" class="btn btn-ghost btn-sm" style="margin-top:1.5rem;opacity:0.6;font-size:0.8rem" onclick="cancelJob()">
+        {{ t('dashboard.cancel_job') }}
+      </button>
     </div>
   </div>
 
@@ -172,5 +175,19 @@ async function loadJob() {
 }
 
 loadJob();
+
+async function cancelJob() {
+  const btn = document.getElementById('cancel-job-btn');
+  if (!btn) return;
+  btn.disabled = true;
+  btn.textContent = '…';
+  try {
+    await fetch(`/video/job/${JOB_ID}`, {
+      method: 'DELETE',
+      headers: { 'X-Requested-With': 'XMLHttpRequest' },
+    });
+  } catch (_) {}
+  window.location.href = '/dashboard';
+}
 </script>
 {% endblock %}

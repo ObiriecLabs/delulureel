@@ -34,6 +34,7 @@
     "view": "View",
     "check_status": "Check status",
     "delete_failed": "Delete",
+    "cancel_job": "Cancel & delete",
     "date_locale": "en-GB"
   },
   "upload": {
