@@ -6,15 +6,15 @@ ENV COMFYUI_PATH=/comfyui
 ENV RUNPOD_VOLUME=/runpod-volume
 
 # ── System deps ──────────────────────────────────────────────────────────────
+# NOTA: python3.11 dall'apt Ubuntu 22.04 è 3.11.0rc1 (pre-release) — manca
+# sys.get_int_max_str_digits → crash di torch._dynamo / comfy_kitchen.
+# Usiamo python3 = 3.10.12 di Ubuntu 22.04 che ha get_int_max_str_digits (da 3.10.7+).
 RUN apt-get update && apt-get install -y \
-    python3.11 python3.11-venv python3-pip \
+    python3 python3-venv python3-dev python3-pip \
     git wget curl \
     libgl1-mesa-glx libglib2.0-0 libsm6 libxext6 libxrender-dev \
     ffmpeg \
     && rm -rf /var/lib/apt/lists/*
-
-RUN ln -sf /usr/bin/python3.11 /usr/bin/python3 && \
-    ln -sf /usr/bin/python3.11 /usr/bin/python
 
 # ── ComfyUI ───────────────────────────────────────────────────────────────────
 WORKDIR /comfyui
