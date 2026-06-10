@@ -3,6 +3,22 @@
 import sys, os
 print(f"[STARTUP] Python {sys.version} | pid={os.getpid()}", flush=True)
 
+# CUDA DIAGNOSTIC: verifica esatta SM 12.x compatibility prima di qualsiasi altro import
+try:
+    import torch
+    print(f"[CUDA] torch={torch.__version__} cuda_compiled={torch.version.cuda}", flush=True)
+    if torch.cuda.is_available():
+        dev = torch.cuda.get_device_name(0)
+        cap = torch.cuda.get_device_capability(0)
+        print(f"[CUDA] device={dev} SM={cap[0]}.{cap[1]}", flush=True)
+        # Stesso kernel test usato da start.sh — se crasha qui vediamo l'errore esatto
+        result = (torch.zeros(8, device='cuda') + 1).sum().item()
+        print(f"[CUDA] kernel test OK result={result}", flush=True)
+    else:
+        print("[CUDA] torch.cuda.is_available() = False", flush=True)
+except Exception as _cuda_e:
+    print(f"[CUDA] ERROR: {_cuda_e}", flush=True)
+
 """
 RunPod Serverless Handler — ComfyUI Worker
 Avvia ComfyUI internamente, riceve workflow in formato API, restituisce output.

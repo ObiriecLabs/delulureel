@@ -24,7 +24,9 @@ RUN chmod +x /install_nodes.sh && /install_nodes.sh
 COPY extra_model_paths.yaml /comfyui/extra_model_paths.yaml
 
 # ── Handler custom (background thread + S3/R2 output) ────────────────────────
-# Sovrascrive il handler.py originale dell'immagine base — start.sh lo chiamerà.
-# NON fare override di CMD: lasciamo che start.sh gestisca GPU validation +
-# avvio ComfyUI + invocazione handler. Handler.py rileva se ComfyUI è già up.
+# CMD override: bypassiamo start.sh che fa GPU check con kernel reale e crasha
+# su SM 12.x se PyTorch non ha cubins per Blackwell (exit 1 → throttle).
+# Il diagnostico CUDA in handler.py dirà esattamente cosa succede.
 COPY handler.py /handler.py
+
+CMD ["python", "-u", "/handler.py"]
