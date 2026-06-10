@@ -4,6 +4,11 @@ ENV DEBIAN_FRONTEND=noninteractive
 ENV PYTHONUNBUFFERED=1
 ENV COMFYUI_PATH=/comfyui
 ENV RUNPOD_VOLUME=/runpod-volume
+# Disabilita torch.compile / dynamo — evita il crash di comfy_kitchen
+# su Python Ubuntu 22.04 (comfy/quant_ops.py → torch._dynamo/polyfills/sys.py →
+# AttributeError: module 'sys' has no attribute 'get_int_max_str_digits')
+ENV TORCHDYNAMO_DISABLE=1
+ENV TORCH_COMPILE_DISABLE=1
 
 # ── System deps ──────────────────────────────────────────────────────────────
 # NOTA: python3.11 dall'apt Ubuntu 22.04 è 3.11.0rc1 (pre-release) — manca
