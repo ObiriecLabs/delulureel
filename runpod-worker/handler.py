@@ -59,7 +59,7 @@ def _start_comfyui():
         "--listen", COMFYUI_HOST,
         "--port", str(COMFYUI_PORT),
         "--disable-auto-launch",
-        "--cuda-malloc",
+        # --cuda-malloc rimosso: causa hang silenzioso su Blackwell (SM 10.x)
         "--extra-model-paths-config", "/comfyui/extra_model_paths.yaml",
     ]
     log_f = open(_COMFYUI_LOG, "w")
