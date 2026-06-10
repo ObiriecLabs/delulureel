@@ -1,4 +1,4 @@
-FROM nvidia/cuda:12.8.0-cudnn9-runtime-ubuntu22.04
+FROM nvidia/cuda:12.6.3-cudnn-runtime-ubuntu22.04
 
 ENV DEBIAN_FRONTEND=noninteractive
 ENV PYTHONUNBUFFERED=1
@@ -20,7 +20,7 @@ RUN ln -sf /usr/bin/python3.11 /usr/bin/python3 && \
 WORKDIR /comfyui
 RUN git clone --depth=1 https://github.com/comfyanonymous/ComfyUI.git . && \
     pip3 install --no-cache-dir torch torchvision torchaudio \
-        --index-url https://download.pytorch.org/whl/cu128 && \
+        --index-url https://download.pytorch.org/whl/cu126 && \
     pip3 install --no-cache-dir -r requirements.txt
 
 # ── RunPod SDK + S3 (output object storage) ──────────────────────────────────
