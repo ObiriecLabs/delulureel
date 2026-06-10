@@ -11,6 +11,7 @@ IMPORTANTE:
 """
 import runpod
 import subprocess
+import sys
 import time
 import json
 import urllib.request
@@ -54,8 +55,9 @@ else:
 _COMFYUI_LOG = "/tmp/comfyui.log"
 
 def _start_comfyui():
+    # sys.executable: punta sempre all'interprete corrente (funziona in conda e venv)
     cmd = [
-        "python3", "/comfyui/main.py",
+        sys.executable, "/comfyui/main.py",
         "--listen", COMFYUI_HOST,
         "--port", str(COMFYUI_PORT),
         "--disable-auto-launch",
@@ -179,8 +181,14 @@ def _save_input_images(images: list) -> list:
 
 # ── Avvio ComfyUI al boot del container ──────────────────────────────────────
 
-print("[BOOT] Starting ComfyUI...")
-_proc = _start_comfyui()
+print(f"[BOOT] Python: {sys.executable} {sys.version}")
+print(f"[BOOT] Starting ComfyUI...")
+try:
+    _proc = _start_comfyui()
+except Exception as e:
+    print(f"[BOOT] FATAL: failed to launch ComfyUI process: {e}", flush=True)
+    raise
+
 if not _wait_for_comfyui():
     raise RuntimeError("ComfyUI failed to start within 10 minutes")
 print("[BOOT] ComfyUI ready.")
