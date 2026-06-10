@@ -171,6 +171,7 @@ fetch('/video/history')
       );
 
       card.innerHTML = `
+        <button class="btn-reel-delete btn-delete-failed" data-job-id="${job.id}" title="${job.status === 'completed' ? I18N.deleteConfirm : ''}">🗑</button>
         <div class="reel-thumb ${job.status !== 'completed' ? 'reel-thumb-pending' : ''}">
           ${job.status === 'completed'
             ? `<video src="${job.output_url}" muted playsinline loop class="reel-video" onmouseenter="this.play()" onmouseleave="this.pause()"></video>`
@@ -189,17 +190,13 @@ fetch('/video/history')
           <div class="reel-actions">
             <a href="${job.output_url}" download class="btn btn-ghost btn-sm">${I18N.download}</a>
             <a href="/result/${job.id}" class="btn btn-sm btn-outline">${I18N.view}</a>
-            <button class="btn btn-sm btn-ghost btn-delete-failed" data-job-id="${job.id}" style="opacity:0.45;font-size:0.75rem" title="${I18N.deleteConfirm}">${I18N.deleteReel}</button>
           </div>` : ''
         }
         ${job.status !== 'completed' && job.status !== 'failed'
           ? `<div class="reel-actions">
                <a href="/result/${job.id}" class="btn btn-sm btn-ghost">${I18N.checkStatus}</a>
-               <button class="btn btn-sm btn-ghost btn-delete-failed" data-job-id="${job.id}" style="opacity:0.5;font-size:0.75rem">${I18N.cancelJob}</button>
              </div>`
-          : job.status === 'failed'
-            ? `<div class="reel-actions"><button class="btn btn-sm btn-ghost btn-delete-failed" data-job-id="${job.id}">${I18N.deleteFailed}</button></div>`
-            : ''
+          : ''
         }
       `;
       grid.appendChild(card);
