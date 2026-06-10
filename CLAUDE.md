@@ -1,5 +1,5 @@
 # DELULUREEL — CLAUDE.md
-*Ultimo aggiornamento: 2026-05-06*
+*Ultimo aggiornamento: 2026-06-11*
 *Progetto: OBIRIEC LABS — Armando Brecciaroli*
 
 ---
@@ -28,7 +28,7 @@ Eseguire la skill `delulureel-saas-model` per ricaricare il contesto completo de
 | Database    | Supabase (PostgreSQL + Auth) | `schema.sql` pronto                 |
 | Auth        | Supabase Auth + JWT          | sessione Flask (cookie)             |
 | Pagamenti   | Stripe Subscriptions         | trial 7gg, card obbligatoria        |
-| Video AI    | fal.ai — Kling 3.0 Pro       | $0.112/sec · endpoint in `.env`     |
+| Video AI    | RunPod Serverless + ComfyUI  | endpoint `a007azjm8d8r4k` · WAN 2.2 I2V · NO fal.ai |
 | Scene AI    | Anthropic Claude             | `claude-sonnet-4-6`                 |
 | Audio       | librosa                      | BPM, beat_times, energy peaks       |
 | Assembly    | FFmpeg / ffmpeg-python       | concat + audio sync + 9:16/16:9/1:1 |
@@ -88,6 +88,10 @@ DELULUREEL/
 - **pg_dump Supabase** prima di ogni modifica schema — usare Supabase CLI o dashboard backup.
 - **MAI pushare su Render senza conferma esplicita di Armando.**
 - **MAI usare API key Admin di fal.ai nel codice — solo chiave API normale.**
+- **VINCOLO ARCHITETTURALE PERMANENTE: NON CI DEVONO ESSERE CHIAVI API TERZE PARTI SERVER-SIDE** — niente Anthropic, fal.ai o altri a uso degli utenti. Solo RunPod (metered per job). ComfyUI su RunPod è l'unico motore generativo.
+- **RunPod endpoint**: `a007azjm8d8r4k` — ComfyUI 5.8.5 — API key in `.env` / Fly.io secrets (`RUNPOD_API_KEY`)
+- **Deploy video**: `flyctl deploy --app delulureel` — NON Render (Render = staging only)
+- **RunPod scalabilità**: aumentare `workersMax` via API call (`saveEndpoint`) senza toccare nulla altro
 
 ---
 
@@ -398,10 +402,47 @@ _run_assembly (thread breve ~120s, su istanza che ha ricevuto l'ultimo webhook):
 
 **Ultimo commit**: `8401501` — feat: automatic clip recovery from fal.ai for stuck interactive jobs
 
+---
+
+### Sessione RunPod (2026-06-10/11) — Infrastruttura ComfyUI completata
+
+**Decisione architetturale**: abbandonato fal.ai come motore video. Migrazione a **RunPod Serverless + ComfyUI** per eliminare dipendenza da API key terze parti server-side.
+
+**Infrastruttura RunPod finale:**
+
+| Risorsa | ID | Dettaglio |
+|---|---|---|
+| Endpoint ComfyUI | `a007azjm8d8r4k` | worker-comfyui v5.8.5 |
+| Volume modelli | `l5r5s053ee` | delulureel-models-fr, EU-FR-1, 300GB |
+| GPU pool | `HOPPER_141,ADA_80_PRO,AMPERE_80` | H200+RTX6000Ada+A100 |
+| workersMin/Max | 0 / 3 | idleTimeout=60s |
+| API key | `rpa_RPG0BX...` (env var `RUNPOD_API_KEY` su Fly.io) | nome: delulureel-fly |
+
+**Modelli scaricati sul volume (34 file, ~190GB):**
+- WAN 2.2 I2V high/low noise 14B fp8 (pipeline principale)
+- WAN 2.2 T2V high/low noise 14B fp8
+- WAN 2.1 I2V 14B 720P fp8
+- WAN InfiniteTalk Single Q8
+- LTX 2.3 22B fp8 + LoRA distilled
+- Flux1 Krea Dev fp8
+- LoRA LightX2V (4-step, I2V + T2V)
+- Clip vision, text encoders (CLIP-L, Gemma 3 12B fp4), ControlNet
+
+**EUR-IS-1 eliminato** (volume + endpoint) — troppi supply constraint, non affidabile.
+
+**File aggiunti al repo:**
+- `runpod-worker/download-helper/handler.py` + `Dockerfile` — worker temporaneo per popolare volumi
+- `runpod-worker/download_models.sh` — script wget 190GB CORE
+- `runpod-worker/MODELS_MANIFEST.md` — manifest completo modelli
+- `.github/workflows/build-download-helper.yml` — build GHCR pubblico
+- `ghcr.io/obirieclabs/download-helper:latest` — immagine pubblica GHCR
+
 **Prossimi step:**
-1. **TEST end-to-end su produzione** — signup → trial → upload foto+audio → generazione 30s (3 clip via webhook) → assembly → download reel
-2. **Landing page** — quella attuale è placeholder statico; serve landing vera con pricing, demo video, CTA per traffico organico
-3. Aggiungere nota in `render.yaml` che Render non è produzione (evitare confusione futura)
+1. **Collegare backend Fly.io → endpoint RunPod `a007azjm8d8r4k`** — sostituire chiamate fal.ai con RunPod API
+2. **Implementare workflow ComfyUI WAN 2.2 I2V** — JSON workflow per foto+audio→video
+3. **Aggiungere custom nodes** al worker: ComfyUI-WanVideoWrapper, KJNodes, VideoHelperSuite (richiede Dockerfile custom sopra worker-comfyui)
+4. **Cloudflare R2** per output video (handler ufficiale supporta `BUCKET_ENDPOINT_URL`)
+5. **Warm-up heartbeat** su Fly.io — ping ogni 15 min ore 7-01 per tenere worker caldo a costo zero
 
 ---
 
