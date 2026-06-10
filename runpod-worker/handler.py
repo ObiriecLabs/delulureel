@@ -1,4 +1,9 @@
 """
+# DIAGNOSTIC: stampa immediatamente prima di qualsiasi import — visibile anche se tutto crasha
+import sys, os
+print(f"[STARTUP] Python {sys.version} | pid={os.getpid()}", flush=True)
+
+"""
 RunPod Serverless Handler — ComfyUI Worker
 Avvia ComfyUI internamente, riceve workflow in formato API, restituisce output.
 
@@ -39,17 +44,22 @@ BUCKET_PUBLIC_URL      = os.environ.get("BUCKET_PUBLIC_URL", "").rstrip("/")
 
 _s3 = None
 if BUCKET_ENDPOINT_URL and BUCKET_ACCESS_KEY_ID and BUCKET_NAME:
-    import boto3
-    _s3 = boto3.client(
-        "s3",
-        endpoint_url=BUCKET_ENDPOINT_URL,
-        aws_access_key_id=BUCKET_ACCESS_KEY_ID,
-        aws_secret_access_key=BUCKET_SECRET_ACCESS_KEY,
-        region_name="auto",
-    )
-    print("[BOOT] S3 output storage configured.")
+    try:
+        import boto3
+        _s3 = boto3.client(
+            "s3",
+            endpoint_url=BUCKET_ENDPOINT_URL,
+            aws_access_key_id=BUCKET_ACCESS_KEY_ID,
+            aws_secret_access_key=BUCKET_SECRET_ACCESS_KEY,
+            region_name="auto",
+        )
+        print("[BOOT] S3 output storage configured.", flush=True)
+    except ImportError:
+        print("[BOOT] WARNING: boto3 not installed — S3 disabled, outputs will be base64.", flush=True)
+    except Exception as e:
+        print(f"[BOOT] WARNING: S3 init failed ({e}) — outputs will be base64.", flush=True)
 else:
-    print("[BOOT] No S3 configured — outputs will be base64 (test mode only).")
+    print("[BOOT] No S3 configured — outputs will be base64 (test mode only).", flush=True)
 
 # ── ComfyUI lifecycle ─────────────────────────────────────────────────────────
 

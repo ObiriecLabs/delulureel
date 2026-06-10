@@ -13,6 +13,9 @@ ENV RUNPOD_VOLUME=/runpod-volume
 ENV TORCHDYNAMO_DISABLE=1
 ENV TORCH_COMPILE_DISABLE=1
 
+# ── Dipendenze Python garantite (boto3 potrebbe mancare nell'immagine NGC) ───
+RUN /opt/venv/bin/pip install --no-cache-dir boto3
+
 # ── Custom nodes WAN 2.2 I2V ─────────────────────────────────────────────────
 COPY install_nodes.sh /install_nodes.sh
 RUN chmod +x /install_nodes.sh && /install_nodes.sh
