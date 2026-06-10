@@ -202,7 +202,21 @@ _proc = None
 def _boot_comfyui():
     global _proc, _comfyui_error
     print(f"[BOOT] Python: {sys.executable} {sys.version}", flush=True)
-    print("[BOOT] Starting ComfyUI (background thread)...", flush=True)
+
+    # Se start.sh ha già avviato ComfyUI (immagine base NGC), lo rileva e non rilancia.
+    # Aspetta fino a 60s che start.sh finisca di avviarlo prima di rinunciare e partire noi.
+    print("[BOOT] Checking if ComfyUI already running (start.sh may have launched it)...", flush=True)
+    for i in range(60):
+        try:
+            urllib.request.urlopen(f"{COMFYUI_URL}/system_stats", timeout=2)
+            print(f"[BOOT] ComfyUI already up after {i}s — skipping self-launch.", flush=True)
+            _comfyui_ready.set()
+            return
+        except Exception:
+            time.sleep(1)
+
+    # ComfyUI non è partito da start.sh: lo avviamo noi (CMD override scenario).
+    print("[BOOT] ComfyUI not detected — launching self...", flush=True)
     try:
         _proc = _start_comfyui()
     except Exception as e:
