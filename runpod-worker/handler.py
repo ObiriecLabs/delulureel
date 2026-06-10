@@ -51,6 +51,8 @@ else:
 
 # ── ComfyUI lifecycle ─────────────────────────────────────────────────────────
 
+_COMFYUI_LOG = "/tmp/comfyui.log"
+
 def _start_comfyui():
     cmd = [
         "python3", "/comfyui/main.py",
@@ -60,15 +62,30 @@ def _start_comfyui():
         "--cuda-malloc",
         "--extra-model-paths-config", "/comfyui/extra_model_paths.yaml",
     ]
-    return subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.STDOUT)
+    log_f = open(_COMFYUI_LOG, "w")
+    return subprocess.Popen(cmd, stdout=log_f, stderr=log_f)
 
-def _wait_for_comfyui(timeout=180):
-    for _ in range(timeout):
+def _tail_comfyui_log(chars=4000) -> str:
+    try:
+        with open(_COMFYUI_LOG) as f:
+            return f.read()[-chars:]
+    except Exception:
+        return "(log unavailable)"
+
+def _wait_for_comfyui(timeout=600):
+    for i in range(timeout):
+        # Fail fast: if ComfyUI process died, no point waiting
+        if _proc.poll() is not None:
+            print(f"[BOOT] ComfyUI process exited (code {_proc.poll()}) after {i}s. Log tail:\n{_tail_comfyui_log()}")
+            return False
         try:
             urllib.request.urlopen(f"{COMFYUI_URL}/system_stats", timeout=2)
             return True
         except Exception:
+            if i > 0 and i % 60 == 0:
+                print(f"[BOOT] Still waiting for ComfyUI... {i}s elapsed. Log tail:\n{_tail_comfyui_log(1500)}")
             time.sleep(1)
+    print(f"[BOOT] ComfyUI startup timeout ({timeout}s). Log tail:\n{_tail_comfyui_log()}")
     return False
 
 def _submit_prompt(workflow: dict) -> str:
@@ -165,7 +182,7 @@ def _save_input_images(images: list) -> list:
 print("[BOOT] Starting ComfyUI...")
 _proc = _start_comfyui()
 if not _wait_for_comfyui():
-    raise RuntimeError("ComfyUI failed to start within 3 minutes")
+    raise RuntimeError("ComfyUI failed to start within 10 minutes")
 print("[BOOT] ComfyUI ready.")
 
 # ── Handler ───────────────────────────────────────────────────────────────────
