@@ -35,6 +35,8 @@
     "check_status": "Vérifier le statut",
     "delete_failed": "Supprimer",
     "cancel_job": "Annuler et supprimer",
+    "delete_reel": "Supprimer",
+    "delete_confirm": "Avez-vous déjà téléchargé une copie ? La suppression est irréversible.",
     "date_locale": "fr-FR"
   },
   "upload": {

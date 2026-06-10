@@ -1522,8 +1522,7 @@ def delete_job(job_id):
     row = sb.table('reel_jobs').select('id,status').eq('id', job_id).eq('user_id', user_id).maybe_single().execute()
     if not row.data:
         return jsonify({'error': 'Not found'}), 404
-    if row.data['status'] == 'completed':
-        return jsonify({'error': 'Completed jobs cannot be deleted'}), 400
+    # Tutti gli stati sono eliminabili dall'utente
     sb.table('reel_jobs').delete().eq('id', job_id).eq('user_id', user_id).execute()
     return jsonify({'ok': True})
 

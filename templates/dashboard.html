@@ -89,6 +89,8 @@ const I18N = {
   checkStatus:     {{ t('dashboard.check_status')     | tojson }},
   deleteFailed:    {{ t('dashboard.delete_failed')    | tojson }},
   cancelJob:       {{ t('dashboard.cancel_job')       | tojson }},
+  deleteReel:      {{ t('dashboard.delete_reel')      | tojson }},
+  deleteConfirm:   {{ t('dashboard.delete_confirm')   | tojson }},
 };
 
 const urlParams = new URLSearchParams(window.location.search);
@@ -187,6 +189,7 @@ fetch('/video/history')
           <div class="reel-actions">
             <a href="${job.output_url}" download class="btn btn-ghost btn-sm">${I18N.download}</a>
             <a href="/result/${job.id}" class="btn btn-sm btn-outline">${I18N.view}</a>
+            <button class="btn btn-sm btn-ghost btn-delete-failed" data-job-id="${job.id}" style="opacity:0.45;font-size:0.75rem" title="${I18N.deleteConfirm}">${I18N.deleteReel}</button>
           </div>` : ''
         }
         ${job.status !== 'completed' && job.status !== 'failed'
@@ -207,6 +210,9 @@ fetch('/video/history')
       const btn = e.target.closest('.btn-delete-failed');
       if (!btn) return;
       const jobId = btn.dataset.jobId;
+      const card = btn.closest('.reel-card');
+      const isCompleted = card && card.querySelector('.status-ok');
+      if (isCompleted && !confirm(I18N.deleteConfirm)) return;
       btn.disabled = true;
       fetch(`/video/job/${jobId}`, { method: 'DELETE', headers: { 'X-Requested-With': 'XMLHttpRequest' } })
         .then(r => r.json())

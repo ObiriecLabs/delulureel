@@ -35,6 +35,8 @@
     "check_status": "Ver estado",
     "delete_failed": "Eliminar",
     "cancel_job": "Cancelar y eliminar",
+    "delete_reel": "Eliminar",
+    "delete_confirm": "¿Ya descargaste una copia? La eliminación es irreversible.",
     "date_locale": "es-ES"
   },
   "upload": {

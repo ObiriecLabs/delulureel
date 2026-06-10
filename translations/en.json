@@ -35,6 +35,8 @@
     "check_status": "Check status",
     "delete_failed": "Delete",
     "cancel_job": "Cancel & delete",
+    "delete_reel": "Delete",
+    "delete_confirm": "Have you already downloaded a copy? Deletion is irreversible and the reel cannot be recovered.",
     "date_locale": "en-GB"
   },
   "upload": {

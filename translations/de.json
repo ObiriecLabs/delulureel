@@ -35,6 +35,8 @@
     "check_status": "Status prüfen",
     "delete_failed": "Löschen",
     "cancel_job": "Abbrechen & löschen",
+    "delete_reel": "Löschen",
+    "delete_confirm": "Haben Sie bereits eine Kopie heruntergeladen? Das Löschen ist unwiderruflich.",
     "date_locale": "de-DE"
   },
   "upload": {
