@@ -33,6 +33,7 @@
     "download": "Descargar",
     "view": "Ver",
     "check_status": "Ver estado",
+    "delete_failed": "Eliminar",
     "date_locale": "es-ES"
   },
   "upload": {

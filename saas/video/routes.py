@@ -1511,6 +1511,23 @@ def history():
     return jsonify(jobs.data)
 
 
+# ── Delete failed job ─────────────────────────────────────────────────────────
+
+@video_bp.route('/job/<job_id>', methods=['DELETE'])
+@require_auth_api
+def delete_job(job_id):
+    user_id = request.current_user.id
+    sb = _sb_service()
+    # Verifica che il job appartenga all'utente e sia effettivamente fallito
+    row = sb.table('reel_jobs').select('id,status').eq('id', job_id).eq('user_id', user_id).maybe_single().execute()
+    if not row.data:
+        return jsonify({'error': 'Not found'}), 404
+    if row.data['status'] not in ('failed', 'cancelled'):
+        return jsonify({'error': 'Only failed or cancelled jobs can be deleted'}), 400
+    sb.table('reel_jobs').delete().eq('id', job_id).eq('user_id', user_id).execute()
+    return jsonify({'ok': True})
+
+
 # ── Profile info ──────────────────────────────────────────────────────────────
 
 @video_bp.route('/profile')

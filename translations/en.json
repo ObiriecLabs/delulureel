@@ -33,6 +33,7 @@
     "download": "Download",
     "view": "View",
     "check_status": "Check status",
+    "delete_failed": "Delete",
     "date_locale": "en-GB"
   },
   "upload": {
