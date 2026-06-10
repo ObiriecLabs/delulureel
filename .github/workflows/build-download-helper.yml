@@ -26,20 +26,38 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Build and push download-helper
+      - name: Build and push to GHCR
         uses: docker/build-push-action@v5
         with:
           context: ./runpod-worker/download-helper
           push: true
           tags: ghcr.io/${{ steps.lower.outputs.owner }}/download-helper:latest
 
-      - name: Set package visibility to public
+      - name: Also push to ttl.sh (public anonymous registry, 24h TTL)
+        # ttl.sh non richiede login — immagine pubblica e pullabile subito da RunPod
+        uses: docker/build-push-action@v5
+        with:
+          context: ./runpod-worker/download-helper
+          push: true
+          tags: ttl.sh/${{ steps.lower.outputs.owner }}/download-helper:24h
+
+      - name: Output pull URLs
+        run: |
+          echo "=== IMAGE URLS ==="
+          echo "GHCR (privata): ghcr.io/${{ steps.lower.outputs.owner }}/download-helper:latest"
+          echo "ttl.sh (pubblica, scade 24h): ttl.sh/${{ steps.lower.outputs.owner }}/download-helper:24h"
+          echo ""
+          echo "Usa ttl.sh per RunPod se GHCR è ancora privata."
+          echo "Per rendere GHCR pubblica permanentemente:"
+          echo "https://github.com/${{ github.repository_owner }}?tab=packages → download-helper → Package settings → Change visibility → Public"
+
+      - name: Try to set GHCR package to public (needs write:packages PAT)
         run: |
           sleep 5
           gh api -X PATCH \
-            /orgs/${{ github.repository_owner }}/packages/container/download-helper \
+            /user/packages/container/download-helper \
             --field visibility=public \
-            && echo "Package set to public" \
-            || echo "Visibility not changed — set manually from GitHub Packages"
+            && echo "GHCR package ora pubblico" \
+            || echo "GHCR package resta privato — usa ttl.sh per il download immediato"
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
