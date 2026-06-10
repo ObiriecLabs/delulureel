@@ -13,6 +13,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Set lowercase owner
+        id: lower
+        run: echo "owner=${OWNER,,}" >> $GITHUB_OUTPUT
+        env:
+          OWNER: ${{ github.repository_owner }}
+
       - name: Login to GHCR
         uses: docker/login-action@v3
         with:
@@ -25,7 +31,7 @@ jobs:
         with:
           context: ./runpod-worker/download-helper
           push: true
-          tags: ghcr.io/${{ github.repository_owner }}/download-helper:latest
+          tags: ghcr.io/${{ steps.lower.outputs.owner }}/download-helper:latest
 
       - name: Set package visibility to public
         run: |
@@ -33,7 +39,7 @@ jobs:
           gh api -X PATCH \
             /orgs/${{ github.repository_owner }}/packages/container/download-helper \
             --field visibility=public \
-            && echo "✅ Package set to public" \
-            || echo "⚠️  Visibility not changed — set manually from GitHub Packages"
+            && echo "Package set to public" \
+            || echo "Visibility not changed — set manually from GitHub Packages"
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
