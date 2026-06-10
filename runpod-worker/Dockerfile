@@ -1,53 +1,24 @@
-# nvidia/cuda:12.6.3 + Ubuntu 22.04 + Python 3.11 STABILE da deadsnakes PPA.
-# Ubuntu 22.04 main repo ha python3.11=3.11.0rc1 (broken) — deadsnakes dà 3.11.9+.
-# PyTorch 2.6+ con cu126: unico release con supporto nativo Blackwell SM 10.x.
-# pytorch/pytorch base (2.5.1, 2.6.0) crashava silenziosamente — causa conda env.
-FROM nvidia/cuda:12.6.3-cudnn-runtime-ubuntu22.04
+# RunPod official Blackwell fix — NGC base con supporto nativo SM 12.x.
+# fix-dr-1170: bug aperto su startup crash + variante NGC per RTX PRO 6000 SM 12.x.
+# PyTorch wheel standard (cu118/cu126) mancano dei cubins SM 12.0/12.2 → crash silenzioso.
+# L'immagine NGC include CUDA nativo compilato per SM 12.x da NVIDIA direttamente.
+FROM runpod/worker-comfyui:fix-dr-1170-ngc-base-blackwell
 
-ENV DEBIAN_FRONTEND=noninteractive
 ENV PYTHONUNBUFFERED=1
 ENV COMFYUI_PATH=/comfyui
 ENV RUNPOD_VOLUME=/runpod-volume
-# Disabilita TorchDynamo — causa crash silenzioso su Blackwell SM 10.x
+# Disabilita dynamo — sicurezza aggiuntiva su Blackwell (non interferisce con NGC)
 ENV TORCHDYNAMO_DISABLE=1
 ENV TORCH_COMPILE_DISABLE=1
 
-# ── Python 3.11 stabile (deadsnakes) + system deps ───────────────────────────
-RUN apt-get update && apt-get install -y software-properties-common curl && \
-    add-apt-repository ppa:deadsnakes/ppa && \
-    apt-get update && apt-get install -y \
-        python3.11 python3.11-dev python3.11-distutils \
-        git wget \
-        libgl1-mesa-glx libglib2.0-0 libsm6 libxext6 libxrender-dev \
-        ffmpeg \
-    && rm -rf /var/lib/apt/lists/*
-
-# ── pip + alias ───────────────────────────────────────────────────────────────
-RUN curl -sS https://bootstrap.pypa.io/get-pip.py | python3.11 && \
-    update-alternatives --install /usr/bin/python  python  /usr/bin/python3.11 1 && \
-    update-alternatives --install /usr/bin/python3 python3 /usr/bin/python3.11 1
-
-# ── PyTorch 2.6 + CUDA 12.6 (SM 10.x Blackwell nativo) ──────────────────────
-RUN pip install --no-cache-dir \
-    torch torchvision torchaudio \
-    --index-url https://download.pytorch.org/whl/cu126
-
-# ── ComfyUI (escludi torch da requirements per non sovrascrivere con CPU build)
-WORKDIR /comfyui
-RUN git clone --depth=1 https://github.com/comfyanonymous/ComfyUI.git . && \
-    grep -vE '^torch' requirements.txt > /tmp/comfyui_reqs.txt && \
-    pip install --no-cache-dir -r /tmp/comfyui_reqs.txt
-
-# ── RunPod SDK + S3 ──────────────────────────────────────────────────────────
-RUN pip install --no-cache-dir runpod requests boto3
-
-# ── Custom nodes ─────────────────────────────────────────────────────────────
+# ── Custom nodes WAN 2.2 I2V ─────────────────────────────────────────────────
 COPY install_nodes.sh /install_nodes.sh
 RUN chmod +x /install_nodes.sh && /install_nodes.sh
 
-# ── Config + Handler ─────────────────────────────────────────────────────────
+# ── Model paths → Network Volume EUR-IS-1 ────────────────────────────────────
 COPY extra_model_paths.yaml /comfyui/extra_model_paths.yaml
+
+# ── Handler custom (background thread + S3/R2 output) ────────────────────────
 COPY handler.py /handler.py
 
-EXPOSE 8188
 CMD ["python", "-u", "/handler.py"]
