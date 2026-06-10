@@ -1502,7 +1502,7 @@ def history():
     sb = _sb_service()
     jobs = (
         sb.table('reel_jobs')
-        .select('id,status,output_url,created_at,style,aspect_ratio,bpm')
+        .select('id,status,output_url,created_at,style,aspect_ratio,bpm,error_message')
         .eq('user_id', user_id)
         .order('created_at', desc=True)
         .limit(20)

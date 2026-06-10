@@ -257,6 +257,18 @@ body {
 .reel-bpm   { font-size: 11px; color: var(--primary); font-weight: 600; }
 .reel-date  { font-size: 11px; color: var(--muted); }
 .reel-actions { padding: 0 12px 12px; display: flex; gap: 8px; }
+.btn-save-log {
+  font-size: 11px;
+  color: var(--muted);
+  background: transparent;
+  border: 1px solid rgba(180,94,255,0.18);
+  border-radius: 6px;
+  padding: 4px 10px;
+  cursor: pointer;
+  transition: color .15s, border-color .15s;
+  white-space: nowrap;
+}
+.btn-save-log:hover { color: var(--primary); border-color: var(--primary); }
 
 /* ═══ UPLOAD PAGE ═════════════════════════════════════════════════════════ */
 .upload-container { max-width: 760px; }

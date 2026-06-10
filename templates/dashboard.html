@@ -91,6 +91,7 @@ const I18N = {
   cancelJob:       {{ t('dashboard.cancel_job')       | tojson }},
   deleteReel:      {{ t('dashboard.delete_reel')      | tojson }},
   deleteConfirm:   {{ t('dashboard.delete_confirm')   | tojson }},
+  saveLog:         {{ t('dashboard.save_log')         | tojson }},
 };
 
 const urlParams = new URLSearchParams(window.location.search);
@@ -192,6 +193,11 @@ fetch('/video/history')
             <a href="/result/${job.id}" class="btn btn-sm btn-outline">${I18N.view}</a>
           </div>` : ''
         }
+        ${job.status === 'failed' ? `
+          <div class="reel-actions">
+            <button class="btn btn-ghost btn-sm btn-save-log" data-job-id="${job.id}" data-created="${job.created_at || ''}" data-style="${job.style || ''}" data-ar="${job.aspect_ratio || ''}" data-bpm="${job.bpm || ''}" data-error="${(job.error_message || '').replace(/"/g, '&quot;')}">${I18N.saveLog}</button>
+          </div>` : ''
+        }
         ${job.status !== 'completed' && job.status !== 'failed'
           ? `<div class="reel-actions">
                <a href="/result/${job.id}" class="btn btn-sm btn-ghost">${I18N.checkStatus}</a>
@@ -200,6 +206,39 @@ fetch('/video/history')
         }
       `;
       grid.appendChild(card);
+    });
+
+    // Pulsante salva log job falliti
+    grid.addEventListener('click', e => {
+      const logBtn = e.target.closest('.btn-save-log');
+      if (!logBtn) return;
+      const jobId   = logBtn.dataset.jobId;
+      const created = logBtn.dataset.created
+        ? new Date(logBtn.dataset.created).toLocaleString(I18N.dateLocale)
+        : '—';
+      const lines = [
+        'DELULUREEL — Job Error Report',
+        '================================',
+        `Job ID:       ${jobId}`,
+        `Date:         ${created}`,
+        `Status:       failed`,
+        `Style:        ${logBtn.dataset.style || '—'}`,
+        `Aspect Ratio: ${logBtn.dataset.ar    || '—'}`,
+        `BPM:          ${logBtn.dataset.bpm   || '—'}`,
+        '',
+        'Error:',
+        logBtn.dataset.error || 'No error details available.',
+        '',
+        '================================',
+        'Support: obiriec@gmail.com',
+      ];
+      const blob = new Blob([lines.join('\n')], { type: 'text/plain' });
+      const url  = URL.createObjectURL(blob);
+      const a    = document.createElement('a');
+      a.href     = url;
+      a.download = `delulureel-log-${jobId.slice(0, 8)}.txt`;
+      a.click();
+      URL.revokeObjectURL(url);
     });
 
     // Pulsante elimina job falliti

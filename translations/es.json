@@ -37,6 +37,7 @@
     "cancel_job": "Cancelar y eliminar",
     "delete_reel": "Eliminar",
     "delete_confirm": "¿Ya descargaste una copia? La eliminación es irreversible.",
+    "save_log": "📋 Guardar log",
     "date_locale": "es-ES"
   },
   "upload": {

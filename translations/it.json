@@ -37,6 +37,7 @@
     "cancel_job": "Annulla e cancella",
     "delete_reel": "Elimina",
     "delete_confirm": "Hai già scaricato una copia del video? L'eliminazione è irreversibile e il reel non potrà essere recuperato.",
+    "save_log": "📋 Salva log",
     "date_locale": "it-IT"
   },
   "upload": {
