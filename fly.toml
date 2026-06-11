@@ -40,10 +40,10 @@ primary_region = 'ams'
   MAX_CONCURRENT_GLOBAL = '10'
   TRIAL_MAX_CREDITS = '6'
   SUPABASE_URL = 'https://iauotqpmxsapjflnlrgn.supabase.co'
-  # RunPod endpoint IDs (non-secret — solo ID pubblici degli endpoint)
-  # Le chiavi API vanno in: flyctl secrets set RUNPOD_API_KEY=...
-  RUNPOD_ENDPOINT_4090 = ''   # da impostare dopo deploy endpoint RunPod
-  RUNPOD_ENDPOINT_H100 = ''   # da impostare dopo deploy endpoint RunPod
+  # RunPod endpoint ID (non-secret — solo ID pubblico, letto da comfyui_client.py)
+  # RUNPOD_API_KEY → flyctl secrets set RUNPOD_API_KEY=rp_...
+  # endpoint attivo: a007azjm8d8r4k (GPU: H200 SXM / RTX 6000 Ada / A100 80GB — EU-FR-1)
+  RUNPOD_ENDPOINT = 'a007azjm8d8r4k'
 
 [[statics]]
   guest_path = '/app/static'

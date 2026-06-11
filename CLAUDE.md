@@ -77,6 +77,17 @@ DELULUREEL/
 
 ---
 
+## STORAGE ARCHITECTURE
+
+| Disco | Mount | Cosa ci va per DELULUREEL |
+|---|---|---|
+| **Crucial X9** | `/Volumes/Crucial X9/CLAUDE_Works/DELULUREEL` | Tutto il codice: Flask, Dockerfile, handler.py, workflow JSON API RunPod |
+| **ComfyUI_6TB** | `/Volumes/ComfyUI_6TB` | Solo file locali ComfyUI: workflow sviluppati in UI, modelli per test locale, cache |
+
+**Regola**: mai creare sottocartelle di progetto su ComfyUI_6TB. I workflow JSON da inviare a RunPod (payload API) vivono nel repo, non su ComfyUI_6TB.
+
+---
+
 ## REGOLE OPERATIVE CRITICHE
 
 - **DAILY_BUDGET_CAP_USD = 200** — hard stop in `saas/video/routes.py`. MAI aumentare senza analisi costi.

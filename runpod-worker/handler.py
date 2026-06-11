@@ -193,15 +193,28 @@ def _collect_outputs(history: dict, job_id: str) -> list:
     return results
 
 def _save_input_images(images: list) -> list:
+    """
+    Salva immagini in INPUT_DIR. Accetta due forme per ogni entry:
+      {"name": "photo.jpg", "url": "https://..."}   ← download da URL (Supabase Storage)
+      {"name": "photo.jpg", "data": "<base64>"}      ← base64 inline (o "image" key)
+    Restituisce lista di filename salvati.
+    """
     os.makedirs(INPUT_DIR, exist_ok=True)
     saved = []
     for img in images:
         name = img.get("name", f"input_{uuid.uuid4().hex[:8]}.png")
-        # accetta sia "data" che "image" (convenzione worker-comfyui ufficiale)
-        b64 = img.get("data") or img.get("image")
         path = os.path.join(INPUT_DIR, name)
-        with open(path, "wb") as f:
-            f.write(base64.b64decode(b64))
+        url = img.get("url")
+        if url:
+            with urllib.request.urlopen(url, timeout=60) as resp:
+                data = resp.read()
+            with open(path, "wb") as f:
+                f.write(data)
+        else:
+            # accetta sia "data" che "image" (convenzione worker-comfyui ufficiale)
+            b64 = img.get("data") or img.get("image")
+            with open(path, "wb") as f:
+                f.write(base64.b64decode(b64))
         saved.append(name)
     return saved
 

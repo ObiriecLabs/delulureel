@@ -243,12 +243,53 @@ def health():
 
 
 import threading
+import time as _bg_time
 from saas.video.routes import _startup_recovery, _periodic_recovery_sweep
 # Startup recovery: rescues orphaned jobs after a deploy/restart.
 # Periodic sweep: every 10 min, recovers interactive clips stuck in 'generating'.
 # Both use a short initial delay so httpcore is fully initialised first.
 threading.Timer(5.0, _startup_recovery).start()
 threading.Thread(target=_periodic_recovery_sweep, daemon=True).start()
+
+
+def _runpod_health_monitor():
+    """
+    Monitoraggio endpoint RunPod ogni 10 min (07:00-01:00 Rome).
+    Chiama solo /health — nessun job GPU, nessun costo.
+    Utile per sapere se il pool ha worker attivi prima che arrivino job reali.
+
+    NOTA COSTI: warmup GPU attivo (workersMin≥1) H200 SXM = ~$1,500/mese.
+    Warmup tramite job finti = ~$195/mese per 72 ping/giorno.
+    Entrambi non giustificati per il volume MVP — si accetta cold start (3-5 min).
+    """
+    from datetime import datetime, timezone, timedelta
+    from core.comfyui_client import queue_depth
+
+    ROME_OFFSET = timedelta(hours=2)   # CEST; adeguare a +1 in inverno se necessario
+    CHECK_INTERVAL = 600               # 10 minuti
+
+    _bg_time.sleep(30)   # lascia partire completamente il server prima di pollare
+    while True:
+        try:
+            now_rome = datetime.now(timezone.utc) + ROME_OFFSET
+            hour = now_rome.hour
+            # 07:00-01:00 Rome = hour in {7..23, 0}
+            in_active_hours = (7 <= hour <= 23) or (hour == 0)
+            if in_active_hours:
+                depth = queue_depth()
+                marker = '⚠️ COLD' if depth == 0 else '✅'
+                print(
+                    f'[runpod] heartbeat {marker} — queue={depth} '
+                    f'at {now_rome.strftime("%H:%M")} Rome',
+                    flush=True,
+                )
+        except Exception as exc:
+            print(f'[runpod] heartbeat error: {exc}', flush=True)
+        _bg_time.sleep(CHECK_INTERVAL)
+
+
+if os.getenv('RUNPOD_API_KEY') and os.getenv('RUNPOD_ENDPOINT'):
+    threading.Thread(target=_runpod_health_monitor, daemon=True).start()
 
 
 def _find_free_port(start: int = 5000, end: int = 5100) -> int:

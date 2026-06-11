@@ -42,7 +42,6 @@ from core.comfyui_client import (
 from core.studio_workflows import (
     load_template,
     substitute,
-    apply_prompt,
     randomize_seeds,
     find_nodes_by_class,
 )
@@ -74,8 +73,20 @@ MAX_WAIT_SEC      = int(os.getenv('RUNPOD_MAX_WAIT_SEC',  '3600'))  # ceiling 1h
 _ASPECT_DIMS: dict = {
     '9:16': (480, 832),   # portrait  — AR principale DeluluReel
     '16:9': (832, 480),   # landscape
-    '1:1':  (640, 640),   # quadrato
+    '1:1':  (608, 608),   # quadrato — multiplo di 32 compatibile con WAN 2.2
 }
+
+# Frames default per aspect ratio (16fps): 81=5s | 121=7.5s | 161=10s (WAN: 4k+1)
+_ASPECT_FRAMES: dict = {
+    '9:16': 81,
+    '16:9': 81,
+    '1:1':  81,
+}
+
+_DEFAULT_NEGATIVE = (
+    "blurry, ugly, deformed, low quality, static, watermark, "
+    "duplicate frames, flickering, overexposed, underexposed"
+)
 
 
 # ── Helper costi (backward compat) ───────────────────────────────────────────
@@ -101,28 +112,43 @@ def endpoint_for_duration(target_sec: int) -> str:
 
 # ── Build workflow ────────────────────────────────────────────────────────────
 
-def _build_workflow(aspect_ratio: str, prompt: str, seed: int):
+def _build_workflow(
+    aspect_ratio: str,
+    prompt: str,
+    seed: int,
+    negative_prompt: str = '',
+    num_frames: Optional[int] = None,
+):
     """
-    Carica il template WAN I2V, inietta dimensioni / prompt / seed.
+    Carica il template WAN 2.2 I2V (WanVideoWrapper), inietta dimensioni / prompt / seed.
     Restituisce (workflow_dict, image_filename).
     """
     w, h = _ASPECT_DIMS.get(aspect_ratio, (480, 832))
+    n_frames = num_frames or _ASPECT_FRAMES.get(aspect_ratio, 81)
+    neg = negative_prompt or _DEFAULT_NEGATIVE
 
     wf = load_template('wan_i2v')
 
-    # 1. Dimensioni sul nodo WanImageToVideo
-    wan_nodes = find_nodes_by_class(wf, 'WanImageToVideo')
-    if wan_nodes:
-        wf = substitute(wf, {nid: {'width': w, 'height': h} for nid in wan_nodes})
+    # 1. Testo: WanVideoTextEncode ha positive_prompt + negative_prompt nello stesso nodo
+    text_nodes = find_nodes_by_class(wf, 'WanVideoTextEncode')
+    if text_nodes:
+        wf = substitute(wf, {nid: {
+            'positive_prompt': prompt,
+            'negative_prompt': neg,
+        } for nid in text_nodes})
 
-    # 2. Prompt (salta automaticamente il nodo negativo)
-    wf = apply_prompt(wf, prompt)
+    # 2. Dimensioni + frames sul nodo WanVideoImageToVideoEncode
+    i2v_nodes = find_nodes_by_class(wf, 'WanVideoImageToVideoEncode')
+    if i2v_nodes:
+        wf = substitute(wf, {nid: {
+            'width': w, 'height': h, 'num_frames': n_frames,
+        } for nid in i2v_nodes})
 
-    # 3. Seed
+    # 3. Seed (randomize_seeds gestisce WanVideoSampler automaticamente)
     wf = randomize_seeds(wf, seed)
 
-    # 4. Nome file immagine di input nel nodo LoadImage
-    img_name   = 'input_photo.png'
+    # 4. Nome file immagine nel nodo LoadImage
+    img_name = 'input_photo.png'
     load_nodes = find_nodes_by_class(wf, 'LoadImage')
     if load_nodes:
         wf = substitute(wf, {load_nodes[0]: {'image': img_name}})
