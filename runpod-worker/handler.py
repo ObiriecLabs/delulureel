@@ -102,13 +102,6 @@ def _ensure_model(rel_path: str, url: str) -> None:
             os.remove(tmp)
         print(f"[MODEL] ERRORE download {rel_path}: {_dl_err}", flush=True)
 
-# T5 encoder WAN 2.2 — fp8_e4m3fn (senza _scaled): supportato da LoadWanVideoT5TextEncoder.
-# Il file _scaled sul volume non funziona perché il nodo rifiuta chiavi "scaled_fp8".
-_ensure_model(
-    "text_encoders/umt5_xxl_fp8_e4m3fn.safetensors",
-    "https://huggingface.co/Kijai/WanVideo_comfy/resolve/main/umt5-xxl-enc-fp8_e4m3fn.safetensors",
-)
-
 # ── ComfyUI lifecycle ─────────────────────────────────────────────────────────
 
 _COMFYUI_LOG = "/tmp/comfyui.log"
@@ -324,6 +317,14 @@ _proc = None
 def _boot_comfyui():
     global _proc, _comfyui_error
     print(f"[BOOT] Python: {sys.executable} {sys.version}", flush=True)
+
+    # T5 encoder WAN 2.2 — fp8_e4m3fn (senza _scaled): il nodo LoadWanVideoT5TextEncoder
+    # rifiuta _scaled (contiene chiave "scaled_fp8"). Download solo al primo cold start;
+    # il volume lo mantiene permanentemente — ogni avvio successivo è un no-op (<1s).
+    _ensure_model(
+        "text_encoders/umt5_xxl_fp8_e4m3fn.safetensors",
+        "https://huggingface.co/Kijai/WanVideo_comfy/resolve/main/umt5-xxl-enc-fp8_e4m3fn.safetensors",
+    )
 
     # Se start.sh ha già avviato ComfyUI (immagine base NGC), lo rileva e non rilancia.
     # Aspetta fino a 60s che start.sh finisca di avviarlo prima di rinunciare e partire noi.
