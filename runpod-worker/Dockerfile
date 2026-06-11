@@ -13,6 +13,13 @@ ENV RUNPOD_VOLUME=/runpod-volume
 ENV TORCHDYNAMO_DISABLE=1
 ENV TORCH_COMPILE_DISABLE=1
 
+# ── System: FFmpeg (richiesto da VHS_VideoCombine per encodare H264/mp4) ──────
+# NGC CUDA base image non include ffmpeg; senza di esso VHS fallisce silenziosamente
+# producendo outputs: {} nella history ComfyUI e 0 file su disco.
+RUN apt-get update -qq && \
+    apt-get install -y --no-install-recommends ffmpeg && \
+    rm -rf /var/lib/apt/lists/*
+
 # ── Dipendenze Python garantite ───────────────────────────────────────────────
 # pip upgrade prima di tutto per evitare fallimenti su resolver moderno
 RUN /opt/venv/bin/pip install --no-cache-dir --upgrade pip && \
