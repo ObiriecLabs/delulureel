@@ -348,6 +348,19 @@ def _boot_comfyui():
         min_mb=300,
     )
 
+    # Flux text encoders — richiesti da DualCLIPLoader nei workflow Flux.
+    # comfyanonymous/flux_text_encoders è un repo pubblico HuggingFace (no gate).
+    _ensure_model(
+        "text_encoders/t5xxl_fp16.safetensors",
+        "https://huggingface.co/comfyanonymous/flux_text_encoders/resolve/main/t5xxl_fp16.safetensors",
+        min_mb=9000,
+    )
+    _ensure_model(
+        "text_encoders/clip_l.safetensors",
+        "https://huggingface.co/comfyanonymous/flux_text_encoders/resolve/main/clip_l.safetensors",
+        min_mb=200,
+    )
+
     # Se start.sh ha già avviato ComfyUI (immagine base NGC), lo rileva e non rilancia.
     # Aspetta fino a 60s che start.sh finisca di avviarlo prima di rinunciare e partire noi.
     print("[BOOT] Checking if ComfyUI already running (start.sh may have launched it)...", flush=True)

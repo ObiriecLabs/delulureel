@@ -1,0 +1,93 @@
+{
+  "1": {
+    "class_type": "UNETLoader",
+    "inputs": {
+      "unet_name": "flux1-krea-dev_fp8_scaled.safetensors",
+      "weight_dtype": "default"
+    }
+  },
+  "2": {
+    "class_type": "ModelSamplingFlux",
+    "inputs": {
+      "model": ["1", 0],
+      "max_shift": 1.15,
+      "base_shift": 0.5,
+      "width": 1024,
+      "height": 1024
+    }
+  },
+  "3": {
+    "class_type": "DualCLIPLoader",
+    "inputs": {
+      "clip_name1": "clip_l.safetensors",
+      "clip_name2": "t5xxl_fp16.safetensors",
+      "type": "flux"
+    }
+  },
+  "4": {
+    "class_type": "CLIPTextEncodeFlux",
+    "inputs": {
+      "clip": ["3", 0],
+      "clip_l": "cyberpunk woman, platinum bob haircut, neon city, night, cinematic",
+      "t5xxl": "Young woman with platinum white bob haircut and sharp bangs, pale skin, icy blue eyes, wearing form-fitting black latex bodysuit with geometric cutouts and chrome paneling, black robotic gauntlet gloves with segmented armor plating, thigh-high spike-armored black boots, walking through post-apocalyptic dystopian city street at night, orange and cyan neon signs reflecting on wet asphalt, volumetric fog, dramatic low-angle cinematic shot, photorealistic, 8K, sharp focus, film grain",
+      "guidance": 3.5
+    }
+  },
+  "5": {
+    "class_type": "FluxGuidance",
+    "inputs": {
+      "conditioning": ["4", 0],
+      "guidance": 3.5
+    }
+  },
+  "6": {
+    "class_type": "CLIPTextEncode",
+    "inputs": {
+      "clip": ["3", 0],
+      "text": "blurry, soft focus, low resolution, pixelated, jpeg artifacts, noise, watermark, text, logo, ugly, deformed, bad anatomy, extra limbs, fused fingers, missing fingers, poorly drawn face, plastic skin, airbrushed skin, oversaturated, overexposed, flat lighting, harsh flash, stock photo look"
+    }
+  },
+  "7": {
+    "class_type": "EmptyLatentImage",
+    "inputs": {
+      "width": 1024,
+      "height": 1024,
+      "batch_size": 1
+    }
+  },
+  "8": {
+    "class_type": "KSampler",
+    "inputs": {
+      "model": ["2", 0],
+      "positive": ["5", 0],
+      "negative": ["6", 0],
+      "latent_image": ["7", 0],
+      "seed": 42985731,
+      "steps": 25,
+      "cfg": 1.0,
+      "sampler_name": "euler",
+      "scheduler": "beta",
+      "denoise": 1.0
+    }
+  },
+  "9": {
+    "class_type": "VAELoader",
+    "inputs": {
+      "vae_name": "ae.safetensors"
+    }
+  },
+  "10": {
+    "class_type": "VAEDecode",
+    "inputs": {
+      "samples": ["8", 0],
+      "vae": ["9", 0]
+    }
+  },
+  "11": {
+    "class_type": "SaveImage",
+    "inputs": {
+      "images": ["10", 0],
+      "filename_prefix": "DELULUREEL/flux"
+    }
+  }
+}
