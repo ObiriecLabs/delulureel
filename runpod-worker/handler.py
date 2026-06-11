@@ -340,12 +340,11 @@ def _boot_comfyui():
         min_mb=5000,
     )
 
-    # Flux VAE (ae.safetensors) — richiesto da qualsiasi workflow Flux.
-    # FLUX.1-schnell è Apache 2.0 ma HF richiede HF_TOKEN + accettazione licenza.
-    # Imposta HF_TOKEN nelle env var dell'endpoint RunPod per abilitare il download.
+    # Flux VAE (ae.safetensors, 320MB) — richiesto da qualsiasi workflow Flux.
+    # Hosted su GitHub Release pubblico (no auth) — stesso file di FLUX.1-schnell.
     _ensure_model(
         "vae/ae.safetensors",
-        "https://huggingface.co/black-forest-labs/FLUX.1-schnell/resolve/main/ae.safetensors",
+        "https://github.com/ObiriecLabs/delulureel/releases/download/model-assets-v1/ae.safetensors",
         min_mb=300,
     )
 
