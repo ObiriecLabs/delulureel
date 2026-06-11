@@ -170,7 +170,9 @@ def _collect_outputs(history: dict, job_id: str) -> list:
 
     # ── Log diagnostico della struttura history ───────────────────────────────
     raw_outputs = history.get("outputs", {})
+    status_info = history.get("status", {})
     print(f"[COLLECT] history keys: {list(history.keys())}", flush=True)
+    print(f"[COLLECT] status: {json.dumps(status_info)[:2000]}", flush=True)
     print(f"[COLLECT] output nodes: {list(raw_outputs.keys())}", flush=True)
     for nid, nout in raw_outputs.items():
         print(f"[COLLECT]   node {nid}: keys={list(nout.keys())}", flush=True)
@@ -430,11 +432,26 @@ def handler(job):
                         safe[nid][k] = v[:500] + "...(truncated)"
                     else:
                         safe[nid][k] = v
+            # Scansione filesystem come ulteriore diagnostica
+            fs_files = []
+            try:
+                for root, dirs, files in os.walk(OUTPUT_DIR):
+                    for fn in files:
+                        fp = os.path.join(root, fn)
+                        try:
+                            sz = os.path.getsize(fp)
+                        except Exception:
+                            sz = -1
+                        fs_files.append(f"{fp} ({sz} bytes)")
+            except Exception as fs_e:
+                fs_files = [f"walk error: {fs_e}"]
             return {
                 "prompt_id": prompt_id,
                 "history_outputs": safe,
                 "history_keys": list(history.keys()),
-                "status": str(history.get("status", {}))[:500],
+                "history_status": str(history.get("status", {}))[:2000],
+                "comfyui_log_tail": _tail_comfyui_log(6000),
+                "output_dir_files": fs_files,
             }
 
         outputs = _collect_outputs(history, job_id)
