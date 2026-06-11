@@ -82,21 +82,34 @@ else:
 
 _VOLUME_MODELS_DIR = os.path.join(os.environ.get("RUNPOD_VOLUME", "/runpod-volume"), "models")
 
-def _ensure_model(rel_path: str, url: str) -> None:
-    """Verifica che il modello sia sul volume; se mancante lo scarica da `url`."""
+def _ensure_model(rel_path: str, url: str, min_mb: int = 1) -> None:
+    """Verifica che il modello sia sul volume con size minima; scarica se mancante o invalido."""
     dest = os.path.join(_VOLUME_MODELS_DIR, rel_path)
     if os.path.exists(dest):
-        sz = os.path.getsize(dest) // (1024 * 1024)
-        print(f"[MODEL] {rel_path} OK ({sz} MB)", flush=True)
-        return
+        sz_mb = os.path.getsize(dest) / 1024 / 1024
+        if sz_mb >= min_mb:
+            print(f"[MODEL] {rel_path} OK ({sz_mb:.0f} MB)", flush=True)
+            return
+        print(f"[MODEL] {rel_path} invalido ({sz_mb:.1f} MB < {min_mb} MB attesi) — elimino e riscarico", flush=True)
+        os.remove(dest)
     os.makedirs(os.path.dirname(dest), exist_ok=True)
     print(f"[MODEL] Scaricando {rel_path} da {url} ...", flush=True)
     tmp = dest + ".tmp"
     try:
-        urllib.request.urlretrieve(url, tmp)
+        hdr = {"User-Agent": "Mozilla/5.0"}
+        hf_token = os.environ.get("HF_TOKEN", "")
+        if hf_token and "huggingface.co" in url:
+            hdr["Authorization"] = f"Bearer {hf_token}"
+        req_dl = urllib.request.Request(url, headers=hdr)
+        with urllib.request.urlopen(req_dl, timeout=3600) as resp, open(tmp, "wb") as f:
+            shutil.copyfileobj(resp, f)
+        sz_mb = os.path.getsize(tmp) / 1024 / 1024
+        if sz_mb < min_mb:
+            os.remove(tmp)
+            print(f"[MODEL] ERRORE: {rel_path} scaricato troppo piccolo ({sz_mb:.1f} MB) — URL non valido o richiede auth", flush=True)
+            return
         os.rename(tmp, dest)
-        sz = os.path.getsize(dest) // (1024 * 1024)
-        print(f"[MODEL] {rel_path} scaricato OK ({sz} MB)", flush=True)
+        print(f"[MODEL] {rel_path} scaricato OK ({sz_mb:.0f} MB)", flush=True)
     except Exception as _dl_err:
         if os.path.exists(tmp):
             os.remove(tmp)
@@ -324,6 +337,16 @@ def _boot_comfyui():
     _ensure_model(
         "text_encoders/umt5_xxl_fp8_e4m3fn.safetensors",
         "https://huggingface.co/Kijai/WanVideo_comfy/resolve/main/umt5-xxl-enc-fp8_e4m3fn.safetensors",
+        min_mb=5000,
+    )
+
+    # Flux VAE (ae.safetensors) — richiesto da qualsiasi workflow Flux.
+    # FLUX.1-schnell è Apache 2.0 ma HF richiede HF_TOKEN + accettazione licenza.
+    # Imposta HF_TOKEN nelle env var dell'endpoint RunPod per abilitare il download.
+    _ensure_model(
+        "vae/ae.safetensors",
+        "https://huggingface.co/black-forest-labs/FLUX.1-schnell/resolve/main/ae.safetensors",
+        min_mb=300,
     )
 
     # Se start.sh ha già avviato ComfyUI (immagine base NGC), lo rileva e non rilancia.
