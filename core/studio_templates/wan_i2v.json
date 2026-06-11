@@ -8,7 +8,7 @@
     "models_volume": [
       "diffusion_models/wan2.2_i2v_high_noise_14B_fp8_scaled.safetensors",
       "diffusion_models/wan2.2_i2v_low_noise_14B_fp8_scaled.safetensors",
-      "text_encoders/umt5_xxl_fp8_e4m3fn_scaled.safetensors",
+      "text_encoders/umt5_xxl_fp8_e4m3fn.safetensors",
       "vae/wan2.2_vae.safetensors",
       "loras/wan2.2_i2v_lightx2v_4steps_lora_v1_high_noise.safetensors",
       "loras/wan2.2_i2v_lightx2v_4steps_lora_v1_low_noise.safetensors"
@@ -18,7 +18,7 @@
   "1": {
     "class_type": "LoadWanVideoT5TextEncoder",
     "inputs": {
-      "model_name": "umt5_xxl_fp8_e4m3fn_scaled.safetensors",
+      "model_name": "umt5_xxl_fp8_e4m3fn.safetensors",
       "precision": "bf16",
       "load_device": "offload_device",
       "quantization": "fp8_e4m3fn"

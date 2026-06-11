@@ -76,6 +76,39 @@ if BUCKET_ENDPOINT_URL and BUCKET_ACCESS_KEY_ID and BUCKET_NAME:
 else:
     print("[BOOT] No S3 configured — outputs will be base64 (test mode only).", flush=True)
 
+# ── Auto-download modelli mancanti sul volume ──────────────────────────────────
+# I modelli vengono scaricati SOLO al primo cold start; il volume li mantiene
+# permanentemente, quindi ogni download successivo è un no-op (<1s).
+
+_VOLUME_MODELS_DIR = os.path.join(os.environ.get("RUNPOD_VOLUME", "/runpod-volume"), "models")
+
+def _ensure_model(rel_path: str, url: str) -> None:
+    """Verifica che il modello sia sul volume; se mancante lo scarica da `url`."""
+    dest = os.path.join(_VOLUME_MODELS_DIR, rel_path)
+    if os.path.exists(dest):
+        sz = os.path.getsize(dest) // (1024 * 1024)
+        print(f"[MODEL] {rel_path} OK ({sz} MB)", flush=True)
+        return
+    os.makedirs(os.path.dirname(dest), exist_ok=True)
+    print(f"[MODEL] Scaricando {rel_path} da {url} ...", flush=True)
+    tmp = dest + ".tmp"
+    try:
+        urllib.request.urlretrieve(url, tmp)
+        os.rename(tmp, dest)
+        sz = os.path.getsize(dest) // (1024 * 1024)
+        print(f"[MODEL] {rel_path} scaricato OK ({sz} MB)", flush=True)
+    except Exception as _dl_err:
+        if os.path.exists(tmp):
+            os.remove(tmp)
+        print(f"[MODEL] ERRORE download {rel_path}: {_dl_err}", flush=True)
+
+# T5 encoder WAN 2.2 — fp8_e4m3fn (senza _scaled): supportato da LoadWanVideoT5TextEncoder.
+# Il file _scaled sul volume non funziona perché il nodo rifiuta chiavi "scaled_fp8".
+_ensure_model(
+    "text_encoders/umt5_xxl_fp8_e4m3fn.safetensors",
+    "https://huggingface.co/Kijai/WanVideo_comfy/resolve/main/umt5-xxl-enc-fp8_e4m3fn.safetensors",
+)
+
 # ── ComfyUI lifecycle ─────────────────────────────────────────────────────────
 
 _COMFYUI_LOG = "/tmp/comfyui.log"
