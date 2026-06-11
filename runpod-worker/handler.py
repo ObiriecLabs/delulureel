@@ -459,6 +459,23 @@ def handler(job):
         print(f"[JOB {job_id}] Diagnostic mode requested", flush=True)
         return _run_diagnostics()
 
+    # ── seed_model mode: forza download di un modello mancante/invalido sul volume ─
+    # Uso: {"seed_model": {"path": "vae/ae.safetensors", "url": "https://...", "min_mb": 300}}
+    if job_input.get("seed_model"):
+        sm = job_input["seed_model"]
+        rel_path = sm.get("path", "")
+        url      = sm.get("url", "")
+        min_mb   = int(sm.get("min_mb", 1))
+        if not rel_path or not url:
+            return {"error": "seed_model richiede 'path' e 'url'"}
+        print(f"[SEED] Avvio download forzato: {rel_path}", flush=True)
+        _ensure_model(rel_path, url, min_mb=min_mb)
+        dest = os.path.join(_VOLUME_MODELS_DIR, rel_path)
+        if os.path.exists(dest):
+            sz_mb = os.path.getsize(dest) / 1024 / 1024
+            return {"seeded": rel_path, "size_mb": round(sz_mb, 1), "ok": sz_mb >= min_mb}
+        return {"seeded": rel_path, "size_mb": 0, "ok": False, "error": "file non presente dopo download"}
+
     if not workflow:
         return {"error": "Missing 'workflow' in input (must be ComfyUI API format)"}
 
