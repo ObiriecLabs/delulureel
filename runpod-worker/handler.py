@@ -158,20 +158,35 @@ def _collect_outputs(history: dict, job_id: str) -> list:
     Raccoglie immagini e video dall'output ComfyUI.
     VHS_VideoCombine scrive i video (mp4/webm) sotto la chiave 'gifs' → la includiamo.
     Ogni output → upload S3 (url) oppure base64 (fallback test).
+    Se la history è vuota, scansiona direttamente il filesystem come fallback.
     """
     results = []
     idx = 0
-    for node_output in history.get("outputs", {}).values():
-        for media_key in ("images", "videos", "gifs"):
+
+    # ── Log diagnostico della struttura history ───────────────────────────────
+    raw_outputs = history.get("outputs", {})
+    print(f"[COLLECT] history keys: {list(history.keys())}", flush=True)
+    print(f"[COLLECT] output nodes: {list(raw_outputs.keys())}", flush=True)
+    for nid, nout in raw_outputs.items():
+        print(f"[COLLECT]   node {nid}: keys={list(nout.keys())}", flush=True)
+        for mk in ("images", "videos", "gifs", "animated"):
+            if nout.get(mk):
+                print(f"[COLLECT]     {mk}: {nout[mk]}", flush=True)
+
+    # ── Raccolta da history ComfyUI ───────────────────────────────────────────
+    for node_output in raw_outputs.values():
+        for media_key in ("images", "videos", "gifs", "animated"):
             for f in node_output.get(media_key, []):
-                fname = f["filename"]
-                subfolder = f.get("subfolder", "")
-                ftype = f.get("type", "output")
-                kind = "video" if media_key in ("videos", "gifs") else "image"
+                fname = f["filename"] if isinstance(f, dict) else f
+                subfolder = f.get("subfolder", "") if isinstance(f, dict) else ""
+                ftype = f.get("type", "output") if isinstance(f, dict) else "output"
+                kind = "video" if media_key in ("videos", "gifs", "animated") else "image"
+                print(f"[COLLECT] fetching {fname} subfolder={subfolder!r} type={ftype}", flush=True)
                 try:
                     binary = _fetch_view(fname, subfolder, ftype)
+                    print(f"[COLLECT] fetched {fname}: {len(binary)} bytes", flush=True)
                 except Exception as e:
-                    print(f"[WARN] fetch {fname} failed: {e}")
+                    print(f"[WARN] fetch {fname} failed: {e}", flush=True)
                     continue
 
                 if _s3:
@@ -180,16 +195,55 @@ def _collect_outputs(history: dict, job_id: str) -> list:
                     try:
                         url = _upload_s3(key, binary)
                         results.append({"filename": fname, "type": kind, "url": url})
+                        print(f"[COLLECT] uploaded → {url}", flush=True)
                     except Exception as e:
-                        print(f"[WARN] S3 upload {fname} failed: {e}")
+                        print(f"[WARN] S3 upload {fname} failed: {e}", flush=True)
                 else:
-                    # Fallback base64 — solo test, NON usare per video in produzione
                     results.append({
                         "filename": fname,
                         "type": kind,
                         "data": base64.b64encode(binary).decode("utf-8"),
                     })
+                    print(f"[COLLECT] encoded {fname} as base64", flush=True)
                 idx += 1
+
+    # ── Fallback: scansione filesystem se history non ha restituito nulla ─────
+    if not results:
+        print(f"[COLLECT] history vuota — scansione filesystem {OUTPUT_DIR}", flush=True)
+        for root, dirs, files in os.walk(OUTPUT_DIR):
+            for fname in files:
+                ext = os.path.splitext(fname)[1].lower()
+                if ext not in (".mp4", ".webm", ".gif", ".png", ".jpg", ".jpeg"):
+                    continue
+                fpath = os.path.join(root, fname)
+                kind = "video" if ext in (".mp4", ".webm", ".gif") else "image"
+                print(f"[COLLECT] filesystem: {fpath} ({kind})", flush=True)
+                try:
+                    with open(fpath, "rb") as fh:
+                        binary = fh.read()
+                    print(f"[COLLECT] read {fname}: {len(binary)} bytes", flush=True)
+                except Exception as e:
+                    print(f"[WARN] read {fpath} failed: {e}", flush=True)
+                    continue
+
+                if _s3:
+                    key = f"studio/{job_id}/output_{idx}{ext}"
+                    try:
+                        url = _upload_s3(key, binary)
+                        results.append({"filename": fname, "type": kind, "url": url})
+                        print(f"[COLLECT] fs→S3: {url}", flush=True)
+                    except Exception as e:
+                        print(f"[WARN] S3 upload {fname} failed: {e}", flush=True)
+                else:
+                    results.append({
+                        "filename": fname,
+                        "type": kind,
+                        "data": base64.b64encode(binary).decode("utf-8"),
+                    })
+                    print(f"[COLLECT] fs→base64: {fname}", flush=True)
+                idx += 1
+
+    print(f"[COLLECT] total outputs: {len(results)}", flush=True)
     return results
 
 def _save_input_images(images: list) -> list:

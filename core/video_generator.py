@@ -210,7 +210,7 @@ def generate_clip(
         # ── Foto → base64 ─────────────────────────────────────────────────────
         with open(local_path, 'rb') as fh:
             photo_b64 = base64.b64encode(fh.read()).decode('utf-8')
-        images = [{'name': img_name, 'data': photo_b64}]
+        images = [{'name': img_name, 'image': photo_b64}]
 
         # ── Submit a RunPod ───────────────────────────────────────────────────
         print(f'[runpod] submit WAN I2V — ar={aspect_ratio} seed={seed}', flush=True)

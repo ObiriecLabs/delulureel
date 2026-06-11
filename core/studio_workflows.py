@@ -23,10 +23,15 @@ TEMPLATES_DIR = os.path.join(os.path.dirname(__file__), "studio_templates")
 
 
 def load_template(name: str) -> dict:
-    """Carica un workflow API-format dai template versionati."""
+    """Carica un workflow API-format dai template versionati.
+    Rimuove automaticamente '_meta' (documentazione) che ComfyUI
+    interpreterebbe come nodo sconosciuto → 400 Bad Request.
+    """
     path = os.path.join(TEMPLATES_DIR, f"{name}.json")
     with open(path, "r", encoding="utf-8") as f:
-        return json.load(f)
+        wf = json.load(f)
+    wf.pop("_meta", None)
+    return wf
 
 
 def is_api_format(workflow: dict) -> bool:

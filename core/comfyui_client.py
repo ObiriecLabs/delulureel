@@ -78,7 +78,7 @@ def submit_workflow_with_images(
 ) -> str:
     """
     Come submit_workflow ma con immagini di input base64.
-    images = [{"name": "ref.png", "data": "<base64>"}]
+    images = [{"name": "ref.png", "image": "<base64>"}]
     """
     if mode == "local" and local_url:
         return submit_workflow(workflow, tier, mode=mode, local_url=local_url)
