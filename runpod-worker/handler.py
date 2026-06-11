@@ -415,6 +415,28 @@ def handler(job):
         prompt_id = _submit_prompt(workflow)
         print(f"[JOB {job_id}] prompt_id={prompt_id}")
         history = _poll_history(prompt_id)
+
+        # ── dump_history mode: restituisce la history ComfyUI raw per debug ──────
+        if job_input.get("dump_history"):
+            # Serializza in modo safe (trunca valori grandi)
+            raw = history.get("outputs", {})
+            safe = {}
+            for nid, nout in raw.items():
+                safe[nid] = {}
+                for k, v in nout.items():
+                    if isinstance(v, list):
+                        safe[nid][k] = v[:10]  # max 10 elementi
+                    elif isinstance(v, str) and len(v) > 500:
+                        safe[nid][k] = v[:500] + "...(truncated)"
+                    else:
+                        safe[nid][k] = v
+            return {
+                "prompt_id": prompt_id,
+                "history_outputs": safe,
+                "history_keys": list(history.keys()),
+                "status": str(history.get("status", {}))[:500],
+            }
+
         outputs = _collect_outputs(history, job_id)
         print(f"[JOB {job_id}] Done — {len(outputs)} output(s)")
         return {"outputs": outputs, "prompt_id": prompt_id}
