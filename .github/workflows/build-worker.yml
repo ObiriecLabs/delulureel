@@ -1,0 +1,96 @@
+name: Build RunPod ComfyUI worker
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'runpod-worker/Dockerfile'
+      - 'runpod-worker/handler.py'
+      - 'runpod-worker/install_nodes.sh'
+      - 'runpod-worker/extra_model_paths.yaml'
+
+# Non triggerare per push nella sottocartella download-helper (ha il suo workflow)
+# (i path filter sopra sono già sufficientemente specifici)
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set lowercase owner
+        id: lower
+        run: echo "owner=${OWNER,,}" >> $GITHUB_OUTPUT
+        env:
+          OWNER: ${{ github.repository_owner }}
+
+      - name: Set image tag with SHA
+        id: meta
+        run: |
+          SHA_SHORT="${GITHUB_SHA::7}"
+          echo "tag_latest=ghcr.io/${{ steps.lower.outputs.owner }}/delulureel-worker:latest" >> $GITHUB_OUTPUT
+          echo "tag_sha=ghcr.io/${{ steps.lower.outputs.owner }}/delulureel-worker:${SHA_SHORT}" >> $GITHUB_OUTPUT
+
+      # Libera spazio disco — base image è 13.8 GB, ubuntu-latest ha ~50 GB ma meglio stare larghi
+      - name: Free disk space
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
+          docker system prune -af --volumes || true
+          df -h
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push
+        uses: docker/build-push-action@v5
+        with:
+          context: ./runpod-worker
+          # RunPod è sempre amd64 — esplicitare evita problemi su runner arm64
+          platforms: linux/amd64
+          push: true
+          # provenance: false evita manifest multi-arch con attestations che
+          # alcuni registry gestiscono male (RunPod si aspetta un manifest singolo)
+          provenance: false
+          tags: |
+            ${{ steps.meta.outputs.tag_latest }}
+            ${{ steps.meta.outputs.tag_sha }}
+          # Layer cache su GitHub Actions (10 GB max) — copre tutto tranne la base
+          # che viene comunque pullata una volta e poi resta nei layer Docker locali
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Output image URLs
+        run: |
+          echo "=== WORKER IMAGE URLS ==="
+          echo "latest : ${{ steps.meta.outputs.tag_latest }}"
+          echo "sha    : ${{ steps.meta.outputs.tag_sha }}"
+          echo ""
+          echo "Aggiorna il template RunPod endpoint con:"
+          echo "  imageName: ${{ steps.meta.outputs.tag_latest }}"
+
+      - name: Try to set GHCR package to public
+        # GITHUB_TOKEN non ha write:packages su packages org → fallisce silenziosamente.
+        # Per renderlo pubblico: GitHub UI → Packages → delulureel-worker → Package settings → Public
+        # Oppure aggiungere un PAT come secret PACKAGES_PAT con scope write:packages
+        run: |
+          sleep 5
+          gh api -X PATCH \
+            /user/packages/container/delulureel-worker \
+            --field visibility=public \
+            && echo "✅ Package GHCR ora pubblico" \
+            || echo "⚠️  Package GHCR rimasto privato — renderlo pubblico manualmente da GitHub UI"
+        env:
+          GH_TOKEN: ${{ secrets.PACKAGES_PAT || secrets.GITHUB_TOKEN }}
