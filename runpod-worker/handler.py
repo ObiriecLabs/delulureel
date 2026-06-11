@@ -124,8 +124,13 @@ def _submit_prompt(workflow: dict) -> str:
         data=payload,
         headers={"Content-Type": "application/json"},
     )
-    with urllib.request.urlopen(req, timeout=30) as resp:
-        return json.loads(resp.read())["prompt_id"]
+    try:
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            return json.loads(resp.read())["prompt_id"]
+    except urllib.error.HTTPError as e:
+        body = e.read().decode("utf-8", errors="replace")
+        print(f"[SUBMIT] ComfyUI /prompt error {e.code}: {body[:2000]}", flush=True)
+        raise RuntimeError(f"ComfyUI /prompt HTTP {e.code}: {body[:1000]}")
 
 def _poll_history(prompt_id: str, timeout=3600) -> dict:
     for _ in range(timeout // 2):
@@ -318,6 +323,68 @@ print("[BOOT] ComfyUI boot started in background — registering RunPod handler.
 
 # ── Handler ───────────────────────────────────────────────────────────────────
 
+def _run_diagnostics() -> dict:
+    """
+    Diagnostic mode: lista file modelli sul volume + nodi ComfyUI installati.
+    Invocato quando il job ha {"diagnostic": true} nell'input.
+    Utile per verificare se i modelli WAN 2.2 sono sul volume e se WanVideoWrapper è installato.
+    """
+    diag = {}
+
+    # 1. Filesystem: directory modelli su /runpod-volume
+    VOLUME = "/runpod-volume"
+    model_dirs = [
+        "models/diffusion_models",
+        "models/text_encoders",
+        "models/vae",
+        "models/loras",
+        "models/clip_vision",
+    ]
+    fs_results = {}
+    for mdir in model_dirs:
+        path = os.path.join(VOLUME, mdir)
+        try:
+            files = []
+            for root, dirs, fnames in os.walk(path):
+                for fn in fnames:
+                    fp = os.path.join(root, fn)
+                    try:
+                        size_mb = os.path.getsize(fp) / 1024 / 1024
+                        files.append(f"{fn} ({size_mb:.1f} MB)")
+                    except Exception:
+                        files.append(fn)
+            fs_results[mdir] = files if files else ["(empty)"]
+        except Exception as e:
+            fs_results[mdir] = [f"ERROR: {e}"]
+    diag["volume_files"] = fs_results
+
+    # 2. ComfyUI /object_info — lista tutti i nodi installati
+    try:
+        with urllib.request.urlopen(f"{COMFYUI_URL}/object_info", timeout=10) as resp:
+            node_info = json.loads(resp.read())
+        node_names = sorted(node_info.keys())
+        wan_nodes = [n for n in node_names if "wan" in n.lower() or "Wan" in n]
+        kjnodes = [n for n in node_names if "KJ" in n or "kj" in n.lower()]
+        vhs_nodes = [n for n in node_names if "VHS" in n or "VideoHelper" in n]
+        diag["comfyui_nodes_total"] = len(node_names)
+        diag["wan_nodes"] = wan_nodes
+        diag["kjnodes"] = kjnodes[:20]  # primi 20
+        diag["vhs_nodes"] = vhs_nodes[:20]
+    except Exception as e:
+        diag["comfyui_nodes_error"] = str(e)
+
+    # 3. ComfyUI /system_stats
+    try:
+        with urllib.request.urlopen(f"{COMFYUI_URL}/system_stats", timeout=10) as resp:
+            diag["system_stats"] = json.loads(resp.read())
+    except Exception as e:
+        diag["system_stats_error"] = str(e)
+
+    print(f"[DIAG] volume_files: {json.dumps(fs_results, indent=2)}", flush=True)
+    print(f"[DIAG] wan_nodes: {diag.get('wan_nodes')}", flush=True)
+    return diag
+
+
 def handler(job):
     # Aspetta ComfyUI se ancora in avvio (background thread)
     if not _comfyui_ready.wait(timeout=600):
@@ -328,6 +395,11 @@ def handler(job):
     job_input = job.get("input", {})
     workflow = job_input.get("workflow")
     job_id = job.get("id", uuid.uuid4().hex[:12])
+
+    # ── Diagnostic mode ────────────────────────────────────────────────────────
+    if job_input.get("diagnostic"):
+        print(f"[JOB {job_id}] Diagnostic mode requested", flush=True)
+        return _run_diagnostics()
 
     if not workflow:
         return {"error": "Missing 'workflow' in input (must be ComfyUI API format)"}
