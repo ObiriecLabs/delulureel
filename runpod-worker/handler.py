@@ -41,6 +41,7 @@ import os
 import uuid
 import shutil
 import mimetypes
+import glob
 
 # COMFYUI_LISTEN=0.0.0.0 per pod dedicato RunPod con porta 8188 esposta
 # (necessario per comfyui-mcp remote mode — mai impostare su worker serverless)
@@ -360,6 +361,39 @@ def _boot_comfyui():
         "https://huggingface.co/comfyanonymous/flux_text_encoders/resolve/main/clip_l.safetensors",
         min_mb=200,
     )
+
+    # ── Auto-install requirements.txt dai custom_nodes sul volume ────────────────
+    # I nodi caricati via ARIA2_DOWNLOADER su /runpod-volume/custom_nodes/ sono già
+    # visibili a ComfyUI (extra_model_paths.yaml), ma i loro pip requirements devono
+    # essere installati nel venv del container ad ogni cold start.
+    # Esecuzione veloce se i pacchetti sono già installati (pip skip automatico).
+    _vol_cn_dir = os.path.join(os.environ.get("RUNPOD_VOLUME", "/runpod-volume"), "custom_nodes")
+    if os.path.isdir(_vol_cn_dir):
+        _reqs = sorted(glob.glob(f"{_vol_cn_dir}/*/requirements.txt"))
+        if _reqs:
+            print(f"[BOOT] Auto-installing volume custom_node requirements ({len(_reqs)} file)...", flush=True)
+            for _req in _reqs:
+                _node_name = os.path.basename(os.path.dirname(_req))
+                print(f"[BOOT]   pip install -r {_req} ({_node_name})", flush=True)
+                try:
+                    _r = subprocess.run(
+                        [sys.executable, "-m", "pip", "install", "--no-cache-dir", "-q",
+                         "--no-deps", "-r", _req],
+                        capture_output=True, text=True, timeout=300,
+                    )
+                    subprocess.run(
+                        [sys.executable, "-m", "pip", "install", "--no-cache-dir", "-q",
+                         "-r", _req],
+                        capture_output=True, text=True, timeout=300,
+                    )
+                    print(f"[BOOT]   {_node_name} OK (rc={_r.returncode})", flush=True)
+                except subprocess.TimeoutExpired:
+                    print(f"[BOOT]   {_node_name} timeout 300s — continuando", flush=True)
+                except Exception as _pip_e:
+                    print(f"[BOOT]   {_node_name} errore: {_pip_e}", flush=True)
+            print("[BOOT] Volume custom_node requirements installati.", flush=True)
+        else:
+            print(f"[BOOT] Nessun requirements.txt trovato in {_vol_cn_dir}", flush=True)
 
     # Se start.sh ha già avviato ComfyUI (immagine base NGC), lo rileva e non rilancia.
     # Aspetta fino a 60s che start.sh finisca di avviarlo prima di rinunciare e partire noi.
