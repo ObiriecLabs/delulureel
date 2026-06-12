@@ -457,15 +457,73 @@ def _run_diagnostics() -> dict:
 
 
 def handler(job):
+    job_input = job.get("input", {})
+    job_id = job.get("id", uuid.uuid4().hex[:12])
+
+    # ── __aria2_setup__ mode: pip install nel container (NO ComfyUI needed) ─────
+    # Invocato da ARIA2_DOWNLOADER per installare requirements.txt dei custom_nodes
+    # direttamente nel worker serverless. Non aspetta ComfyUI — parte immediatamente.
+    # Input: {"__aria2_setup__": "pip_install", "setup_script": "bash...", "requirements": [...]}
+    if job_input.get("__aria2_setup__") == "pip_install":
+        print(f"[SETUP {job_id}] __aria2_setup__ pip_install — avvio", flush=True)
+        setup_script = job_input.get("setup_script", "")
+        requirements = job_input.get("requirements", [])
+        outputs = []
+
+        if setup_script:
+            print(f"[SETUP {job_id}] eseguo setup_script:\n{setup_script[:500]}", flush=True)
+            try:
+                result = subprocess.run(
+                    ["bash", "-c", setup_script],
+                    capture_output=True, text=True, timeout=600,
+                )
+                outputs.append({
+                    "type": "setup_script",
+                    "returncode": result.returncode,
+                    "stdout": result.stdout[-3000:],
+                    "stderr": result.stderr[-1000:],
+                })
+                print(f"[SETUP {job_id}] rc={result.returncode} stdout={result.stdout[-500:]}", flush=True)
+            except subprocess.TimeoutExpired:
+                outputs.append({"type": "setup_script", "error": "timeout 600s"})
+            except Exception as e:
+                outputs.append({"type": "setup_script", "error": str(e)})
+        elif requirements:
+            for req_path in requirements:
+                if os.path.exists(req_path):
+                    print(f"[SETUP {job_id}] pip install -r {req_path}", flush=True)
+                    try:
+                        result = subprocess.run(
+                            [sys.executable, "-m", "pip", "install", "-q", "-r", req_path],
+                            capture_output=True, text=True, timeout=300,
+                        )
+                        outputs.append({
+                            "type": "pip_install",
+                            "path": req_path,
+                            "returncode": result.returncode,
+                            "stdout": result.stdout[-1000:],
+                            "stderr": result.stderr[-500:],
+                        })
+                    except subprocess.TimeoutExpired:
+                        outputs.append({"type": "pip_install", "path": req_path, "error": "timeout 300s"})
+                    except Exception as e:
+                        outputs.append({"type": "pip_install", "path": req_path, "error": str(e)})
+                else:
+                    print(f"[SETUP {job_id}] file non trovato: {req_path}", flush=True)
+                    outputs.append({"type": "pip_install", "path": req_path, "error": "file not found"})
+        else:
+            outputs.append({"type": "noop", "message": "nessun setup_script né requirements forniti"})
+
+        print(f"[SETUP {job_id}] completato — {len(outputs)} azione/i", flush=True)
+        return {"setup": "done", "job_id": job_id, "outputs": outputs}
+
     # Aspetta ComfyUI se ancora in avvio (background thread)
     if not _comfyui_ready.wait(timeout=600):
         return {"error": "ComfyUI startup timeout (600s)"}
     if _comfyui_error:
         return {"error": f"ComfyUI boot failed: {_comfyui_error}"}
 
-    job_input = job.get("input", {})
     workflow = job_input.get("workflow")
-    job_id = job.get("id", uuid.uuid4().hex[:12])
 
     # ── Diagnostic mode ────────────────────────────────────────────────────────
     if job_input.get("diagnostic"):
